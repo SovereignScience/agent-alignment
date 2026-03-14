@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.env.*
+*:Zone.Identifier
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+build/
