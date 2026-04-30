@@ -9,3 +9,8 @@ __pycache__/
 node_modules/
 dist/
 build/
+
+# Claude Code runtime
+.claude/settings.local.json
+.claude/cache/
+.claude/projects/

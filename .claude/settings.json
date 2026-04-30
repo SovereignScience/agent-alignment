@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "ALIGN_MODULES_DIR": ".",
+    "ALIGN_PROVIDER_VARIANTS": "FOR_CLAUDE.md FOR_CHATGPT.md FOR_API.md COMPOSED_AGENT.md"
+  },
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Read(//home/code0x19/SOFTWARE/open-forest-manifest/**)",
+      "Read(//home/code0x19/.claude/**)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(git rev-list*)",
+      "Bash(git ls-files*)",
+      "Bash(git blame*)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(git stash *)",
+      "Bash(git switch *)",
+      "Bash(git checkout *)",
+      "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git merge --ff-only*)",
+      "Bash(git commit *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue view *)",
+      "Bash(gh api repos/*)",
+      "Bash(python3 scripts/*)",
+      "Bash(python3 -m json.tool*)",
+      "Bash(bash scripts/*)",
+      "Bash(bash .claude/scripts/*)",
+      "Bash(ls *)",
+      "Bash(find . *)",
+      "Bash(grep -r *)",
+      "Bash(grep -rIn *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(diff *)",
+      "Bash(sha256sum *)",
+      "Bash(jq *)",
+      "Bash(mkdir -p *)",
+      "Bash(touch *)",
+      "Bash(ln -sf *)",
+      "Bash(chmod +x *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue close *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf .git*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push --no-verify*)",
+      "Bash(git commit --no-verify*)",
+      "Bash(git commit --no-gpg-sign*)",
+      "Bash(git reset --hard origin/main*)",
+      "Bash(git reset --hard origin/master*)",
+      "Bash(git config *)",
+      "Bash(chmod -R 777 *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.key)",
+      "Read(**/*.pem)"
+    ],
+    "additionalDirectories": [
+      "/home/code0x19/SOFTWARE/agent-alignment/.claude"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/session_start.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/pre_bash_guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/post_edit_verify.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/statusline.sh"
+  }
+}
