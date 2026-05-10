@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit / Write.
-# Two jobs:
-#   1. Track A (SWE): language-aware lint/typecheck on the edited file.
-#   2. Track B (alignment): when a canonical module changes, remind to recompose.
-# Never blocks (PostToolUse is advisory). Outputs to stdout so Claude
-# sees the result on the next turn.
+# PostToolUse hook for Edit / Write — SWE track.
+# Language-aware lint/typecheck on edited file, plus reminders when
+# canonical SWE protocols or dependency manifests are touched.
+# Never blocks (PostToolUse is advisory).
 set -euo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
@@ -23,40 +21,25 @@ rel="${file_path#$PWD/}"
 
 run_and_label() {
   local label="$1"; shift
-  if "$@" >/tmp/align-hook.out 2>&1; then
+  if "$@" >/tmp/swe-hook.out 2>&1; then
     echo "post-edit-verify ✓ $label"
   else
     echo "post-edit-verify ✗ $label"
-    head -n 30 /tmp/align-hook.out
+    head -n 30 /tmp/swe-hook.out
   fi
 }
 
-# ─── Track B: canonical / derived alignment modules ────────────────
+# ─── Canonical SWE protocols ───────────────────────────────────────
 case "$rel" in
-  INNER_COMMONS_CORE.md|FLOURISHING_PROTOCOL.md|SKEPTIC_ARBITER.md|REPAIR_PROTOCOL.md)
-    echo "post-edit-verify: Track B canonical module touched ($rel)."
-    echo "  → Run /align-compose $rel to propagate to derived files."
-    echo "  → Or: bash scripts/check_drift.sh"
-    exit 0
-    ;;
-  COMPOSED_AGENT.md|FOR_CLAUDE.md|FOR_CHATGPT.md|FOR_API.md)
-    echo "post-edit-verify: Track B derived file touched ($rel)."
-    echo "  → Run /align-drift-check to confirm canonical-vs-derived consistency."
-    exit 0
-    ;;
-esac
-
-# ─── Track A: SWE canonical protocols ──────────────────────────────
-case "$rel" in
-  SWE_CORE.md|TESTING_PROTOCOL.md|PERFORMANCE_PROTOCOL.md|SECURITY_PROTOCOL.md)
-    echo "post-edit-verify: Track A canonical SWE protocol touched ($rel)."
-    echo "  → Confirm the change names a concrete failure mode it targets (CONTRIBUTING.md)."
+  SWE_CORE.md|TESTING_PROTOCOL.md|PERFORMANCE_PROTOCOL.md|SECURITY_PROTOCOL.md|SKEPTIC_ARBITER.md)
+    echo "post-edit-verify: SWE canonical protocol touched ($rel)."
+    echo "  → Confirm the change names a concrete failure mode (CONTRIBUTING.md)."
     echo "  → Consider running /swe-swarm-review before opening a PR."
     exit 0
     ;;
 esac
 
-# ─── Track A: language-aware lint / typecheck on edited file ───────
+# ─── Language-aware lint / typecheck ───────────────────────────────
 case "$rel" in
   *.py)
     if command -v ruff >/dev/null 2>&1; then
@@ -110,7 +93,7 @@ case "$rel" in
     ;;
 esac
 
-# ─── Dependency manifests — flag for dependency-auditor ────────────
+# ─── Dependency manifests — flag for /swe-deps ─────────────────────
 case "$rel" in
   package.json|package-lock.json|yarn.lock|pnpm-lock.yaml)
     echo "post-edit-verify: dependency manifest touched ($rel)."
@@ -143,11 +126,11 @@ case "$rel" in
     fi
     ;;
   .claude/scripts/*.sh|scripts/*.sh)
-    if bash -n "$rel" 2>/tmp/align-hook.err; then
+    if bash -n "$rel" 2>/tmp/swe-hook.err; then
       echo "post-edit-verify ✓ bash -n $rel"
     else
       echo "post-edit-verify ✗ $rel has shell syntax errors:"
-      head -n 10 /tmp/align-hook.err
+      head -n 10 /tmp/swe-hook.err
     fi
     ;;
 esac

@@ -1,35 +1,29 @@
-# QUICKSTART_FLOURISHING.md — for agents authoring alignment prompts
+# flourishing — Inner Commons + Flourishing alignment-prompt library
 
-You landed in this repo to author, compose, evaluate, or refine the
-**Inner Commons** alignment prompt stack. Read this file, then act.
+You are in the alignment-prompt-authoring track of `agent-alignment`.
+**Everything you need is in this folder.** Read this file, then act.
 
 ## What this folder gives you
 
-- **Four canonical alignment modules** — the source of truth for
-  the prompt stack:
+- **Four canonical alignment modules** — the source of truth:
   - [INNER_COMMONS_CORE.md](INNER_COMMONS_CORE.md) — relational layer
   - [FLOURISHING_PROTOCOL.md](FLOURISHING_PROTOCOL.md) — externalities
   - [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md) — anti-sycophancy
   - [REPAIR_PROTOCOL.md](REPAIR_PROTOCOL.md) — rupture + repair
-- **Five derived files** — provider-specific renders of the same
-  content:
+- **Four derived files** — provider-specific renders:
   - [COMPOSED_AGENT.md](COMPOSED_AGENT.md) (drop-in)
   - [FOR_CLAUDE.md](FOR_CLAUDE.md) (XML-tagged)
   - [FOR_CHATGPT.md](FOR_CHATGPT.md)
   - [FOR_API.md](FOR_API.md)
-  - [README.md](README.md) (the file map)
 - **Ten alignment subagents** in [.claude/agents/](.claude/agents/) —
-  one steward per canonical module, plus composer / drift-checker /
+  one steward per canonical module + composer / drift-checker /
   scenario-evaluator / prose-editor / skeptic / arbiter /
   pr-rubric-reviewer.
-- **Eight alignment slash commands** in [.claude/commands/](.claude/commands/)
-  — pre-wired multi-step workflows.
+- **Eight slash commands** in [.claude/commands/](.claude/commands/).
 - **Six checked-in evaluation scenarios** in
-  [eval/scenarios/](eval/scenarios/) — behavioral specs the prompt
-  stack must pass.
+  [eval/scenarios/](eval/scenarios/).
 
-The SWE track (Track A in [README.md](README.md)) is independent.
-Ignore it unless you are doing coding work.
+For full project conventions read [CLAUDE.md](CLAUDE.md).
 
 ---
 
@@ -38,8 +32,8 @@ Ignore it unless you are doing coding work.
 For any change to a canonical module, load:
 
 - The canonical module itself
-- [CONTRIBUTING.md](CONTRIBUTING.md) — review rubric and the five
-  PR-expectation questions
+- `../CONTRIBUTING.md` — review rubric and the five PR-expectation
+  questions
 
 Optional but useful:
 
@@ -73,9 +67,9 @@ first to bring derived files in sync.
 | Edit `FLOURISHING_PROTOCOL.md` | `flourishing-auditor` | (manual edit) |
 | Edit `REPAIR_PROTOCOL.md` | `repair-coach` (author mode) | (manual edit) |
 | Audit a request for material externalities | `flourishing-auditor` (auditor mode) | `/align-flourishing-check` |
-| Run anti-sycophancy on a draft response | `skeptic` + `arbiter` | `/align-skeptic` |
-| Draft repair response from a transcript | `repair-coach` (coach mode) | `/align-repair` |
-| Propagate canonical change to derived files | `module-composer` | `/align-compose` |
+| Anti-sycophancy on a draft response | `skeptic` + `arbiter` | `/align-skeptic` |
+| Draft repair-sequence response | `repair-coach` (coach mode) | `/align-repair` |
+| Propagate canonical change to derived | `module-composer` | `/align-compose` |
 | Confirm canonical / derived in sync | `drift-checker` | `/align-drift-check` |
 | Score a prompt change against eval scenarios | `scenario-evaluator` | `/align-scenario` |
 | Line-level prose polish (no content change) | `prose-editor` | (manual) |
@@ -94,7 +88,7 @@ rejected, or accompanied by an explicit amendment to
 [CLAUDE.md](CLAUDE.md):
 
 1. **Canonical-derived split.** The four canonical modules are the
-   source of truth. The five derived files mirror them.
+   source of truth; the four derived files mirror them.
 2. **The four commons resources are TRUST, CONSENT, ATTENTION,
    REPAIR CAPACITY.** No new resources without removing redundancy.
 3. **Operating principles stay numbered and atomic.** Compounding
@@ -116,24 +110,11 @@ rejected, or accompanied by an explicit amendment to
 
 ---
 
-## What you should NOT do
-
-- Spawn SWE-track agents (`code-reviewer`, `regression-test-writer`,
-  etc.) for prompt-authoring work. Wrong tool, wasted context.
-- Edit the four SWE canonical protocols (`SWE_CORE.md`,
-  `TESTING_PROTOCOL.md`, `PERFORMANCE_PROTOCOL.md`,
-  `SECURITY_PROTOCOL.md`) without explicit user ask — those belong
-  to Track A.
-- Add a new canonical module without naming a concrete failure mode
-  it targets. Read `CONTRIBUTING.md` and use `/align-add-module`.
-
----
-
 ## How to add things (canonical procedures)
 
 ### Edit a canonical module
 1. Identify the failure mode you are targeting. If you cannot name
-   one, stop — read [CONTRIBUTING.md](CONTRIBUTING.md).
+   one, stop — read `../CONTRIBUTING.md`.
 2. Hand off to the relevant steward subagent.
 3. Run `/align-compose <FILE>.md` to propagate to derived files.
 4. Run `/align-drift-check` to confirm.
@@ -162,3 +143,11 @@ questions and scaffolding steps.
 
 There is no test suite for prose. Evaluation runs through
 `scenario-evaluator` and `eval/scenarios/*.md`.
+
+---
+
+## A note on the sibling track
+
+This repository has a sibling subtree at `../swe/` for agentic
+software-engineering work. It is fully independent. Ignore it
+unless you've been explicitly directed there.
