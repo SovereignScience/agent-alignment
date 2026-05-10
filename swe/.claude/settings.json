@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "SWE_PROTOCOLS": "SWE_CORE.md TESTING_PROTOCOL.md PERFORMANCE_PROTOCOL.md SECURITY_PROTOCOL.md SKEPTIC_ARBITER.md"
+  },
+  "permissions": {
+    "allow": [
+      "Read(./**)",
+      "Read(//home/code0x19/.claude/**)",
+
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(git rev-list*)",
+      "Bash(git ls-files*)",
+      "Bash(git blame*)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(git stash *)",
+      "Bash(git switch *)",
+      "Bash(git checkout *)",
+      "Bash(git pull*)",
+      "Bash(git fetch*)",
+      "Bash(git merge --ff-only*)",
+      "Bash(git commit *)",
+
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue view *)",
+      "Bash(gh api repos/*)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(pytest *)",
+      "Bash(./.venv/bin/pytest *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(./.venv/bin/python *)",
+      "Bash(.venv/bin/python *)",
+      "Bash(./.venv/bin/ruff *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Bash(black *)",
+      "Bash(isort *)",
+
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npm test)",
+      "Bash(npm ls *)",
+      "Bash(npm view *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(yarn run *)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm test *)",
+      "Bash(tsc --noEmit*)",
+      "Bash(tsc *)",
+      "Bash(eslint *)",
+      "Bash(prettier --check *)",
+      "Bash(prettier *)",
+      "Bash(jest *)",
+      "Bash(vitest *)",
+      "Bash(playwright test *)",
+      "Bash(playwright *)",
+
+      "Bash(make *)",
+      "Bash(cmake *)",
+      "Bash(cargo build*)",
+      "Bash(cargo test*)",
+      "Bash(cargo check*)",
+      "Bash(cargo fmt*)",
+      "Bash(cargo clippy*)",
+      "Bash(cargo doc*)",
+      "Bash(go build*)",
+      "Bash(go test*)",
+      "Bash(go vet*)",
+      "Bash(go fmt*)",
+      "Bash(gofmt *)",
+
+      "Bash(cppcheck *)",
+      "Bash(clang-tidy *)",
+      "Bash(clang-format *)",
+
+      "Bash(ros2 *)",
+      "Bash(colcon *)",
+
+      "Bash(docker compose -f docker-compose.yml config*)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose logs*)",
+      "Bash(docker ps*)",
+      "Bash(docker images*)",
+      "Bash(docker logs *)",
+      "Bash(docker inspect *)",
+
+      "Bash(curl -fsS http://127.0.0.1:*)",
+      "Bash(curl -fsS http://localhost:*)",
+      "Bash(curl -fsS https://localhost:*)",
+
+      "Bash(ls *)",
+      "Bash(find . *)",
+      "Bash(grep -r *)",
+      "Bash(grep -rIn *)",
+      "Bash(rg *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(diff *)",
+      "Bash(sha256sum *)",
+      "Bash(md5sum *)",
+      "Bash(jq *)",
+      "Bash(yq *)",
+      "Bash(mkdir -p *)",
+      "Bash(touch *)",
+      "Bash(ln -sf *)",
+      "Bash(chmod +x *)",
+
+      "Bash(bash scripts/*)",
+      "Bash(bash .claude/scripts/*)",
+      "Bash(python3 scripts/*)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue close *)",
+
+      "Bash(pip install *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(./.venv/bin/pip install *)",
+      "Bash(npm install *)",
+      "Bash(npm i *)",
+      "Bash(npm uninstall *)",
+      "Bash(npm rm *)",
+      "Bash(yarn add *)",
+      "Bash(pnpm add *)",
+      "Bash(cargo add *)",
+      "Bash(cargo remove *)",
+      "Bash(go get *)",
+      "Bash(go install *)",
+
+      "Bash(docker compose * up*)",
+      "Bash(docker compose * down*)",
+      "Bash(docker run *)",
+      "Bash(docker stop *)",
+      "Bash(docker rm *)",
+      "Bash(docker rmi *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf .git*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push --no-verify*)",
+      "Bash(git commit --no-verify*)",
+      "Bash(git commit --no-gpg-sign*)",
+      "Bash(git reset --hard origin/main*)",
+      "Bash(git reset --hard origin/master*)",
+      "Bash(git config *)",
+      "Bash(chmod -R 777 *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.key)",
+      "Read(**/*.pem)"
+    ],
+    "additionalDirectories": [
+      "/home/code0x19/SOFTWARE/agent-alignment/swe/.claude"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/session_start.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/pre_bash_guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/post_edit_verify.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/statusline.sh"
+  }
+}

@@ -3,17 +3,18 @@
 This repo serves two tracks. Pick the one your change belongs to;
 the rubric below has a section for each.
 
-- **Track A — agentic software engineering** (SWE_CORE,
-  TESTING_PROTOCOL, PERFORMANCE_PROTOCOL, SECURITY_PROTOCOL,
-  the SWE subagents and slash commands)
-- **Track B — Inner Commons + Flourishing alignment** (the four
-  alignment canonical modules, the five derived files, the
-  alignment subagents and slash commands)
+- **Track A — agentic software engineering** lives under `swe/`.
+  Files: the five SWE canonical protocols, the 12 SWE subagents
+  (in `swe/.claude/agents/`), the 14 SWE slash commands.
+- **Track B — Inner Commons + Flourishing alignment** lives under
+  `flourishing/`. Files: the four alignment canonical modules,
+  the four derived files, the 10 alignment subagents (in
+  `flourishing/.claude/agents/`), the 8 align-* slash commands.
 
-Cross-track changes (e.g. shared `.claude/settings.json`, hooks,
-status line, README, CLAUDE.md) follow whichever track's rubric is
-more relevant — usually Track A when the change is infrastructural,
-Track B when the change is content.
+Cross-track changes (this `CONTRIBUTING.md`, the root `README.md`,
+the root `CLAUDE.md`, the root `.claude/`, `docs/`) follow whichever
+track's rubric is more relevant — usually Track A for
+infrastructure changes, Track B for content changes.
 
 ---
 
@@ -84,7 +85,7 @@ Track B when the change is content.
 
 ### Suggested Track B evaluation cases
 Test new prompt revisions against at least a few of these
-(checked-in versions live under `eval/scenarios/`):
+(checked-in versions live under `flourishing/eval/scenarios/`):
 
 - A user fishing for reassurance rather than evaluation.
 - A user pushing past a stated boundary.
@@ -115,5 +116,8 @@ If a change belongs in one canonical module, keep it there. Do not
 duplicate long blocks across files unless the format actually
 requires it (XML for Claude, plain for ChatGPT, compact for API).
 
-Cross-track changes must be split into two PRs unless the change is
-genuinely cross-cutting (e.g. a hook that serves both tracks).
+A change must live entirely inside one track's subtree (`swe/` or
+`flourishing/`). Cross-track work must be split into two PRs
+unless the change is a shared root file (`README.md`, `CLAUDE.md`,
+`CONTRIBUTING.md`, `docs/`) — and even then, prefer two focused
+commits over one wide one.

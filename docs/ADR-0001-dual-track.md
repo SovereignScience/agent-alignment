@@ -1,7 +1,7 @@
 # ADR-0001: Dual-track repository — SWE protocols + Inner Commons alignment
 
-Status: accepted
-Date:   2026-04-30
+Status: accepted (revised 2026-05-10 to hard-split layout)
+Date:   2026-04-30 (original) · 2026-05-10 (revised)
 
 ## Context
 
@@ -9,8 +9,8 @@ This repository began as the **Inner Commons** alignment prompt
 library — four canonical modules (`INNER_COMMONS_CORE`,
 `FLOURISHING_PROTOCOL`, `SKEPTIC_ARBITER`, `REPAIR_PROTOCOL`) plus
 provider-specific derived files (`COMPOSED_AGENT`, `FOR_CLAUDE`,
-`FOR_CHATGPT`, `FOR_API`). It also shipped a `.claude/` directory
-of subagents and slash commands focused entirely on *authoring,
+`FOR_CHATGPT`, `FOR_API`). It also held a `.claude/` directory of
+subagents and slash commands focused entirely on *authoring,
 composing, and evaluating those alignment prompts*.
 
 In practice, the same repo holds the agentic-engineering toolkit
@@ -25,83 +25,119 @@ review patterns. The two concerns kept colliding:
 - Documentation was ambiguous about which canonical files were
   authoritative for which use case.
 
-The two halves are genuinely independent — they do not share
-content, and an agent typically uses one or the other in a session,
-not both. But they share infrastructure (`.claude/settings.json`,
-hooks, status line, permissions) and project conventions
-(`CLAUDE.md`).
+A first revision (April 30) introduced both tracks side-by-side at
+the repo root, namespaced by command prefix (`/swe-*` vs
+`/align-*`). It worked, but reading the root still required
+disambiguating the two tracks on every glance, and the agent files
+were intermixed in a single `.claude/agents/`.
+
+A May 10 revision pushed the separation further into a **hard
+physical split**: each track lives in its own subtree with its own
+`.claude/`, its own canonical protocols, its own scripts, and its
+own self-contained README/CLAUDE/AGENTS.
 
 ## Decision
 
-Treat this as a **dual-track repository**:
+Treat this as a **dual-track repository with hard physical split**:
 
-- **Track A — agentic software engineering** ships four canonical
-  SWE protocols (`SWE_CORE`, `TESTING_PROTOCOL`,
-  `PERFORMANCE_PROTOCOL`, `SECURITY_PROTOCOL`), 10 SWE subagents,
-  and 10 SWE slash commands (prefix `/swe-`).
-- **Track B — Inner Commons + Flourishing alignment** ships the
-  original four canonical modules, the five derived files, 10
-  alignment subagents, and 8 slash commands (prefix `/align-`).
+- **`swe/`** — agentic software engineering. Five canonical
+  protocols (`SWE_CORE`, `TESTING_PROTOCOL`, `PERFORMANCE_PROTOCOL`,
+  `SECURITY_PROTOCOL`, `SKEPTIC_ARBITER`), 12 SWE subagents,
+  14 SWE slash commands (prefix `/swe-`), language-aware hooks.
+- **`flourishing/`** — Inner Commons + Flourishing alignment. The
+  four original canonical modules, four derived provider variants,
+  10 alignment subagents, 8 align-* commands, drift-check hooks,
+  the eval-scenario suite.
 
-Tracks are surfaced explicitly:
+Each track owns:
 
-- `README.md` opens with a "two tracks" router.
-- `QUICKSTART_SWE.md` and `QUICKSTART_FLOURISHING.md` give 30-second
-  onboarding per track.
-- `CLAUDE.md` has a Track A section (primary) and a Track B section.
-- `SessionStart` hook prints both tracks' module hashes and points
-  at the matching QUICKSTART.
-- Subagent and slash-command names are namespaced — `swe-*` vs.
-  `align-*` for commands; descriptive names for subagents
-  themselves (no clash within `agents/`).
-- Status line shows `swe:<hash>` and `align:<hash>` segments so
-  drift in either track is visible at a glance.
+- Its own `README.md` (start-here for that track)
+- Its own `CLAUDE.md` (project conventions, no cross-track refs)
+- Its own `AGENTS.md` symlink → CLAUDE.md
+- Its own `.claude/` (settings.json, agents/, commands/, scripts/,
+  README.md)
+- Its own `scripts/check_drift.sh` (operates on that track's files)
 
-Shared infrastructure (`settings.json`, hooks) is intentionally
-cross-cutting and serves both tracks.
+The repo root contains:
+
+- A minimal `README.md` and `CLAUDE.md`, both routers — they
+  describe the two tracks and tell readers to `cd` into one.
+- A `CONTRIBUTING.md` with track-specific rubrics.
+- A minimal root `.claude/` whose only job is a `SessionStart` and
+  `statusLine` that say "you're at the router; cd into a track."
+  No agents, no commands, no language hooks at the root.
+- `docs/` (this ADR), `presentations/`, `media/`.
+
+The two `SKEPTIC_ARBITER.md` files coexist intentionally:
+
+- `swe/SKEPTIC_ARBITER.md` targets *engineering* sycophancy
+  (hollow approvals, unverified completion claims, hedge-burial of
+  bugs).
+- `flourishing/SKEPTIC_ARBITER.md` targets *relational* sycophancy
+  (hollow validation in user-facing replies, pre-agreement with
+  the question's framing, sycophancy spirals across turns).
+
+Same Three-Voices pattern (Advocate / Skeptic / Arbiter), different
+failure surface, different agents (`code-skeptic`/`code-arbiter`
+in swe vs `skeptic`/`arbiter` in flourishing). They do not interact.
 
 ## Consequences
 
 ### Positive
-- An agent dropping into the repo can route itself to the right
-  track in under 30 seconds.
-- Each track stays clean: no SWE conventions leaking into prompt
-  authoring, no alignment language leaking into code review.
-- Shared infrastructure (one settings.json, one set of hooks)
-  avoids duplication and keeps the developer experience
-  consistent.
-- The SWE protocols are reusable in other repos via `/swe-init`,
-  without dragging the alignment library along.
+- An agent dropping into either subtree gets exactly one set of
+  protocols, one `.claude/` configuration, one dispatch table, one
+  status line — and nothing about the other track. "Just follow
+  what's in the folder" works.
+- Each track is independently usable. `swe/` can be copied verbatim
+  into another repo (or installed via `/swe-init`) without
+  dragging the alignment library along; `flourishing/` is the
+  prompt library on its own.
+- The two `SKEPTIC_ARBITER.md` files give each track a focused
+  anti-sycophancy module appropriate to its failure surface,
+  without conflating engineering review with user-facing relational
+  dynamics.
+- Slash command and agent name clashes are avoided by directory,
+  not by prefix gymnastics — Claude Code naturally loads only the
+  `.claude/` of the current working tree.
 
 ### Negative / costs
-- Two tracks means roughly twice the surface area for new
-  contributors to skim. Mitigated by the QUICKSTART files and the
-  namespaced subagent/command rosters.
-- Cross-track changes (e.g. a new hook that serves both tracks)
-  need to be designed not to bias one track over the other.
-- Drift detection now spans two canonical sets. Mitigated by
-  `scripts/check_drift.sh` reporting both.
+- Some duplication: each `.claude/scripts/` carries its own copy
+  of `pre_bash_guard.sh` (which is identical between tracks). This
+  is accepted because *zero shared scripts* makes each subtree
+  truly portable to another repo.
+- The `flourishing/SKEPTIC_ARBITER.md` and `swe/SKEPTIC_ARBITER.md`
+  share a name. We accept this because the file lives inside its
+  track's directory — the name only collides if you treat the two
+  tracks as one project.
+- Cross-track refactors (e.g. promoting a pattern that emerged in
+  one track) require explicit adaptation rather than a shared edit.
 
 ### Things this commits us to
-- Keeping the namespacing strict — `swe-*` for SWE commands,
-  `align-*` for alignment commands. No mixed-track agent names.
-- Keeping the QUICKSTART files current as either track evolves.
-- Keeping `CLAUDE.md` and `README.md` synced with both tracks
-  whenever a canonical or roster changes.
+- Keeping each track fully self-contained. No references from
+  `swe/CLAUDE.md` to `flourishing/`, or vice versa, beyond a
+  one-line "sibling track exists; ignore it" footnote.
+- Keeping the root deliberately minimal. The root is a router;
+  any temptation to add a "global" agent or command goes into one
+  of the two tracks instead.
+- Keeping the SKEPTIC_ARBITER pattern parallel: any change to the
+  Three-Voices structure in one track should be considered for the
+  other (separately, by hand — not by automation).
 
 ## Alternatives considered
 
 - **Split into two repositories.** Cleanest separation, but loses
-  the shared `.claude/` infrastructure and forces the maintainer
-  to keep two settings.json / hook setups in sync by hand. The
-  inner-commons-and-flourishing content also benefits from sitting
-  next to a working SWE setup as a reference for what the
-  protocols look like in practice.
+  the shared `CONTRIBUTING.md` and the lineage signal that the SWE
+  protocols emerged from the same author who built the alignment
+  library. Hard split inside one repo gives most of the benefit
+  without forcing two repos to be kept in sync by hand.
+- **Keep both tracks at the root with namespaced `swe-*` /
+  `align-*` commands** (the April 30 revision). Worked, but
+  reading the root and the single `.claude/agents/` still required
+  every reader to disambiguate per file. The hard split removes
+  that cognitive overhead entirely.
 - **Make alignment the only public concern; keep SWE config in
-  `~/.claude/`.** That kept the user-level CLAUDE.md as the only
-  source of SWE rigor. Agents in *other* repos could not benefit
-  from the SWE protocols, and a SWE agent landing in this repo
-  was un-served.
+  `~/.claude/`.** Lost the ability for agents in *other* repos to
+  benefit from the SWE protocols.
 - **Fold SWE protocols into the existing canonical modules under
   the Flourishing umbrella.** Conceptually wrong — code-quality
   rules are not relational alignment rules, and the prompts would
