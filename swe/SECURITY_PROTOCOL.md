@@ -124,6 +124,116 @@ When acting as a security reviewer (rather than implementer):
 - Do not pretend something is fine if you have not verified it. Say
   "did not look at X" explicitly.
 
+## Operator CLIs that drive privileged remote APIs
+
+When the change is to a small operator-facing CLI / TUI (Python,
+shell) that talks to a vendor API capable of destructive remote
+action (cloud provisioning, hardware power, OS reinstall, mount
+ISO, push SSH key, drop database) — the discipline below is
+non-negotiable. Most of these come from incidents where ONE of
+them was missing and a token leaked.
+
+**Secrets surface:**
+
+- Token lives in a single file (`.env`, `terraform.tfvars`, or
+  `~/.config/<app>/token`), 0600, gitignored from commit #1.
+  Verify with `git check-ignore -v <path>` before the first push.
+- Load via `python-dotenv` (or equivalent). NEVER accept the token
+  on argv (`ps` exposes it). NEVER print it. NEVER include it in
+  exception output. NEVER write it to a log file.
+- Mask in display: `token[:2] + "…" + token[-4:]`. Add the masking
+  function to a single import path; route all "connected as" lines
+  through it.
+- Ship a `.env.example` with placeholders and an explicit comment
+  block: "request a scoped token, never share, rotate quarterly,
+  revoke immediately on laptop loss."
+- All HTTP errors go through a sanitiser that strips
+  `Authorization` headers and any `token=` / `key=` /
+  `api-key=` query params before printing or logging.
+- No token caching to disk. Keychain integration is OPT-IN only;
+  the env-var / file path is the audited default.
+
+**Destructive actions:**
+
+- Every state-mutating action (POST/PUT/DELETE, terraform apply,
+  ansible-playbook against prod, droplet delete, volume delete, OS
+  reinstall) is gated by TWO-STAGE confirmation:
+  1. A summary panel naming exactly the action and the target hosts.
+  2. The operator must retype the target hostname. No "yes to all".
+- `--dry-run` flag at the CLI level. In dry-run, the `Subprocess` /
+  `ApiClient` short-circuits all destructive calls and prints the
+  would-be request. Default the first run after install to dry-run.
+- Every executed action appends a structured JSONL entry to
+  `~/.local/state/<app>/audit.log`: timestamp, operator (`$USER`),
+  action, target hosts, request ID, exit status. NO tokens in the
+  audit log. The audit-log writer takes a string-sanitiser as its
+  single chokepoint, same one display uses.
+
+**Network posture:**
+
+- If the API is reached over a VPN: check reachability at startup,
+  exit with a clear "VPN down — bring up the tunnel and retry"
+  message if it can't connect.
+- Pin the API hostname's TLS via the standard library / requests
+  using the system trust store. Do not set `verify=False` anywhere,
+  ever. Self-signed → pin the cert.
+- No outbound calls to anything other than the configured
+  `API_BASE_URL`. No telemetry. No update checks.
+
+**Single ApiClient:**
+
+- All HTTP calls (or all `subprocess.run` calls for a CLI orchestrator)
+  go through ONE class. No ad-hoc `requests.get` / `subprocess.run`
+  scattered through modules. Makes auditing trivial and lets tests
+  mock the entire external surface in one place.
+- Tests MUST NOT require the live API. Mock the ApiClient with a
+  fake that returns recorded fixtures. CI runs without network.
+
+**Dev workflow:**
+
+- Python venv pinned with `uv` or `pip-tools`. `requirements.txt`
+  is the lockfile, generated from `requirements.in`. No floating
+  `>=` on security-sensitive deps (`requests`, `urllib3`,
+  `cryptography`, `pyyaml`).
+- `ruff` + `mypy --strict` + `pytest` run in pre-commit. mypy
+  must be clean before merge.
+- `detect-secrets` (or `gitleaks`) hook scans every commit;
+  baseline file checked in; adding to baseline requires a comment.
+- Shell scripts pass `shellcheck -e SC1091 --severity=warning`.
+  `set -euo pipefail` at the top of every script.
+
+**Scripts:**
+
+- Never `curl | bash`. Never `sudo` inside the CLI unless the
+  action genuinely requires root, and then document why in the
+  script header.
+- All scripts that take sensitive input read from env vars, files,
+  or stdin — never argv. `sudo` prompts read from `/dev/tty`
+  directly; that's fine, the script just exec's `sudo`.
+- No script writes to `/etc`, `/usr`, or anywhere outside `$HOME`
+  or an explicit `--output-dir` the operator passes. State goes
+  under `~/.local/state/<app>/`, config under `~/.config/<app>/`,
+  cache under `~/.cache/<app>/` (XDG).
+
+**Container / CI execution:**
+
+- The CLI is operator-only — never runs unattended in CI. If CI
+  needs to call the vendor API, give CI its own scoped read-only
+  token in a secret store (GitHub Actions secrets, Vault, etc.),
+  never the operator's token.
+- If you containerise it, the image MUST NOT bake in `.env` or
+  any token. Token is mounted at runtime via `--env-file` from a
+  path outside the image.
+
+**Incident hygiene:**
+
+- Document the token-rotation procedure in `SECURITY.md`: where to
+  rotate, who to notify, how to revoke the old one.
+- Document what to do if a `.env` is accidentally committed:
+  REVOKE THE TOKEN FIRST (within minutes), then rewrite history.
+  Order matters — revoke before push-force. Use
+  `--force-with-lease`, not `--force`.
+
 </security_protocol>
 
 ---
