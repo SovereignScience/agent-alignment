@@ -1,0 +1,15 @@
+{
+  "name": "lattice-review-links",
+  "displayName": "Lattice review links",
+  "description": "Opens a commit range from a vscode:// link in the multi-diff editor. Used by the Lattice review launcher.",
+  "version": "0.1.0",
+  "publisher": "agent-alignment",
+  "license": "MIT",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onUri"],
+  "main": "./extension.js",
+  "extensionKind": ["workspace"],
+  "extensionDependencies": ["vscode.git"],
+  "contributes": {}
+}
