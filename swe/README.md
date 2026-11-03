@@ -108,6 +108,15 @@ copies, not symlinks — the target repo evolves them independently.
 
 ---
 
+## Task board and review flow
+
+[LATTICE_ONBOARDING.md](LATTICE_ONBOARDING.md) is an optional owner-run
+setup for projects where the user wants a Lattice board and review flow.
+[tools/lattice-review/](tools/lattice-review/) holds the review launcher
+and the VS Code extension its links open.
+
+---
+
 ## Build, verify
 
 | Goal | Command |
