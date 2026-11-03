@@ -15,7 +15,10 @@ plans opened from the dashboard open in VS Code.
 (it re-executes itself with the Python the `lattice` command uses) and
 adds the review routes on top, so there is one port and one process.
 Writes made through the dashboard carry the actor given with `--actor`
-instead of `dashboard:web`.
+instead of `dashboard:web`. The page it serves also opens the task side
+panel at 60% of the window on an opaque background; drag the panel's
+left edge to resize it (the width is remembered in the browser) and
+double-click the edge to reset it.
 
 Everything stays on the machine. The server binds to 127.0.0.1 only,
 answers only requests whose Host and Origin name this machine, and
