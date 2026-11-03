@@ -13,8 +13,9 @@ effect of another task. Words in angle brackets are placeholders.
 - The Lattice dashboard run by the review server
   ([tools/lattice-review/](tools/lattice-review/)), one page where each
   task's detail view carries a review section: the task's commits, with
-  buttons that open them in Plannotator or file by file in VS Code, and
-  done gated on an approval of exactly those commits.
+  buttons that open them in Plannotator or file by file in VS Code, one
+  thread per review note with Reply and Resolve, and done gated on an
+  approval of exactly those commits with every thread resolved.
 - Reviews recorded on the task as comments, the owner moving tasks to
   done, and the owner pushing.
 
@@ -52,6 +53,26 @@ machine from a review:
 export PLANNOTATOR_AI=disabled
 export PLANNOTATOR_SHARE=disabled
 ```
+
+Plannotator ends every review that has notes with its own instruction to
+the agent, which asks for a verdict on each note. Replace it so agents
+answer in the threads instead: add this `prompts` key to
+`~/.plannotator/config.json`, next to any keys already there. The leading
+blank lines keep it out of the last note's thread.
+
+```
+"prompts": {
+  "review": {
+    "denied": "\n\n\n\nEach note above is its own thread on the task. Answer each one in its thread, in the reply shape in .lattice/context.md, before changing any code."
+  }
+}
+```
+
+Skip Plannotator's VS Code extension: it does not take over reviews
+started from the Claude Code VS Code extension (backnotprop/plannotator
+issue 496), and the review server already opens Plannotator in the
+browser. With the plugin installed, plan mode opens Claude's plans in
+Plannotator too; the task's Lattice plan file stays the plan of record.
 
 The dashboard patch, applied once to the Lattice checkout the `lattice`
 command runs from, so the dashboard renders the review section when it
@@ -123,18 +144,61 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - Every write passes --actor agent:<tool> and runs with
   LATTICE_NO_UPDATE_CHECK=1. Sessions use lattice show to resume the task
   they were given; agents never use lattice next or lattice complete.
+- Plan before code. For a task that changes behaviour, the session writes
+  the plan to the file `lattice plan <ID>` names, sets
+  `needs-human <ID> "Need: approve plan"` and stops. The owner annotates it
+  with `plannotator annotate <plan file>` and clears the flag to approve.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
   review section can find them. Branch work is linked with lattice
-  branch-link.
+  branch-link. The integration branch is <branch>.
 - The task record holds the request, scope, acceptance criteria, owner,
   revision, coverage boundary, evidence and remaining work. Never secrets.
+- Findings, decisions and evidence go on the task they belong to, as
+  comments or `lattice attach` artifacts, never in separate report files.
+  Attach only sanitized references: no client documents, personal data,
+  credentials, transcripts or raw request and response bodies.
 - Review flow: the owner opens the board at http://127.0.0.1:<port>
   (the review server, which is the dashboard plus a review section on
   every task). There the owner opens the task's commits in Plannotator
   or file by file in VS Code; the review lands on the task as a comment
-  bound to the reviewed commits. A task with commits can be marked done
-  only while its latest review approves exactly those commits. Done is
+  bound to the reviewed commits. Each note in it becomes its own thread:
+  a top-level comment that starts with `Thread:`, names the file, line
+  and commit, and quotes the line. The owner continues a thread with
+  Reply in the review section; a later note on the same lines while the
+  thread is open lands in that thread. Only the owner resolves a thread.
+  A task with commits can be marked done only while its latest review
+  approves exactly those commits and every thread is resolved. Done is
   not deployed.
+- Answering a review: read `lattice comments <ID> --json`, then reply
+  once in every thread that waits on you, with
+  `lattice comment <ID> --reply-to <thread id> --file <reply.md>`, in
+  this shape (leave out Why and Question when there is nothing to say):
+
+      Status: answered | change proposed | changed in <sha> | declined
+      Answer: <the answer to what was asked, in one or two plain sentences;
+        yes or no first when the note asks yes or no>
+      Why: <what the reader needs to follow the answer: what the line does,
+        what was wrong before, what breaks without it>
+      Evidence: <file:line, commit, command and its result; say what was
+        not checked>
+      Change: <none | proposed, not made: <what and where> | made in <sha>:
+        <what changed>>
+      Question: <one decision needed from the owner>
+
+- Reply rules: answer the note as written; a question gets an answer, not
+  a code change. Change code only where a note asks for a change or the
+  owner agreed to a proposed one, and touch only what the note is about.
+  Check the code before agreeing or disagreeing; disagree with reasons.
+  When the answer is something a future reader needs, propose putting it
+  in the code, doc or commit message. One reply per thread per round,
+  about 120 words, no praise, no restating the diff, no verdict labels in
+  place of an answer. A message from the owner that accepts the answer
+  and asks nothing gets no reply; it waits for the owner's Resolve. Never
+  resolve a thread or edit the owner's words.
+  A finding outside the note goes in the round summary, not the thread.
+- After answering: one top-level round summary listing each thread
+  answered (place, Status, one line), the checks run and what remains;
+  then move the task to in_review.
 - The board is not committed until asked.
 ```
 
@@ -174,16 +238,20 @@ task records remain private unless the owner asks to share them.
 ### 5. Working a task
 
 1. `lattice show <ID>` to resume, then `lattice comments <ID> --json` for
-   the full review thread (`show` cuts comment bodies short). Before any
-   change, reply under the review (`lattice comment <ID> --reply-to
-   <comment id>`) naming each requested change and whether it will be
-   made. `lattice status <ID> in_progress --no-auto-review`.
+   the full review threads (`show` cuts comment bodies short). Before any
+   change, reply in every thread that waits on the agent, in the shape
+   and under the rules in `context.md`. A thread is a top-level comment
+   that starts with `Thread:`; an older annotated review with no
+   `Thread:` comments is one thread itself. `lattice status <ID>
+   in_progress --no-auto-review`.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
-3. Branch work: `lattice branch-link <ID> <branch>`.
-4. Before handing over: a comment with the checks run, their results,
-   what was mocked, what never ran, which requested changes were made
-   and which were not, and what remains for the owner.
+3. Branch work: `lattice branch-link <ID> <branch>`. Lattice finds the
+   board by walking up from the working directory, so a session in a
+   separate worktree sets `LATTICE_ROOT=<board directory>`.
+4. Before handing over: the round summary, a top-level comment with each
+   thread answered and its Status, the checks run, their results, what
+   was mocked, what never ran, and what remains for the owner.
    `lattice attach <ID> <file or URL> --title "<what it is>"` for
    evidence files.
 5. `lattice status <ID> in_review --no-auto-review`. Stop there.
@@ -194,10 +262,12 @@ From a VS Code integrated terminal in the project (so files open in
 that window):
 
 ```
-python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name>
+python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name> --main <integration branch>
 ```
 
-Open http://127.0.0.1:<port> and click a task. Its detail view has a
+`--main` defaults to `main`; a task's branch is diffed from its
+merge-base with it. Restart the server after updating this tool. Open
+http://127.0.0.1:<port> and click a task. Its detail view has a
 Review section that says where the task's work is (branch, trailer
 commits, or nothing yet) and offers: Plannotator on the whole range,
 Plannotator per commit, and for every file of the range `open` in VS
@@ -205,22 +275,31 @@ Code or `diff` in VS Code's two-file view. Plannotator opens as a new
 tab of the same browser; annotations stay there until Send Feedback
 (changes requested) or Approve, and only then do they land on the task
 as a comment with role `review`, visible to every browser and every
-agent. One session per task at a time: the button returns to the open
-one, and "Close session" ends one that was abandoned. When
-the range ends at the checked-out HEAD and the tree has uncommitted
-changes, a second button reviews the live tree, for feedback only.
-Status, comments, notes and plans are the dashboard's own controls on
-the same page; writes made there carry the owner's actor. The review is
-bound to the commit IDs it covered: "Mark done" appears only while the
-latest review is an approval of the task's current commits, the
-dashboard's status control refuses `done` under the same rule, and the
-section says why otherwise. Then push.
+agent. Plannotator then shows a page saying the feedback went back to
+the agent: close that tab and return to the board. Each note lands as
+its own thread in the Review section, with the quoted line, every reply
+in order, a Reply box, Reply and resolve, and Resolve. While a thread
+is open, a second note on the same lines adds to it instead of starting
+another. A line at the top of the section says what to do next. One
+session per task at a time: the button returns to the open one, and
+"Close session" ends one that was abandoned. When the range ends at
+the checked-out HEAD and the tree has uncommitted changes, a second
+button reviews the live tree, for feedback only. Status, comments,
+notes and plans are the dashboard's own controls on the same page;
+writes made there carry the owner's actor. The review is bound to the
+commit IDs it covered: "Mark done" appears only while the latest review
+is an approval of the task's current commits and every thread is
+resolved, the dashboard's status control refuses `done` under the same
+rule, and the section says why otherwise. Mark done before merging a
+linked branch into the integration branch: after the merge the branch's
+range is empty and the review no longer matches it. Then merge locally;
+pushing can wait for a checkpoint, since every commit was reviewed.
 
-Feedback that needs more work: set the task back to `in_progress` and
-give the agent the task ID. Lattice has no notifications; the side
+Feedback that needs more work: "Move to in progress" in the section,
+then give the agent the task ID. Lattice has no notifications; the side
 panel refreshes when the task record changes, the full task page does
 so when it was reached from the board or list, and the Refresh button
-in the top bar forces it. The thread is read there.
+in the top bar forces it.
 
 ### 7. Reporting
 
@@ -232,15 +311,16 @@ the browser flow are unverified until the owner has used them once).
 ## Day to day
 
 The owner: start the review server, read the in-review tasks, review,
-comment or complete, push and deploy, answer the
+reply in or resolve threads, complete, push and deploy, answer the
 `needs_human` questions by clearing the flag with a note
 (`lattice needs-human <ID> --clear --note "<decision>" --actor human:<name>`).
 
-The agent: take only the task it was given, keep the task record current
+The agent: take only the task it was given, answer every open thread in
+the reply shape before changing code, keep the task record current
 (evidence, coverage boundary, remaining work), commit with the trailer,
-leave the task in review, never complete or push. A new finding becomes
-a comment on the task it belongs to, or a question to the owner, never a
-new task without being asked.
+leave the task in review, never resolve a thread, complete or push. A
+new finding becomes a comment on the task it belongs to, or a question
+to the owner, never a new task without being asked.
 
 ## Keeping this file current
 

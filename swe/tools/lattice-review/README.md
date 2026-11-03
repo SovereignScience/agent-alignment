@@ -4,11 +4,12 @@ One local page: the Lattice dashboard with a review section inside every
 task. The section shows the commits that belong to the task and opens
 them in Plannotator, or file by file in VS Code. Plannotator's decision
 (approved, or annotated with the review text) is recorded on the task as
-a comment with role `review`, bound to the commit IDs it covered. A task
-with commits can be marked done, from the section or with the
+a comment with role `review`, bound to the commit IDs it covered, and
+each of its notes becomes a thread with replies and a resolved state. A
+task with commits can be marked done, from the section or with the
 dashboard's own status control, only while its latest review approves
-exactly the commits it has now. Notes and plans opened from the
-dashboard open in VS Code.
+exactly the commits it has now and every thread is resolved. Notes and
+plans opened from the dashboard open in VS Code.
 
 `lattice_review.py` runs Lattice's own dashboard handler in its process
 (it re-executes itself with the Python the `lattice` command uses) and
@@ -52,13 +53,54 @@ open session, and "Close session" ends an abandoned one (closing its
 tab does not; the process waits for a decision until then). Sessions
 end with the server.
 
+## Review threads
+
+Plannotator returns a review as one message: a `## <file>` heading per
+file and a `### Line N (new)`, `### Lines N-M (old)` or `### File
+Comment` heading per note, followed after three or more blank lines by
+its instruction to the agent. When a review is recorded, each note
+becomes a thread: a top-level comment by the owner's actor (Lattice
+nests one level, so replies hang off top-level comments only) in this
+shape:
+
+```
+Thread: README.md, line 239 (new) at 4c43cb015c54
+From review ev_...
+> the reviewed line, at most five lines, read from the reviewed commit
+the note
+```
+
+A note whose file and quoted lines match a thread that is still open,
+or whose file and place match when there is no quote, goes into that
+thread as a reply starting `Follow-up from review <id>`, so one line
+keeps one history even when its line number moves. An annotated review
+recorded before notes were split is one thread of its own.
+
+The section lists every thread with the quoted line and its messages in
+order, a Reply box (posted as the owner's actor), Reply and resolve for
+a last word that also closes the thread, and Resolve or Reopen, which
+add or remove a `resolved` reaction on the thread. Only a
+reaction from a `human:` actor counts. A thread waits on the agent when
+the owner spoke last and waits on the owner when an agent did; an agent
+reply's `Status:` line is shown next to it. A line at the top of the
+section says what the owner does next, including the closing page
+Plannotator shows after Send Feedback, and offers "Move to in progress"
+when threads wait on the agent. Once the latest review approves the
+current commits, it asks for the open threads to be resolved instead. Agents reply with `lattice comment <ID>
+--reply-to <thread id>` in the shape given in the board's `context.md`.
+
+To keep Plannotator's own instruction out of the agent's way, set
+`prompts.review.denied` in `~/.plannotator/config.json` (see
+`LATTICE_ONBOARDING.md`). The split does not depend on it.
+
 ## What completes a task
 
 The latest comment with role `review` that carries a `Reviewed:` line
-decides. "Mark done" appears only when that review is an approval and
-its commit IDs are the task's current work; a later annotated review, a
-moved branch, a new trailer commit or a live-tree review all withdraw it,
-and the section says why. The dashboard's status control is held to the
+decides. "Mark done" appears only when that review is an approval, its
+commit IDs are the task's current work and every review thread is
+resolved; a later annotated review, a moved branch, a new trailer
+commit, a live-tree review or an open thread all withdraw it, and the
+section says why. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
 spikes) are not gated. Completion is `lattice status <ID> done` with the
 review already on the task (`lattice complete` only works with a status
@@ -125,7 +167,10 @@ notes and plans handlers), written against Lattice 0.2.
 | `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` for the live tree; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
-| `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work |
+| `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work and no thread is open |
+| `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction |
+| `POST /review/t/<ID>/resolve`, `/reopen` | `lattice react` or `unreact` with `resolved` on a thread |
+| `POST /review/t/<ID>/rework` | `lattice status <ID> in_progress --no-auto-review` |
 | `POST /api/tasks/<id>/status` | the dashboard's status change; `done` is refused with `REVIEW_REQUIRED` under the same rule |
 | `POST /api/tasks/<id>/open-notes`, `/open-plans` | Lattice's notes and plans, opened with `code` instead of xdg-open |
 | `/t/<ID>` | redirects to the task in the dashboard (older links) |

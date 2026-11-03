@@ -6,10 +6,12 @@ this process) plus, inside each task's detail view, the commits that
 belong to the task: a linked branch or the commits whose message carries
 a "Task: <ID>" trailer. Buttons open them in Plannotator, or file by
 file in VS Code. Plannotator's decision lands on the task as a comment
-bound to the reviewed commits. A task with work can be marked done, here
-or with the dashboard's own status control, only while its latest review
-approves exactly the commits it has now. Notes and plans opened from the
-dashboard open in VS Code.
+bound to the reviewed commits, and each of its line notes becomes a
+thread of its own, with replies and a resolved state. A task with
+work can be marked done, here or with the dashboard's own status control,
+only while its latest review approves exactly the commits it has now and
+every thread is resolved. Notes and plans opened from the dashboard open
+in VS Code.
 """
 
 from __future__ import annotations
@@ -36,6 +38,12 @@ from pathlib import Path
 REVIEW_PATH = "/review"
 WORKTREE = "WORKTREE"
 REVIEWED = "Reviewed: "
+THREAD = "Thread: "
+REVIEW_OF = "From review "
+FOLLOW_UP = "Follow-up from review "
+LINES = re.compile(r"^lines? (\d+)(?:-(\d+))? \((new|old)\)$")
+ANCHOR = re.compile(r"^(.*), (lines? \d+(?:-\d+)? \((?:new|old)\)|whole file) at [0-9a-f]+$")
+RESOLVED = "resolved"
 REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
 DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -196,6 +204,130 @@ def review_decision(text):
     return match.group(1) if match else None
 
 
+def review_notes(message):
+    """The notes in a Plannotator review message, as (path, where, text).
+
+    The message has a "## <file>" heading per file and a "### Line N (new)",
+    "### Lines N-M (old)" or "### File Comment" heading per note. Plannotator
+    appends its own instructions after three or more blank lines; they belong
+    to no note. where is "line 239 (new)", "lines 3-5 (old)", "whole file", or
+    empty for text directly under a "##" heading."""
+    notes, path, where, anchor, text, blanks = [], None, "", None, [], 0
+
+    def flush():
+        note = "\n".join(text).strip()
+        if anchor and note:
+            notes.append((path, where, note))
+
+    for line in message.splitlines():
+        if not line.strip():
+            blanks += 1
+            if anchor and blanks >= 3:
+                break
+            text.append(line)
+            continue
+        blanks = 0
+        if line.startswith("## "):
+            flush()
+            path = anchor = line[3:].strip()
+            where, text = "", []
+        elif line.startswith("### ") and path:
+            flush()
+            heading = line[4:].strip()
+            where = "whole file" if heading.lower() == "file comment" else heading[:1].lower() + heading[1:]
+            anchor, text = path + ", " + where, []
+        elif anchor:
+            text.append(line)
+    flush()
+    return notes
+
+
+def note_anchor(path, where):
+    return path + ", " + where if where else path
+
+
+def quoted_lines(text, where):
+    """The reviewed lines of a file's text as "> " quotes, at most five."""
+    match = LINES.match(where)
+    if not match or text is None:
+        return []
+    start, end = int(match.group(1)), int(match.group(2) or match.group(1))
+    return ["> " + line for line in text.splitlines()[start - 1:min(end, start + 4)]]
+
+
+def thread_key(path, where, quote):
+    """What a later note must share to continue a thread: the file and the
+    quoted lines, which survive the lines moving; without a quote, the place."""
+    return (path, "\n".join(quote)) if quote else (path, where)
+
+
+def thread_messages(root):
+    """A thread's messages, oldest first: the note and every reply under it."""
+    out = []
+
+    def walk(comment):
+        if not comment.get("deleted"):
+            out.append(comment)
+        for reply in comment.get("replies") or []:
+            walk(reply)
+    walk(root)
+    return sorted(out, key=lambda c: c.get("created_at") or "")
+
+
+def review_threads(comments):
+    """Every review thread on a task, oldest first.
+
+    A thread is a top-level comment that starts with the Thread line, opened
+    by one note of a review; later notes on the same lines arrive as
+    follow-up replies in it. An annotated review whose notes were never split
+    is one thread of its own. state is resolved (the owner reacted with
+    "resolved"), waiting on you (the agent spoke last) or waiting on the agent;
+    status is what the agent's last reply declared on its Status line."""
+    live = sorted((c for c in comments if not c.get("deleted")), key=lambda c: c.get("created_at") or "")
+    split, items = set(), []
+    for c in live:
+        for reply in c.get("replies") or []:
+            if (reply.get("body") or "").startswith(FOLLOW_UP):
+                split.add(reply["body"][len(FOLLOW_UP):].split(",", 1)[0].strip())
+        body = c.get("body") or ""
+        if not body.startswith(THREAD):
+            continue
+        first, _, rest = body.partition("\n")
+        second, _, note = rest.partition("\n")
+        if second.startswith(REVIEW_OF):
+            split.add(second[len(REVIEW_OF):].strip())
+        else:
+            note = rest
+        anchor = first[len(THREAD):].strip()
+        match = ANCHOR.match(anchor)
+        path, where = (match.group(1), match.group(2)) if match else (anchor.rsplit(" at ", 1)[0], "")
+        quote = []
+        for line in note.splitlines():
+            if not line.startswith("> "):
+                break
+            quote.append(line)
+        items.append((c, anchor, note.strip(), thread_key(path, where, quote)))
+    for c in live:
+        if c.get("role") == "review" and c.get("id") not in split and review_decision(c.get("body") or "") == "annotated":
+            notes = review_notes(c.get("body") or "")
+            if len(notes) == 1:
+                path, where, note = notes[0]
+                items.append((c, note_anchor(path, where), note, thread_key(path, where, [])))
+            else:
+                items.append((c, "; ".join(note_anchor(p, w) for p, w, _ in notes) or "whole review",
+                              "\n\n".join("%s: %s" % (note_anchor(p, w), t) for p, w, t in notes), None))
+    threads = []
+    for root, anchor, note, key in sorted(items, key=lambda item: item[0].get("created_at") or ""):
+        messages = thread_messages(root)
+        resolved = any(a.startswith("human:") for a in (root.get("reactions") or {}).get(RESOLVED, []))
+        last = (messages[-1].get("author") or "") if messages else ""
+        status = next((line[len("Status:"):].strip() for m in reversed(messages) if (m.get("author") or "").startswith("agent:")
+                       for line in (m.get("body") or "").splitlines() if line.startswith("Status:")), None)
+        state = "resolved" if resolved else "waiting on you" if last.startswith("agent:") else "waiting on the agent"
+        threads.append({"root": root, "anchor": anchor, "note": note, "key": key, "messages": messages, "state": state, "status": status})
+    return threads
+
+
 def latest_review(comments):
     """The newest top-level comment with role review that names a revision, or
     None. Deleted reviews count: a deleted one withdraws what came before it.
@@ -223,7 +355,8 @@ def stale_reason(repo, task, main, text):
 
 def completion_block(repo, task, main, comments):
     """Why the task may not be completed now, or None: its latest bound review
-    must approve exactly the commits it has now."""
+    must approve exactly the commits it has now, and every review thread must
+    be resolved."""
     review = latest_review(comments)
     if not review:
         return "no Plannotator review is recorded for this task"
@@ -231,6 +364,9 @@ def completion_block(repo, task, main, comments):
         return "the latest review was deleted; review again"
     if review_decision(review.get("body") or "") != "approved":
         return "the latest review requested changes; approve the current revision first"
+    unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
+    if unresolved:
+        return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
     return stale_reason(repo, task, main, review["body"])
 
 
@@ -366,6 +502,15 @@ class Context:
             err.close()
             return job
 
+        def source(side, path):
+            """A file's text on the reviewed old or new side, or None."""
+            if side == "old":
+                return run_git(self.repo, "show", "%s:%s" % (base_sha, path), check=False) if base_sha else None
+            if live:
+                full = self.repo_path(path)
+                return full.read_text(errors="replace") if full.is_file() else None
+            return run_git(self.repo, "show", "%s:%s" % (head_sha, path), check=False)
+
         def finish():
             job.rc = job.proc.wait()
             out.close()
@@ -384,10 +529,11 @@ class Context:
                 body = "Plannotator %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, REVIEWED, revision, message)
                 job.out_path.write_text(body)
                 rc, msg = self.lattice_cmd("comment", record_on, "--file", str(job.out_path), "--role", "review")
-                if rc == 0:
-                    job.result_path = job.out_path
-                else:
+                if rc != 0:
                     job.error = "the review was not recorded on the task: " + msg
+                    return
+                job.result_path = job.out_path
+                self.record_threads(record_on, body, review_notes(message), source, head_sha, job)
 
         def wait():
             try:
@@ -399,6 +545,56 @@ class Context:
 
         threading.Thread(target=wait, daemon=True).start()
         return job
+
+    def record_threads(self, sid, body, notes, source, sha, job):
+        """Each note of a recorded review becomes a thread: a top-level comment
+        (Lattice nests one level only) naming the place, the review and the
+        quoted lines. A note on lines that already have an open thread (same
+        file and quoted lines, or same file and place for a thread without a
+        quote) is a follow-up reply in that thread, so a line keeps one
+        history."""
+        if not notes:
+            return
+        comments = self.comments(sid)
+        review = next((c for c in reversed(comments) if c.get("role") == "review"
+                       and (c.get("body") or "").strip() == body.strip()), None)
+        if not review:
+            job.error = "the review was recorded but its notes could not be split into threads"
+            return
+        open_threads = {t["key"]: t for t in review_threads(comments)
+                        if t["state"] != "resolved" and t["key"] and t["root"].get("id") != review["id"]}
+        for i, (path, where, text) in enumerate(notes, 1):
+            side = LINES.match(where)
+            quote = quoted_lines(source(side.group(3), path), where) if side else []
+            anchor = note_anchor(path, where)
+            existing = open_threads.get(thread_key(path, where, quote)) or open_threads.get((path, where))
+            if existing:
+                content = "%s%s, %s at %s:\n%s\n" % (FOLLOW_UP, review["id"], anchor, sha[:12], text)
+                args = ("comment", sid, "--reply-to", existing["root"]["id"])
+            else:
+                content = "%s%s at %s\n%s%s\n%s%s\n" % (THREAD, anchor, sha[:12], REVIEW_OF, review["id"],
+                                                         "".join(q + "\n" for q in quote), text)
+                args = ("comment", sid)
+            note = job.out_path.with_name(job.out_path.stem + ".note%d.md" % i)
+            note.write_text(content)
+            rc, msg = self.lattice_cmd(*args, "--file", str(note))
+            note.unlink(missing_ok=True)
+            if rc != 0:
+                job.error = "note %d of the review was not recorded as a thread: %s" % (i, msg)
+                return
+
+    def post_reply(self, sid, parent, text):
+        """The owner's reply in one thread, from the review section."""
+        if not text.strip():
+            raise RuntimeError("the reply is empty")
+        (self.state / "tmp").mkdir(exist_ok=True)
+        path = self.state / "tmp" / ("reply-%s.md" % secrets.token_hex(6))
+        path.write_text(text.strip() + "\n")
+        try:
+            if self.board_write(sid, "comment", sid, "--reply-to", parent, "--file", str(path)):
+                self.notices[sid] = ("ok", "reply posted")
+        finally:
+            path.unlink(missing_ok=True)
 
     def close_session(self, key):
         """End an abandoned Plannotator session; nothing is recorded."""
@@ -454,6 +650,10 @@ pre{white-space:pre-wrap;font:.8rem/1.4 var(--font-mono,monospace);margin:.3rem 
 form{display:inline}button{padding:.125rem .5rem;margin:.1rem .2rem .1rem 0;border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);background:var(--surface,#2a2f37);color:var(--text-primary,#e4e7eb);font-size:.8rem;cursor:pointer}
 button:hover{background:var(--surface-hover,#3a4250)}button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}
 p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-warning,#f6c343)}.err{color:var(--color-danger,#ff7b72)}.ok{color:var(--color-success,#7ee787)}
+.next{padding:.4rem;border:1px solid var(--accent-primary,#2b6cb0);border-radius:var(--radius-sm,4px)}
+.thread{margin:.5rem 0;padding:.2rem 0 .2rem .6rem;border-left:3px solid var(--color-warning,#f6c343)}.thread.resolved{border-left-color:var(--color-success,#7ee787)}
+.msg{margin:.25rem 0}.msg .text{white-space:pre-wrap}form.reply{display:flex;gap:.3rem;align-items:flex-end;margin:.3rem 0}
+textarea{flex:1;min-height:2.6rem;font:inherit;color:inherit;background:var(--surface,#2a2f37);border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);padding:.25rem}
 """
 
 INHERIT = """<script>try{var s=getComputedStyle(parent.document.documentElement);
@@ -480,6 +680,68 @@ def button(ctx, action, label, fields=None, primary=False, tab=False):
     target = " target='_blank' onsubmit=\"setTimeout(function(){location.reload()},1500)\"" if tab else ""
     return ("<form method='post' action='%s'%s><input type='hidden' name='token' value='%s'>%s<button%s>%s</button></form>"
             % (e(action), target, ctx.token, hidden, cls, e(label)))
+
+
+def reply_form(ctx, action, parent):
+    return ("<form method='post' action='%s' class='reply'><input type='hidden' name='token' value='%s'>"
+            "<input type='hidden' name='parent' value='%s'><textarea name='body' placeholder='Reply in this thread'></textarea>"
+            "<button>Reply</button><button name='resolve' value='1'>Reply and resolve</button></form>" % (e(action), ctx.token, e(parent)))
+
+
+def render_threads(ctx, sid, threads):
+    """Each review thread with its whole history, a reply box and Resolve."""
+    act = REVIEW_PATH + "/t/" + sid + "/"
+    unresolved = sum(1 for t in threads if t["state"] != "resolved")
+    out = ["<p><b>Review threads</b> <span class='muted'>%d open of %d. Continue a thread here; a new Plannotator note starts a new one.</span></p>"
+           % (unresolved, len(threads))]
+    for t in threads:
+        resolved = t["state"] == "resolved"
+        status = " <span class='muted'>agent: %s</span>" % e(t["status"]) if t["status"] and not resolved else ""
+        out.append("<div class='thread%s'><p><b>%s</b> <span class='%s'>%s</span>%s</p>"
+                   % (" resolved" if resolved else "", e(t["anchor"]), "ok" if resolved else "warn", e(t["state"]), status))
+        for m in t["messages"]:
+            text = t["note"] if m is t["root"] else m.get("body") or ""
+            out.append("<div class='msg'><span class='muted'>%s, %s%s</span><div class='text'>%s</div></div>"
+                       % (e(m.get("author")), e(m.get("created_at")), ", edited" if m.get("edited") else "", e(text)))
+        if resolved:
+            out.append(button(ctx, act + "reopen", "Reopen", {"comment": t["root"]["id"]}))
+        else:
+            out.append(reply_form(ctx, act + "reply", t["root"]["id"]))
+            out.append(button(ctx, act + "resolve", "Resolve", {"comment": t["root"]["id"]}))
+        out.append("</div>")
+    return "".join(out)
+
+
+def next_step(ctx, task, rng, review, threads, running, block):
+    """One line that says what the owner does now."""
+    sid, status = task["short_id"], task.get("status")
+    act = REVIEW_PATH + "/t/" + sid + "/"
+    on_agent = sum(1 for t in threads if t["state"] == "waiting on the agent")
+    on_you = sum(1 for t in threads if t["state"] == "waiting on you")
+    if running:
+        text = ("Write your notes in the Plannotator tab, then Send Feedback or Approve. Plannotator then says the feedback "
+                "went back to the agent: close that tab and come back here. Each note becomes a thread below.")
+    elif status in ("done", "cancelled") or rng["mode"] == "none":
+        return ""
+    elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"]) \
+            and on_agent + on_you:
+        text = ("Approved at %s. %d thread(s) still open: Resolve each one you are done with, or Reply and resolve to add a "
+                "last word. If one needs more work, reply in it and move the task back to in progress." % (rng["head_sha"][:12], on_agent + on_you))
+    elif on_agent:
+        text = ("%d thread(s) wait on the agent. Nothing notifies it: send the agent session the task ID %s. "
+                "It answers each thread here before changing code, then returns the task to review." % (on_agent, sid))
+        if status != "in_progress" and "in_progress" in ctx.config.get("workflow", {}).get("transitions", {}).get(status, []):
+            text = "Next: move the task back to in progress and send the agent session the task ID %s. " % sid + text
+            return "<p class='next'>%s %s</p>" % (e(text), button(ctx, act + "rework", "Move to in progress", primary=True))
+    elif on_you:
+        text = "%d thread(s) have an answer from the agent. Reply in the thread, or Resolve it when you are satisfied." % on_you
+    elif not review:
+        text = "Open Plannotator on the range below. Each note you send becomes its own thread on this task."
+    elif block is None:
+        text = "Approved and every thread resolved: Mark done below, then merge and push."
+    else:
+        text = "Not ready to complete: %s." % block
+    return "<p class='next'>%s</p>" % e(text)
 
 
 def tool_notes(ctx):
@@ -568,13 +830,17 @@ def render_review(ctx, task):
             body.append("<p class='muted'>Plannotator closed without a review.</p>")
     comments = ctx.comments(sid)
     review = latest_review(comments)
+    threads = review_threads(comments)
+    block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
+    body.insert(2, next_step(ctx, task, rng, review, threads, running, block))
     if review:
         text = review.get("body") or ""
         label = {"approved": "approved", "annotated": "changes requested"}.get(review_decision(text), "review")
-        body.append("<p>Latest review: <b>%s</b> <span class='muted'>%s %s</span></p><pre>%s</pre>" % (
+        body.append("<p>Latest review: <b>%s</b> <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
             e(label), e(review.get("author")), e(review.get("created_at")), e(text)))
+    if threads:
+        body.append(render_threads(ctx, sid, threads))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
-        block = completion_block(ctx.repo, task, ctx.main, comments)
         if block:
             body.append("<p class='muted'>Completion: %s.</p>" % e(block))
         else:
@@ -713,6 +979,15 @@ def make_handler(ctx, base=None, static_dir=None):
                         ctx.notices[sid] = ("err", "not completed: " + block)
                     else:
                         ctx.board_write(sid, "status", sid, "done", "--no-auto-review")
+                elif action == "reply":
+                    if form.get("body", "").strip() or form.get("resolve") != "1":
+                        ctx.post_reply(sid, form["parent"], form.get("body", ""))
+                    if form.get("resolve") == "1":
+                        ctx.board_write(sid, "react", sid, form["parent"], RESOLVED)
+                elif action in ("resolve", "reopen"):
+                    ctx.board_write(sid, "react" if action == "resolve" else "unreact", sid, form["comment"], RESOLVED)
+                elif action == "rework":
+                    ctx.board_write(sid, "status", sid, "in_progress", "--no-auto-review")
             except (RuntimeError, OSError, KeyError) as exc:
                 ctx.notices[sid] = ("err", str(exc))
             self.redirect(REVIEW_PATH + "/t/" + sid)
