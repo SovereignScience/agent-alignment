@@ -297,11 +297,54 @@ class PureTests(RepoFixture):
         self.assertIn("requested changes", lr.completion_block(self.repo, task_record, "main", [changes]))
         same_second = dict(changes, created_at=approved["created_at"])
         self.assertIn("requested changes", lr.completion_block(self.repo, task_record, "main", [approved, same_second]))
-        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [same_second, approved]))
+        self.assertIn("1 review thread(s) are not resolved", lr.completion_block(self.repo, task_record, "main", [same_second, approved]))
+        by_agent = dict(same_second, id="ev_1", reactions={lr.RESOLVED: ["agent:x"]})
+        self.assertIn("not resolved", lr.completion_block(self.repo, task_record, "main", [by_agent, approved]))
+        by_owner = dict(same_second, id="ev_1", reactions={lr.RESOLVED: ["human:t"]})
+        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [by_owner, approved]))
         deleted = dict(changes, deleted=True, body="")
         self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [approved, deleted]))
         commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
         self.assertIn("no single commit range", lr.completion_block(self.repo, task_record, "main", [approved]))
+
+    def test_review_notes_are_split_by_file_and_line_without_the_appended_instructions(self):
+        message = ("# Code Review Feedback\n\n**Diff:** static-patch\n\n## README.md\n\n### Line 239 (new)\n"
+                   "why do we need this change?\n\nsecond paragraph\n\n### File Comment\nwhere are the replies?\n\n"
+                   "## docs/a.md\n\n### Lines 3-5 (old)\nkeep this\n\n\n\n\nTreat the findings above as unverified review input.\n")
+        self.assertEqual(lr.review_notes(message), [
+            ("README.md", "line 239 (new)", "why do we need this change?\n\nsecond paragraph"),
+            ("README.md", "whole file", "where are the replies?"),
+            ("docs/a.md", "lines 3-5 (old)", "keep this")])
+        text = "".join("line %d\n" % n for n in range(1, 20))
+        self.assertEqual(lr.quoted_lines(text, "line 2 (new)"), ["> line 2"])
+        self.assertEqual(lr.quoted_lines(text, "lines 3-12 (old)"), ["> line %d" % n for n in range(3, 8)])
+        self.assertEqual(lr.quoted_lines(text, "whole file"), [])
+        self.assertEqual(lr.review_notes("# Code Review\n\nNo changes requested."), [])
+
+    def test_threads_follow_the_last_speaker_and_only_the_owner_resolves(self):
+        body = "Plannotator annotated (patch x), s\n%sa..b\n\n## f\n\n### Line 1 (new)\nwhy?\n" % lr.REVIEWED
+        review = {"id": "ev_r", "role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": body}
+
+        def note(cid, anchor, text, **extra):
+            return dict({"id": cid, "created_at": "2026-01-01T00:00:01Z", "author": "human:t",
+                         "body": "%s%s at b\n%sev_r\n%s" % (lr.THREAD, anchor, lr.REVIEW_OF, text)}, **extra)
+        comments = [review,
+                    note("ev_1", "f, line 1 (new)", "why?", replies=[{"id": "ev_2", "created_at": "2026-01-01T00:00:05Z", "author": "agent:x", "body": "because"}]),
+                    note("ev_3", "f, whole file", "ok?", reactions={lr.RESOLVED: ["agent:x"]}),
+                    note("ev_4", "g, whole file", "fine", reactions={lr.RESOLVED: ["human:t"]})]
+        comments[1]["replies"][0]["body"] = "Status: answered\nAnswer: because"
+        threads = lr.review_threads(comments)
+        self.assertEqual(threads[0]["status"], "answered")
+        self.assertEqual(threads[0]["key"], ("f", "line 1 (new)"))
+        self.assertEqual([(t["anchor"], t["note"], t["state"]) for t in threads], [
+            ("f, line 1 (new) at b", "why?", "waiting on you"),
+            ("f, whole file at b", "ok?", "waiting on the agent"),
+            ("g, whole file at b", "fine", "resolved")])
+        self.assertEqual([m["id"] for m in threads[0]["messages"]], ["ev_1", "ev_2"])
+        legacy = dict(review, replies=[{"id": "ev_5", "created_at": "2026-01-01T00:00:09Z", "author": "agent:x", "body": "answer"}])
+        (thread,) = lr.review_threads([legacy])
+        self.assertEqual((thread["anchor"], thread["note"], thread["state"]), ("f, line 1 (new)", "why?", "waiting on you"))
+        self.assertEqual(lr.review_threads([{"role": "review", "created_at": "x", "body": self.approved("a", "b")}]), [])
 
     def test_plannotator_runs_resolve_the_range_once_and_record_only_decisions(self):
         ctx = self.context()
@@ -465,15 +508,24 @@ class SectionTests(RepoFixture):
         self.assertIn("uncommitted changes, feedback only", call(self.base + "/review/t/AB-9")[1])
         self.assertIn("live tree, feedback only", call(self.base + "/review/t/AB-10")[1])
         self.assertNotIn("live tree", call(self.base + "/review/t/AB-2")[1])
-        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
+        self.reviews["AB-2"] = [{"id": "ev_r1", "role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
                                  "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}]
         page = call(self.base + "/review/t/AB-2")[1]
         self.assertIn("changes requested", page)
         self.assertIn("Do not accept", page)
+        self.assertIn("waiting on the agent", page)
+        self.assertIn("send the agent session the task ID AB-2", page)
         self.assertNotIn("Mark done", page)
         self.reviews["AB-2"].append({"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)})
         page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("1 review thread(s) are not resolved", page)
+        self.assertIn("Approved at " + self.c[:12] + ". 1 thread(s) still open", page)
+        self.assertNotIn("Move to in progress", page)
+        self.assertNotIn("Mark done", page)
+        self.reviews["AB-2"][0]["reactions"] = {lr.RESOLVED: ["human:t"]}
+        page = call(self.base + "/review/t/AB-2")[1]
         self.assertIn("Mark done: approved at " + self.c[:12], page)
+        self.assertIn(">Reopen</button>", page)
         self.assertEqual(call(self.base + "/review/t/AB-99")[0], 404)
         status, _, headers = call(self.base + "/t/AB-2")
         self.assertEqual((status, headers["Location"]), (303, "/#/task/task_AB2"))
@@ -514,6 +566,26 @@ class SectionTests(RepoFixture):
         call(self.base + "/review/t/AB-2/complete", form(self.ctx))
         self.assertEqual(self.calls, [("status", "AB-2", "done", "--no-auto-review")])
 
+    def test_thread_actions_write_to_the_board_as_the_owner(self):
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="  still unclear  "))
+        self.assertEqual(self.calls[0][:4], ("comment", "AB-2", "--reply-to", "ev_1"))
+        self.assertEqual(self.calls[0][4], "--file")
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body=" "))
+        self.assertIn("the reply is empty", call(self.base + "/review/t/AB-2")[1])
+        call(self.base + "/review/t/AB-2/resolve", form(self.ctx, comment="ev_1"))
+        call(self.base + "/review/t/AB-2/reopen", form(self.ctx, comment="ev_1"))
+        call(self.base + "/review/t/AB-2/rework", form(self.ctx))
+        self.assertEqual(self.calls[1:], [("react", "AB-2", "ev_1", lr.RESOLVED), ("unreact", "AB-2", "ev_1", lr.RESOLVED),
+                                          ("status", "AB-2", "in_progress", "--no-auto-review")])
+        del self.calls[:]
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="ok, works for me", resolve="1"))
+        self.assertEqual([c[0] for c in self.calls], ["comment", "react"])
+        self.assertEqual(self.calls[1], ("react", "AB-2", "ev_1", lr.RESOLVED))
+        del self.calls[:]
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="", resolve="1"))
+        self.assertEqual(self.calls, [("react", "AB-2", "ev_1", lr.RESOLVED)])
+        self.assertEqual(call(self.base + "/review/t/AB-2/resolve", b"token=wrong&comment=ev_1")[0], 403)
+
 
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
 class CliTests(RepoFixture):
@@ -545,6 +617,69 @@ class CliTests(RepoFixture):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_line_notes_become_threads_that_keep_one_history_per_line_and_gate_completion(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "h", "feat: h\n\nTask: " + sid, content="first line\nsecond line")
+        ctx = self.context(board=board, repo=self.repo)
+        rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+        sha = rng["head_sha"][:12]
+
+        def review(decision, message):
+            ctx.plannotator = fake_plannotator(self.tools, decision=decision, message=message)
+            job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
+            wait_for(job)
+            self.assertTrue(job.done and not job.error, job.error)
+            return lr.review_threads(ctx.comments(sid))
+        threads = review("annotated", "# Code Review Feedback\n\n## h\n\n### Line 2 (new)\nwhy this line?\n\n"
+                                      "### File Comment\nname it better\n\n\n\nTreat the findings above as input.")
+        self.assertEqual([(t["anchor"], t["note"], t["state"]) for t in threads], [
+            ("h, line 2 (new) at " + sha, "> second line\nwhy this line?", "waiting on the agent"),
+            ("h, whole file at " + sha, "name it better", "waiting on the agent")])
+        lattice(board, "comment", sid, "--reply-to", threads[0]["root"]["id"], "Status: answered\nAnswer: it closes the loop", "--actor", "agent:test")
+        self.assertEqual([t["state"] for t in lr.review_threads(ctx.comments(sid))], ["waiting on you", "waiting on the agent"])
+        threads = review("annotated", "# Code Review Feedback\n\n## h\n\n### Line 2 (new)\nstill not clear why")
+        self.assertEqual(len(threads), 2)
+        bodies = [m["body"].strip() for m in threads[0]["messages"][1:]]
+        self.assertEqual(bodies[0], "Status: answered\nAnswer: it closes the loop")
+        self.assertTrue(bodies[1].startswith(lr.FOLLOW_UP) and bodies[1].endswith("still not clear why"), bodies[1])
+        self.assertEqual(threads[0]["state"], "waiting on the agent")
+        review("approved", "Code review completed")
+        self.assertIn("2 review thread(s) are not resolved", lr.completion_block(self.repo, lr.find_task(board, sid), "main", ctx.comments(sid)))
+        StubDashboard.static_dir = self.repo / "static"
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        try:
+            self.assertIn("&gt; second line", call(base + "/review/t/" + sid)[1])
+            call(base + "/review/t/%s/reply" % sid, form(ctx, parent=threads[1]["root"]["id"], body="ok, leave it"))
+            for t in threads:
+                call(base + "/review/t/%s/resolve" % sid, form(ctx, comment=t["root"]["id"]))
+            final = lr.review_threads(ctx.comments(sid))
+            self.assertEqual([t["state"] for t in final], ["resolved", "resolved"])
+            self.assertEqual([m["body"].strip() for m in final[1]["messages"][1:]], ["ok, leave it"])
+            self.assertIsNone(lr.completion_block(self.repo, lr.find_task(board, sid), "main", ctx.comments(sid)))
+            self.assertIn("Mark done", call(base + "/review/t/" + sid)[1])
+        finally:
+            server.shutdown()
+            server.server_close()
+    def test_a_note_on_the_place_of_an_older_unsplit_review_continues_its_thread(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "k", "feat: k\n\nTask: " + sid)
+        ctx = self.context(board=board, repo=self.repo)
+        rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+        older = self.repo / "older.md"
+        older.write_text("Plannotator annotated (patch x), s\n%s%s..%s\n\n## k\n\n### File Comment\nwhere are the replies?\n" % (
+            lr.REVIEWED, rng["base_sha"], rng["head_sha"]))
+        lattice(board, "comment", sid, "--file", str(older), "--role", "review", "--actor", "human:t")
+        ctx.plannotator = fake_plannotator(self.tools, decision="annotated", message="## k\n\n### File Comment\nstill looking")
+        job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
+        wait_for(job)
+        self.assertTrue(job.done and not job.error, job.error)
+        (thread,) = lr.review_threads(ctx.comments(sid))
+        self.assertEqual(thread["anchor"], "k, whole file")
+        self.assertTrue(thread["messages"][-1]["body"].strip().endswith("still looking"))
 
 
 @unittest.skipUnless(HAVE_CLI and HAVE_MODULE, "lattice not importable; run with the Python that has lattice installed")
