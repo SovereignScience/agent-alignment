@@ -10,9 +10,11 @@ effect of another task. Words in angle brackets are placeholders.
   owner asks for it.
 - A backlog with one task per open item, acceptance criteria on the ones
   that can be checked, and decisions flagged `needs_human`.
-- The review launcher ([tools/lattice-review/](tools/lattice-review/))
-  running beside the Lattice dashboard, so the owner clicks a task and
-  lands in Plannotator or the VS Code multi-diff.
+- The Lattice dashboard run by the review server
+  ([tools/lattice-review/](tools/lattice-review/)), one page where each
+  task's detail view carries a review section: the task's commits, with
+  buttons that open them in Plannotator or file by file in VS Code, and
+  done gated on an approval of exactly those commits.
 - Reviews recorded on the task as comments, the owner moving tasks to
   done, and the owner pushing.
 
@@ -21,7 +23,7 @@ effect of another task. Words in angle brackets are placeholders.
 The owner initializes the board and selects or authorizes its tasks.
 The agent resumes only the selected task and leaves prepared work in
 `in_review`; it commits only when asked. The owner installs tools, runs
-the launcher, reads diffs, completes tasks, pushes and deploys. Agents never run `lattice next`, `lattice complete`
+the review server, reads diffs, completes tasks, pushes and deploys. Agents never run `lattice next`, `lattice complete`
 or `git push`, and never commit `.lattice/` unless told to.
 
 ## One-time installs, by the owner
@@ -37,8 +39,8 @@ bash plannotator-install.sh --minimal
 rm plannotator-install.sh
 ```
 
-The launcher runs the binary itself, so no agent plugin is needed and the
-editor extension for Claude Code is enough; the interactive CLI never has
+The review server runs the binary itself, so no agent plugin is needed and
+the editor extension for Claude Code is enough; the interactive CLI never has
 to be opened. The Claude Code plugin is optional: it adds a plan-review
 gate at plan exit and an in-session `/plannotator-review`. Add it later
 from a terminal with `claude plugin marketplace add backnotprop/plannotator`
@@ -51,12 +53,16 @@ export PLANNOTATOR_AI=disabled
 export PLANNOTATOR_SHARE=disabled
 ```
 
-The VS Code extension, from a terminal inside the remote where the
-repositories live (WSL, SSH), so it installs into that extension host:
+The dashboard patch, applied once to the Lattice checkout the `lattice`
+command runs from, so the dashboard renders the review section when it
+is served through the review server (and URL artifacts as links):
 
 ```
-code --install-extension <agent-alignment>/swe/tools/lattice-review/lattice-review-links-0.1.0.vsix
+cd <lattice checkout>
+git apply <agent-alignment>/swe/tools/lattice-review/lattice-dashboard-review.patch
 ```
+
+Re-apply it after updating Lattice.
 
 Lattice itself is assumed present (`lattice --version`).
 
@@ -87,9 +93,9 @@ During setup, the owner configures `.lattice/config.json`:
 | `auto_code_review_on_transition` | `false` | a status change never starts a review |
 | `auto_plan_review_on_transition` | `false` | same |
 | `dashboard.theme` | `"holographic"` | the theme the existing boards use; any theme works |
-| `dashboard_port` | next free port | one port per board; the launcher runs on the port above it (`--port`) |
+| `dashboard_port` | next free port | one port per board; the review server serves the dashboard there |
 
-Keep a line in `context.md` naming the two ports.
+Keep a line in `context.md` naming the port the owner opens.
 
 ### 3. Context
 
@@ -118,13 +124,16 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   LATTICE_NO_UPDATE_CHECK=1. Sessions use lattice show to resume the task
   they were given; agents never use lattice next or lattice complete.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
-  review launcher can find them. Branch work is linked with lattice
+  review section can find them. Branch work is linked with lattice
   branch-link.
 - The task record holds the request, scope, acceptance criteria, owner,
   revision, coverage boundary, evidence and remaining work. Never secrets.
-- Review flow: the owner runs the review launcher (port <p+1>) beside the
-  dashboard (port <p>), opens a task's commits in Plannotator or the VS
-  Code multi-diff, and the review lands on the task as a comment. Done is
+- Review flow: the owner opens the board at http://127.0.0.1:<port>
+  (the review server, which is the dashboard plus a review section on
+  every task). There the owner opens the task's commits in Plannotator
+  or file by file in VS Code; the review lands on the task as a comment
+  bound to the reviewed commits. A task with commits can be marked done
+  only while its latest review approves exactly those commits. Done is
   not deployed.
 - The board is not committed until asked.
 ```
@@ -164,50 +173,78 @@ task records remain private unless the owner asks to share them.
 
 ### 5. Working a task
 
-1. `lattice show <ID>` to resume. `lattice status <ID> in_progress --no-auto-review`.
+1. `lattice show <ID>` to resume, then `lattice comments <ID> --json` for
+   the full review thread (`show` cuts comment bodies short). Before any
+   change, reply under the review (`lattice comment <ID> --reply-to
+   <comment id>`) naming each requested change and whether it will be
+   made. `lattice status <ID> in_progress --no-auto-review`.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
 3. Branch work: `lattice branch-link <ID> <branch>`.
 4. Before handing over: a comment with the checks run, their results,
-   what was mocked, what never ran, and what remains for the owner.
+   what was mocked, what never ran, which requested changes were made
+   and which were not, and what remains for the owner.
    `lattice attach <ID> <file or URL> --title "<what it is>"` for
    evidence files.
 5. `lattice status <ID> in_review --no-auto-review`. Stop there.
 
 ### 6. The review flow, by the owner
 
-From a VS Code integrated terminal in the project:
+From a VS Code integrated terminal in the project (so files open in
+that window):
 
 ```
-python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --with-dashboard --actor human:<name> --port <p+1>
+python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name>
 ```
 
-Open http://127.0.0.1:<p+1>. Each task row shows where its work is and two
-buttons. Plannotator opens the browser review of the task's exact commit
-range; Send Feedback or Approve there, and the decision with the review
-text lands on the task as a comment with role `review`. When the range
-ends at the checked-out HEAD, the task page also offers the live tree,
-which allows staging from the review. VS Code opens the same range in
-the multi-diff editor through the extension. On the task page:
-per-commit and per-file links, add a comment, move the status, or "Mark
-done" with the recorded review. The review is bound to the commit IDs it
-covered; if the task's work moves on after the review, the page says so
-and offers no completion until a new review. Then push.
+Open http://127.0.0.1:<port> and click a task. Its detail view has a
+Review section that says where the task's work is (branch, trailer
+commits, or nothing yet) and offers: Plannotator on the whole range,
+Plannotator per commit, and for every file of the range `open` in VS
+Code or `diff` in VS Code's two-file view. Plannotator opens as a new
+tab of the same browser; annotations stay there until Send Feedback
+(changes requested) or Approve, and only then do they land on the task
+as a comment with role `review`, visible to every browser and every
+agent. One session per task at a time: the button returns to the open
+one, and "Close session" ends one that was abandoned. When
+the range ends at the checked-out HEAD and the tree has uncommitted
+changes, a second button reviews the live tree, for feedback only.
+Status, comments, notes and plans are the dashboard's own controls on
+the same page; writes made there carry the owner's actor. The review is
+bound to the commit IDs it covered: "Mark done" appears only while the
+latest review is an approval of the task's current commits, the
+dashboard's status control refuses `done` under the same rule, and the
+section says why otherwise. Then push.
 
 Feedback that needs more work: set the task back to `in_progress` and
-give the agent the task ID; it reads the comment with `lattice show`.
+give the agent the task ID. Lattice has no notifications; the side
+panel refreshes when the task record changes, the full task page does
+so when it was reached from the board or list, and the Refresh button
+in the top bar forces it. The thread is read there.
 
 ### 7. Reporting
 
 When the board is set up, the reply to the owner lists: the init command
 used, the ports, the number of tasks and which carry `needs_human`, what
-the owner must install or run, and what is unverified (Plannotator, the
-extension and the browser flow are unverified until the owner has used
-them once).
+the owner must install or run, and what is unverified (Plannotator and
+the browser flow are unverified until the owner has used them once).
+
+## Day to day
+
+The owner: start the review server, read the in-review tasks, review,
+comment or complete, push and deploy, answer the
+`needs_human` questions by clearing the flag with a note
+(`lattice needs-human <ID> --clear --note "<decision>" --actor human:<name>`).
+
+The agent: take only the task it was given, keep the task record current
+(evidence, coverage boundary, remaining work), commit with the trailer,
+leave the task in review, never complete or push. A new finding becomes
+a comment on the task it belongs to, or a question to the owner, never a
+new task without being asked.
 
 ## Keeping this file current
 
 This file is the template. When a project onboarding changes the way the
-board, launcher or review flow is used, change this file in the same
+board, review server or review flow is used, change this file in the same
 piece of work and say so in the task comment. Project-specific details
 belong in that project's `context.md`, never here.

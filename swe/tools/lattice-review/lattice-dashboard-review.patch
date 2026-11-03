@@ -1,0 +1,201 @@
+diff --git a/src/lattice/dashboard/server.py b/src/lattice/dashboard/server.py
+index 67698f3..fd2ddec 100644
+--- a/src/lattice/dashboard/server.py
++++ b/src/lattice/dashboard/server.py
+@@ -2219,6 +2219,7 @@ def _read_artifact_info(ld: Path, snapshot: dict) -> list[dict]:
+                 meta = json.loads(meta_path.read_text())
+                 info["title"] = meta.get("title")
+                 info["type"] = meta.get("type")
++                info["url"] = (meta.get("custom_fields") or {}).get("url")
+             except (json.JSONDecodeError, OSError):
+                 pass
+         artifacts.append(info)
+diff --git a/src/lattice/dashboard/static/index.html b/src/lattice/dashboard/static/index.html
+index 6507697..678c3a3 100644
+--- a/src/lattice/dashboard/static/index.html
++++ b/src/lattice/dashboard/static/index.html
+@@ -299,6 +299,7 @@ tr:hover td{background:var(--surface-hover)}
+ .back-link{display:inline-block;margin-bottom:0.75rem;font-size:.9rem}
+ .archived-badge{background:var(--color-warning);color:var(--text-on-warning);padding:0.125rem 0.5rem;border-radius:var(--radius-sm);font-size:.8rem;font-weight:600}
+ .rel-list,.art-list{list-style:none;padding:0}
++.review-frame{width:100%;border:0;background:transparent;min-height:60px;display:block}
+ .rel-list li,.art-list li{padding:0.25rem 0;font-size:.85rem}
+ 
+ /* Activity view */
+@@ -3287,6 +3288,30 @@ function evidenceLinkBadges(data) {
+   return html;
+ }
+ 
++var renderCommentThread = function(list, itemClass, metaClass, depth) {
++  var html = "";
++  (list || []).forEach(function(c) {
++    var replies = c.replies || [];
++    if (c.deleted && !replies.length) return;
++    html += '<div class="' + itemClass + '"' + (depth ? ' style="margin-left:' + (depth * 16) + 'px"' : '') + '>';
++    html += '<div class="' + metaClass + '">' + esc(c.author || "") + ' \u00b7 ' + esc(c.created_at || "") + (c.role ? ' \u00b7 ' + esc(c.role) : '') + (c.edited ? ' \u00b7 edited' : '') + '</div>';
++    html += '<div class="comment-body">' + (c.deleted ? '<em>deleted</em>' : esc(c.body || "") + evidenceLinkBadges(c)) + '</div>';
++    html += '</div>';
++    html += renderCommentThread(replies, itemClass, metaClass, (depth || 0) + 1);
++  });
++  return html;
++};
++
++var countComments = function(list) {
++  return (list || []).reduce(function(n, c) { return n + (c.deleted ? 0 : 1) + countComments(c.replies); }, 0);
++};
++
++var reviewSection = function(task, sectionClass) {
++  if (!window.LATTICE_REVIEW_URL) return "";
++  var src = window.LATTICE_REVIEW_URL + "/t/" + encodeURIComponent(task.short_id || task.id);
++  return '<div class="' + esc(sectionClass) + '"><h3>Review</h3><iframe class="review-frame" src="' + esc(src) + '" onload="this.style.height=(this.contentDocument.documentElement.scrollHeight+4)+\'px\'"></iframe></div>';
++};
++
+ function renderAcceptanceCriteria(task, sectionClass) {
+   var criteria = task.acceptance_criteria || [];
+   if (!criteria.length) return "";
+@@ -3466,10 +3491,11 @@ function openDetailPanel(taskId) {
+ 
+   Promise.all([
+     api("/api/tasks/" + taskId),
+-    api("/api/tasks/" + taskId + "/events")
++    api("/api/tasks/" + taskId + "/events"),
++    api("/api/tasks/" + taskId + "/comments")
+   ]).then(function(results) {
+     if (_detailPanelTaskId !== openGeneration) return; // user clicked a different card
+-    _renderPanelContent(taskId, results[0], results[1]);
++    _renderPanelContent(taskId, results[0], results[1], results[2]);
+   }).catch(function(e) {
+     if (_detailPanelTaskId !== openGeneration) return;
+     body.innerHTML = '<div style="color:var(--color-danger);padding:20px">' + esc(e.message) + '</div>';
+@@ -3761,7 +3787,7 @@ function wireActorChipClicks(root) {
+   });
+ }
+ 
+-function _renderPanelContent(taskId, task, events) {
++function _renderPanelContent(taskId, task, events, comments) {
+   var body = document.getElementById("dp-body");
+   var title = document.getElementById("dp-title");
+   var isArchived = !!task.archived;
+@@ -3864,6 +3890,7 @@ function _renderPanelContent(taskId, task, events) {
+   html += '</div>';
+ 
+   html += renderAcceptanceCriteria(task, "dp-section");
++  html += reviewSection(task, "dp-section");
+ 
+   // Plan & Notes — always show Plan, show Notes only if file exists
+   html += '<div class="dp-section"><h3>' + esc(t("section.plans")) + ' & ' + esc(t("section.notes")) + '</h3>';
+@@ -3875,22 +3902,15 @@ function _renderPanelContent(taskId, task, events) {
+   html += '</div></div>';
+ 
+   // Comments
+-  var comments = (events || []).filter(function(ev) { return ev.type === "comment_added"; });
+-  html += '<div class="dp-section"><h3>Comments (' + comments.length + ')</h3>';
++  var thread = comments || [];
++  html += '<div class="dp-section"><h3>Comments (' + countComments(thread) + ')</h3>';
+   if (!isArchived) {
+     html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">';
+     html += '<textarea class="form-control" id="dp-comment-text" placeholder="Add a comment\u2026" style="min-height:50px;font-size:.85rem"></textarea>';
+     html += '<button class="btn btn-primary btn-sm" id="dp-comment-submit" style="align-self:flex-end">Post</button>';
+     html += '</div>';
+   }
+-  if (comments.length) {
+-    comments.forEach(function(ev) {
+-      html += '<div class="dp-comment">';
+-      html += '<div class="dp-comment-meta">' + esc(ev.actor || "") + ' \u00b7 ' + esc(ev.ts || "") + '</div>';
+-      html += '<div>' + esc((ev.data && ev.data.body) || "") + evidenceLinkBadges(ev.data) + '</div>';
+-      html += '</div>';
+-    });
+-  }
++  html += renderCommentThread(thread, "dp-comment", "dp-comment-meta", 0);
+   html += '</div>';
+ 
+   // History (last 10 non-comment events)
+@@ -4144,10 +4164,11 @@ async function _refreshAfterPanelEdit(taskId) {
+     if (body && !body.querySelector("input:focus, textarea:focus")) {
+       var results = await Promise.all([
+         api("/api/tasks/" + taskId),
+-        api("/api/tasks/" + taskId + "/events")
++        api("/api/tasks/" + taskId + "/events"),
++        api("/api/tasks/" + taskId + "/comments")
+       ]);
+       if (_detailPanelTaskId === taskId) {
+-        _renderPanelContent(taskId, results[0], results[1]);
++        _renderPanelContent(taskId, results[0], results[1], results[2]);
+       }
+     }
+   }
+@@ -5387,10 +5408,12 @@ async function renderDetail(taskId) {
+   try {
+     var results = await Promise.all([
+       api("/api/tasks/" + taskId),
+-      api("/api/tasks/" + taskId + "/events")
++      api("/api/tasks/" + taskId + "/events"),
++      api("/api/tasks/" + taskId + "/comments")
+     ]);
+     var task = results[0];
+     var events = results[1];
++    var thread = results[2] || [];
+     var isArchived = !!task.archived;
+ 
+     var html = '<a href="#/' + esc(currentView) + '" class="back-link">' + t("btn.back") + '</a>';
+@@ -5502,6 +5525,7 @@ async function renderDetail(taskId) {
+     }
+ 
+     html += renderAcceptanceCriteria(task, "detail-section");
++    html += reviewSection(task, "detail-section");
+ 
+     // Relationships
+     if (task.relationships_out && task.relationships_out.length) {
+@@ -5519,7 +5543,11 @@ async function renderDetail(taskId) {
+       html += '<div class="detail-section"><h3>' + esc(t("section.artifacts")) + '</h3><ul class="art-list">';
+       task.artifacts.forEach(function(a) {
+         html += '<li>' + esc(a.id);
+-        if (a.title) html += ' "' + esc(a.title) + '"';
++        if (a.url && /^https?:\/\//.test(a.url)) {
++          html += ' <a href="' + esc(a.url) + '" target="_blank" rel="noopener" style="color:var(--accent-primary)">' + esc(a.title || a.url) + '</a>';
++        } else if (a.title) {
++          html += ' "' + esc(a.title) + '"';
++        }
+         if (a.type) html += ' (' + esc(a.type) + ')';
+         html += evidenceLinkBadges(a);
+         html += '</li>';
+@@ -5544,23 +5572,15 @@ async function renderDetail(taskId) {
+     }
+ 
+     // --- Comments section ---
+-    var comments = (events || []).filter(function(ev) { return ev.type === "comment_added"; });
+-    html += '<div class="detail-section"><h3>' + esc(t("section.comments")) + ' (' + comments.length + ')</h3>';
++    html += '<div class="detail-section"><h3>' + esc(t("section.comments")) + ' (' + countComments(thread) + ')</h3>';
+     if (!isArchived) {
+       html += '<div class="comment-form">';
+       html += '<textarea class="form-control" id="detail-comment-text" placeholder="' + esc(t("placeholder.comment")) + '"></textarea>';
+       html += '<button class="btn btn-primary btn-sm" id="detail-comment-submit" style="align-self:flex-end">' + esc(t("btn.post")) + '</button>';
+       html += '</div>';
+     }
+-    if (comments.length) {
+-      html += '<div style="margin-top:8px">';
+-      comments.forEach(function(ev) {
+-        html += '<div class="comment-item">';
+-        html += '<div class="comment-meta">' + esc(ev.actor || "") + ' &middot; ' + esc(ev.ts || "") + '</div>';
+-        html += '<div class="comment-body">' + esc((ev.data && ev.data.body) || "") + evidenceLinkBadges(ev.data) + '</div>';
+-        html += '</div>';
+-      });
+-      html += '</div>';
++    if (thread.length) {
++      html += '<div style="margin-top:8px">' + renderCommentThread(thread, "comment-item", "comment-meta", 0) + '</div>';
+     }
+     html += '</div>';
+ 
+@@ -7387,9 +7407,10 @@ function startAutoRefresh() {
+             try {
+               var dpResults = await Promise.all([
+                 api("/api/tasks/" + _detailPanelTaskId),
+-                api("/api/tasks/" + _detailPanelTaskId + "/events")
++                api("/api/tasks/" + _detailPanelTaskId + "/events"),
++                api("/api/tasks/" + _detailPanelTaskId + "/comments")
+               ]);
+-              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1]);
++              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1], dpResults[2]);
+             } catch(ex) { /* panel data fetch failed, ignore */ }
+           }
+         }

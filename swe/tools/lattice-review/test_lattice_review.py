@@ -1,19 +1,27 @@
 import json
-import urllib.parse
 import os
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
+import urllib.error
+import urllib.parse
 import urllib.request
 from argparse import Namespace
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import lattice_review as lr
 
 ENV = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+HAVE_CLI = bool(shutil.which("lattice"))
+try:
+    import lattice.dashboard.server  # noqa: F401
+    HAVE_MODULE = True
+except ImportError:
+    HAVE_MODULE = False
 
 
 def git(repo, *args):
@@ -34,21 +42,123 @@ def task(board, sid, status, title, branch=None):
     (board / ".lattice" / "tasks" / (record["id"] + ".json")).write_text(json.dumps(record))
 
 
-def fake_plannotator(where, decision="annotated", message="line 2: rename it"):
+def fake_plannotator(where, decision="annotated", message="line 2: rename it", exit_code=0, delay=0):
+    """A stand-in that swallows the patch and answers like plannotator --json."""
     script = where / "plannotator"
-    script.write_text("#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '" + json.dumps({"decision": decision, "message": message}) + "'\n")
+    record = json.dumps({"decision": decision, "message": message}) if decision else "usage error"
+    record = record.replace("'", "")
+    script.write_text("#!/bin/sh\ncat > /dev/null\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
+                      % (delay, record, exit_code))
+    script.chmod(0o755)
+    return str(script)
+
+
+def fake_code(where):
+    """A stand-in for the VS Code command that records what it was asked to open."""
+    script = where / "code"
+    script.write_text("#!/bin/sh\necho \"$@\" >> '" + str(where / "code.log") + "'\n")
     script.chmod(0o755)
     return str(script)
 
 
 def wait_for(job):
-    for _ in range(200):
+    for _ in range(400):
         if job.done:
             return
-        subprocess.run(["sleep", "0.05"])
+        time.sleep(0.05)
 
 
-class LauncherTests(unittest.TestCase):
+def wait_file(path, lines=1):
+    """The file's text once it holds at least the given number of lines."""
+    for _ in range(200):
+        if path.exists() and len(path.read_text().splitlines()) >= lines:
+            return path.read_text()
+        time.sleep(0.05)
+    return path.read_text() if path.exists() else ""
+
+
+def serve(handler):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args):
+        return None
+
+
+def call(url, data=None, headers=None, method=None):
+    """(status, body, headers) for a request, redirects and errors included."""
+    request = urllib.request.Request(url, data=data, headers=headers or {}, method=method or ("POST" if data is not None else "GET"))
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request) as response:
+            return response.status, response.read().decode(), response.headers
+    except urllib.error.HTTPError as err:
+        return err.code, err.read().decode(), err.headers
+
+
+def form(ctx, **fields):
+    return urllib.parse.urlencode(dict(fields, token=ctx.token)).encode()
+
+
+def origin(base):
+    """Headers of a dashboard write made by the page served at base."""
+    return {"Origin": base, "Content-Type": "application/json"}
+
+
+class StubDashboard(BaseHTTPRequestHandler):
+    """The surface of Lattice's dashboard handler that lattice_review builds on."""
+    static_dir = None
+    received = []
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def _send_json(self, status, body):
+        data = body.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_static(self, filename, content_type):
+        path = self.static_dir / filename
+        if not path.is_file():
+            return self._send_json(404, json.dumps({"ok": False, "error": {"code": "NOT_FOUND", "message": filename}}))
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path == "/":
+            return self._serve_static("index.html", "text/html")
+        self._send_json(200, json.dumps({"ok": True, "data": {"path": self.path}}))
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        StubDashboard.received.append((self.path, body))
+        self._send_json(200, json.dumps({"ok": True, "data": body}))
+
+
+def init_board(root, code="TB"):
+    board = root / "board"
+    board.mkdir()
+    subprocess.run(["lattice", "init", "--path", str(board), "--actor", "agent:test", "--project-code", code,
+                    "--project-name", "tb", "--preset", "linear", "--workflow", "classic", "--no-seed",
+                    "--no-setup-claude", "--no-setup-agents"], check=True, env=ENV, capture_output=True)
+    return board
+
+
+def lattice(board, *args):
+    return subprocess.run(["lattice", *args], cwd=board, env=ENV, check=True, capture_output=True, text=True).stdout.strip()
+
+
+class RepoFixture(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name)
@@ -57,6 +167,10 @@ class LauncherTests(unittest.TestCase):
         (self.repo / ".lattice" / "config.json").write_text(json.dumps({
             "project_code": "T", "project_name": "Test board", "dashboard_port": 8700,
             "workflow": {"transitions": {"backlog": ["todo"], "in_review": ["done"]}}}))
+        self.tools = self.repo / "tools"
+        self.tools.mkdir()
+        (self.repo / ".gitignore").write_text(".lattice/\nboard/\ntools/\nstate/\nstatic/\n")
+        git(self.repo, "add", ".gitignore")
         self.a = commit(self.repo, "a", "init")
         self.b = commit(self.repo, "b", "feat: b\n\nTask: AB-1")
         git(self.repo, "branch", "task/ab-4")
@@ -67,17 +181,23 @@ class LauncherTests(unittest.TestCase):
         self.e = commit(self.repo, "e", "feat: e\n\nTask: AB-4")
         git(self.repo, "checkout", "-q", "main")
         task(self.repo, "AB-1", "in_review", "two commits apart")
-        task(self.repo, "AB-2", "backlog", "one commit")
+        task(self.repo, "AB-2", "in_review", "one commit")
         task(self.repo, "AB-4", "in_progress", "branch work", branch="task/ab-4")
         task(self.repo, "AB-9", "backlog", "nothing yet")
+        task(self.repo, "AB-10", "in_review", "the latest commit")
 
     def tearDown(self):
         self.tmp.cleanup()
 
     def context(self, board=None, repo=None):
         return lr.Context(Namespace(board=str(board or self.repo), repo=str(repo) if repo else None, main="main", remote="origin",
-                                    actor="human:t", dashboard_url=None, state=str(self.repo / "state")))
+                                    actor="human:t", state=str(self.repo / "state")))
 
+    def approved(self, base, head, qualifier=""):
+        return "Plannotator approved (patch x), s\n%s%s..%s%s\n\nfine\n" % (lr.REVIEWED, base, head, qualifier)
+
+
+class PureTests(RepoFixture):
     def test_trailer_match_is_exact(self):
         self.assertEqual([c["hash"] for c in lr.task_commits(self.repo, "AB-1", ["HEAD"])], [self.b, self.d])
         self.assertEqual([c["hash"] for c in lr.task_commits(self.repo, "AB-10", ["HEAD"])], [self.f])
@@ -102,137 +222,373 @@ class LauncherTests(unittest.TestCase):
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
-    def test_needs_human_reason(self):
-        self.assertEqual(lr.needs_human({"needs_human": {"reason": "Need: pick one", "since": "x"}}), "Need: pick one")
-        self.assertEqual(lr.needs_human({"needs_human": None}), "")
-
-    def test_tasks_sort_by_status_then_number(self):
-        self.assertEqual([t["short_id"] for t in lr.load_tasks(self.repo)], ["AB-1", "AB-4", "AB-2", "AB-9"])
-
-    def test_vscode_uri(self):
-        uri = lr.vscode_uri("/r/p q", "abc^", "WORKTREE", "AB-1 title")
-        self.assertTrue(uri.startswith("vscode://" + lr.EXTENSION_ID + "/diff?"))
-        self.assertIn("repo=%2Fr%2Fp+q", uri)
-        self.assertIn("base=abc%5E", uri)
-
     def test_plannotator_args(self):
         live, patch = lr.plannotator_args("pl", base="abc", live=True)
-        self.assertEqual((live, patch), (["pl", "review", "--git", "--no-git-remote-check", "--json", "--base", "abc"], None))
+        self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--git", "--no-git-remote-check", "--json", "--base", "abc"], None))
         args, patch = lr.plannotator_args("pl", base="abc^", head="abc")
-        self.assertEqual((args, patch), (["pl", "review", "--patch-file", "-", "--json"], ["diff", "abc^", "abc"]))
+        self.assertEqual((args, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc^", "abc"]))
         self.assertEqual(lr.plannotator_args("pl", base="abc", head=lr.WORKTREE)[1], ["diff", "abc"])
 
-    def test_parse_review(self):
+    def test_parse_review_and_decision(self):
         self.assertEqual(lr.parse_review('noise\n{"decision": "annotated", "message": "fix line 3"}\n'), ("annotated", "fix line 3"))
         self.assertEqual(lr.parse_review("plain text"), (None, "plain text"))
+        self.assertEqual(lr.review_decision("Plannotator approved (patch a..b), s\n"), "approved")
+        self.assertEqual(lr.review_decision("Plannotator annotated (live tree), s\n"), "annotated")
+        self.assertIsNone(lr.review_decision("Plannotator result (patch), s\n"))
+        self.assertIsNone(lr.review_decision(""))
+        self.assertEqual(lr.session_url("\n  Plannotator session ready: http://localhost:46525\n"), "http://localhost:46525")
+        self.assertIsNone(lr.session_url("nothing"))
 
-    def test_renamed_file_keeps_old_path_for_the_base_side(self):
+    def test_reviewed_revision_tolerates_malformed_lines(self):
+        self.assertEqual(lr.reviewed_revision(self.approved(self.a, self.b)), (self.a, self.b, None))
+        self.assertEqual(lr.reviewed_revision(self.approved(self.a, self.b, " live")), (self.a, self.b, "live"))
+        self.assertEqual(lr.reviewed_revision("Plannotator approved (x), s\nReviewed: not-yet\n"), (None, None, None))
+        self.assertEqual(lr.reviewed_revision("no line"), (None, None, None))
+        malformed = {"role": "review", "created_at": "2026-01-05T00:00:00Z", "body": "Plannotator approved (x), s\nReviewed: not-yet\n"}
+        older = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}
+        plain = {"role": "review", "created_at": "2026-01-03T00:00:00Z", "body": "own words, no revision"}
+        note = {"created_at": "2026-01-04T00:00:00Z", "body": self.approved(self.b, self.c)}
+        self.assertIs(lr.latest_review([older, plain, malformed, note]), older)
+        self.assertIsNone(lr.latest_review([plain, note, malformed]))
+
+    def test_diff_sides_are_distinct_files_named_by_commit_and_path(self):
         git(self.repo, "mv", "c", "c-renamed")
         git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "refactor: move c\n\nTask: AB-2")
         head = git(self.repo, "rev-parse", "HEAD")
-        files = lr.changed_files(self.repo, head + "^", head)
-        self.assertEqual(files, [{"status": "R", "path": "c-renamed", "old_path": "c"}])
+        self.assertEqual(lr.changed_files(self.repo, head + "^", head), [{"status": "R", "path": "c-renamed", "old_path": "c"}])
         ctx = self.context()
-        ctx.code = "true"
+        ctx.code = fake_code(self.tools)
         ctx.code_diff(head + "^", head, "c-renamed", "c", "R")
-        left = next((self.repo / "state" / "tmp").glob("*-c"))
-        self.assertEqual(left.read_text(), "c\n")
+        left, right = wait_file(self.tools / "code.log").split()[-2:]
+        self.assertNotEqual(left, right)
+        self.assertTrue(Path(left).name.startswith(self.f[:12]) and Path(left).name.endswith("-c"))
+        self.assertTrue(Path(right).name.startswith(head[:12]) and Path(right).name.endswith("-c-renamed"))
+        self.assertEqual((Path(left).read_text(), Path(right).read_text()), ("c\n", "c\n"))
+        self.assertNotEqual(ctx.side(head, "src/config.py"), ctx.side(head, "tests/config.py"))
         with self.assertRaises(RuntimeError):
             ctx.code_diff(head + "^", head, "missing", "missing", "M")
+        with self.assertRaises(RuntimeError):
+            ctx.code_diff("nope", head, "c-renamed", "c", "R")
+        with self.assertRaises(RuntimeError):
+            ctx.repo_path("../outside")
 
     def test_review_is_bound_to_the_reviewed_revision(self):
         task_record = lr.find_task(self.repo, "AB-2")
-        result = self.repo / "review.md"
-        result.write_text("Plannotator approved\n%s%s..%s\n\nfine\n" % (lr.REVIEWED, self.b, self.c))
-        self.assertIsNone(lr.stale_reason(self.repo, task_record, "main", result))
-        result.write_text("Plannotator approved\n%s%s..%s dirty\n\nfine\n" % (lr.REVIEWED, self.b, self.c))
-        self.assertIn("uncommitted", lr.stale_reason(self.repo, task_record, "main", result))
-        result.write_text("Plannotator approved\n\nfine\n")
-        self.assertIn("no revision", lr.stale_reason(self.repo, task_record, "main", result))
-        result.write_text("Plannotator approved\n%s%s..%s\n\nfine\n" % (lr.REVIEWED, self.b, self.c))
+        self.assertIsNone(lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c)))
+        self.assertIn("live working tree", lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c, " live")))
+        self.assertIn("no revision", lr.stale_reason(self.repo, task_record, "main", "Plannotator approved (x), s\n\nfine\n"))
         commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
-        self.assertIn("no single commit range", lr.stale_reason(self.repo, task_record, "main", result))
+        self.assertIn("no single commit range", lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c)))
         branch_task = lr.find_task(self.repo, "AB-4")
-        result.write_text("Plannotator approved\n%s%s..%s\n\nfine\n" % (lr.REVIEWED, self.b, self.e))
-        self.assertIsNone(lr.stale_reason(self.repo, branch_task, "main", result))
+        self.assertIsNone(lr.stale_reason(self.repo, branch_task, "main", self.approved(self.b, self.e)))
         git(self.repo, "checkout", "-q", "task/ab-4")
         commit(self.repo, "e2", "feat: more e\n\nTask: AB-4")
         git(self.repo, "checkout", "-q", "main")
-        self.assertIn("review again", lr.stale_reason(self.repo, branch_task, "main", result))
+        self.assertIn("review again", lr.stale_reason(self.repo, branch_task, "main", self.approved(self.b, self.e)))
 
-    def test_failed_board_write_is_not_reported_as_recorded(self):
+    def test_completion_needs_the_latest_review_to_approve_the_current_range(self):
+        task_record = lr.find_task(self.repo, "AB-2")
+        approved = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}
+        changes = {"role": "review", "created_at": "2026-01-02T00:00:00Z",
+                   "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}
+        self.assertIn("no Plannotator review", lr.completion_block(self.repo, task_record, "main", []))
+        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [approved]))
+        self.assertIn("requested changes", lr.completion_block(self.repo, task_record, "main", [approved, changes]))
+        self.assertIn("requested changes", lr.completion_block(self.repo, task_record, "main", [changes]))
+        same_second = dict(changes, created_at=approved["created_at"])
+        self.assertIn("requested changes", lr.completion_block(self.repo, task_record, "main", [approved, same_second]))
+        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [same_second, approved]))
+        deleted = dict(changes, deleted=True, body="")
+        self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [approved, deleted]))
+        commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
+        self.assertIn("no single commit range", lr.completion_block(self.repo, task_record, "main", [approved]))
+
+    def test_plannotator_runs_resolve_the_range_once_and_record_only_decisions(self):
         ctx = self.context()
-        ctx.plannotator = fake_plannotator(self.repo)
         ctx.lattice = "false"
-        job = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
-        wait_for(job)
+        seen = []
+        original = lr.plannotator_args
+        lr.plannotator_args = lambda *args, **kw: seen.append((args, kw)) or original(*args, **kw)
+        try:
+            ctx.plannotator = fake_plannotator(self.tools)
+            job = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+            wait_for(job)
+        finally:
+            lr.plannotator_args = original
+        self.assertEqual(seen[0][0][1:], (self.b, self.c))
+        self.assertEqual(job.what, "patch %s..%s" % (self.b[:12], self.c[:12]))
         self.assertIsNone(job.result_path)
         self.assertIn("not recorded", job.error)
         self.assertEqual(job.decision, "annotated")
+        ctx.plannotator = fake_plannotator(self.tools, decision=None, exit_code=2)
+        job = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        wait_for(job)
+        self.assertIn("exited 2", job.error)
+        self.assertIsNone(job.result_path)
+        self.assertFalse(job.out_path.exists())
+        ctx.plannotator = fake_plannotator(self.tools, decision="dismissed", message="")
+        job = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        wait_for(job)
+        self.assertTrue(job.done and not job.error)
+        self.assertIsNone(job.result_path)
+        self.assertFalse(job.out_path.exists())
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message={"not": "a string"})
+        job = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        wait_for(job)
+        self.assertEqual((job.done, job.decision), (True, "approved"))
+        self.assertIn("not recorded", job.error)
+        with self.assertRaises(RuntimeError):
+            ctx.start_plannotator("AB-2", record_on="AB-2", base="nope", head=self.c)
+        ctx.plannotator = fake_plannotator(self.tools, delay=1)
+        first = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        with self.assertRaises(RuntimeError):
+            ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        second = ctx.start_plannotator("AB-4", record_on="AB-4", base=self.b, head="task/ab-4")
+        self.assertNotEqual(first.out_path, second.out_path)
+        wait_for(first)
+        wait_for(second)
+        self.assertEqual(lr.session_url(first.err_path.read_text()), "http://localhost:4242")
+        ctx.plannotator = fake_plannotator(self.tools, delay=5)
+        abandoned = ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c)
+        wait_file(abandoned.err_path)
+        ctx.close_session("AB-2")
+        wait_for(abandoned)
+        self.assertEqual((abandoned.decision, abandoned.error, abandoned.result_path), ("dismissed", None, None))
+        self.assertFalse(abandoned.out_path.exists())
+        self.assertIsNotNone(ctx.start_plannotator("AB-2", record_on="AB-2", base=self.c + "^", head=self.c))
+        ctx.close_all()
 
-    @unittest.skipUnless(shutil.which("lattice"), "lattice not on PATH")
-    def test_review_lands_on_the_task_with_its_revision(self):
-        board = Path(self.tmp.name) / "board"
-        board.mkdir()
-        subprocess.run(["lattice", "init", "--path", str(board), "--actor", "agent:test", "--project-code", "TB",
-                        "--project-name", "tb", "--preset", "linear", "--workflow", "classic", "--no-seed",
-                        "--no-setup-claude", "--no-setup-agents"], check=True, env=ENV, capture_output=True)
-        sid = subprocess.run(["lattice", "create", "a task", "--actor", "agent:test", "--quiet"], cwd=board, env=ENV,
-                             check=True, capture_output=True, text=True).stdout.strip()
+    def test_file_names_and_binary_content_survive(self):
+        (self.repo / "caf\u00e9.txt").write_text("caf\u00e9\n")
+        blob = bytes(range(256)) * 4
+        (self.repo / "blob.bin").write_bytes(blob)
+        git(self.repo, "add", "caf\u00e9.txt", "blob.bin")
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "feat: odd files\n\nTask: AB-11")
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(lr.changed_files(self.repo, head + "^", head),
+                         [{"status": "A", "path": "blob.bin", "old_path": "blob.bin"}, {"status": "A", "path": "caf\u00e9.txt", "old_path": "caf\u00e9.txt"}])
+        ctx = self.context()
+        ctx.code = fake_code(self.tools)
+        ctx.code_diff(head + "^", head, "blob.bin", "blob.bin", "A")
+        left, right = wait_file(self.tools / "code.log").split()[-2:]
+        self.assertEqual((Path(left).read_bytes(), Path(right).read_bytes()), (b"", blob))
+        ctx.code_diff(head + "^", head, "caf\u00e9.txt", "caf\u00e9.txt", "A")
+        right = wait_file(self.tools / "code.log", lines=2).splitlines()[-1].split()[-1]
+        self.assertTrue(right.endswith("-caf\u00e9.txt"))
+        self.assertEqual(Path(right).read_text(), "caf\u00e9\n")
+
+    def test_local_host(self):
+        for value in ("127.0.0.1:8798", "localhost:45119", "http://127.0.0.1:8798", "http://localhost:45119", "[::1]:8798"):
+            self.assertTrue(lr.local_host(value), value)
+        for value in ("evil.example:8798", "http://evil.example", "", None, "127.0.0.1.evil.example"):
+            self.assertFalse(lr.local_host(value), value)
+        self.assertTrue(lr.same_origin("http://localhost:45119", "localhost:45119"))
+        self.assertTrue(lr.same_origin("http://127.0.0.1:8798", "127.0.0.1:8798"))
+        for value in ("http://127.0.0.1:1", "https://127.0.0.1:8798", "http://localhost:8798", "null", ""):
+            self.assertFalse(lr.same_origin(value, "127.0.0.1:8798"), value)
+
+
+class SectionTests(RepoFixture):
+    def setUp(self):
+        super().setUp()
+        StubDashboard.received = []
+        StubDashboard.static_dir = self.repo / "static"
+        StubDashboard.static_dir.mkdir()
+        (StubDashboard.static_dir / "index.html").write_text("<html><head><title>d</title></head><body>board</body></html>")
+        self.ctx = self.context()
+        self.ctx.plannotator = "/nonexistent/plannotator"
+        self.ctx.code = fake_code(self.tools)
+        self.calls = []
+        self.ctx.board_write = lambda key, *args: self.calls.append(args) or True
+        self.reviews = {}
+        self.ctx.comments = lambda sid: self.reviews.get(sid, [])
+        self.server = serve(lr.make_handler(self.ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        super().tearDown()
+
+    def test_dashboard_pages_get_the_hook_and_writes_are_guarded(self):
+        status, index, _ = call(self.base + "/")
+        self.assertEqual(status, 200)
+        self.assertIn(lr.HOOK + "</head>", index)
+        self.assertIn("board</body>", index)
+        self.assertEqual(json.loads(call(self.base + "/api/tasks/task_AB2")[1])["data"]["path"], "/api/tasks/task_AB2")
+        self.assertEqual(call(self.base + "/", headers={"Host": "evil.example:1"})[0], 403)
+        body = json.dumps({"status": "todo", "actor": "dashboard:web"}).encode()
+        headers = origin(self.base)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, dict(headers, Origin="http://evil.example"))[0], 403)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, dict(headers, Origin="http://127.0.0.1:1"))[0], 403)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, {"Content-Type": "application/json"})[0], 403)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"not json", headers)[0], 400)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"[1]", headers)[0], 400)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"{" + b" " * lr.MAX_BODY + b"}", headers)[0], 413)
+        self.assertEqual(StubDashboard.received, [])
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, headers)[0], 200)
+        self.assertEqual(StubDashboard.received[-1], ("/api/tasks/task_AB9/status", {"status": "todo", "actor": "human:t"}))
+
+    def test_done_through_the_dashboard_needs_an_approved_current_review(self):
+        done = json.dumps({"status": "done", "actor": "dashboard:web"}).encode()
+        headers = origin(self.base)
+        status, body, _ = call(self.base + "/api/tasks/task_AB2/status", done, headers)
+        self.assertEqual((status, json.loads(body)["error"]["code"]), (409, "REVIEW_REQUIRED"))
+        self.assertIn("no Plannotator review", json.loads(body)["error"]["message"])
+        self.assertEqual(call(self.base + "/api/tasks/task_AB2/status?view=board", b"  \n" + done, headers)[0], 409)
+        self.assertEqual(call(self.base + "/api/tasks/task_AB2/status/", done, headers)[0], 409)
+        self.assertEqual(StubDashboard.received, [])
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}]
+        self.assertIn("review again", json.loads(call(self.base + "/api/tasks/task_AB2/status", done, headers)[1])["error"]["message"])
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
+        self.assertEqual(call(self.base + "/api/tasks/task_AB2/status", done, headers)[0], 200)
+        self.assertEqual(StubDashboard.received[-1][1]["status"], "done")
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", done, headers)[0], 200)
+
+    def test_review_section_offers_only_what_the_task_allows(self):
+        split = call(self.base + "/review/t/AB-1")[1]
+        self.assertEqual(split.count(">Plannotator</button>"), 2)
+        self.assertNotIn("the whole range", split)
+        self.assertIn("Completion: no Plannotator review", split)
+        branch = call(self.base + "/review/t/AB-4")[1]
+        self.assertIn("the whole range", branch)
+        self.assertNotIn("feedback only", branch)
+        self.assertIn(">diff</button>", branch)
+        self.assertNotIn(">open</button>", branch)
+        self.assertNotIn("vscode://", branch)
+        self.assertIn("no Plannotator review", branch)
+        none = call(self.base + "/review/t/AB-9")[1]
+        self.assertIn("no linked branch", none)
+        self.assertNotIn("<button", none)
+        self.assertNotIn("Completion", none)
+        (self.repo / "scratch").write_text("x\n")
+        self.assertIn("uncommitted changes, feedback only", call(self.base + "/review/t/AB-9")[1])
+        self.assertIn("live tree, feedback only", call(self.base + "/review/t/AB-10")[1])
+        self.assertNotIn("live tree", call(self.base + "/review/t/AB-2")[1])
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
+                                 "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}]
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("changes requested", page)
+        self.assertIn("Do not accept", page)
+        self.assertNotIn("Mark done", page)
+        self.reviews["AB-2"].append({"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)})
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("Mark done: approved at " + self.c[:12], page)
+        self.assertEqual(call(self.base + "/review/t/AB-99")[0], 404)
+        status, _, headers = call(self.base + "/t/AB-2")
+        self.assertEqual((status, headers["Location"]), (303, "/#/task/task_AB2"))
+
+    def test_plannotator_button_lands_in_the_session_in_this_browser(self):
+        self.ctx.plannotator = fake_plannotator(self.tools, delay=5)
+        status, _, headers = call(self.base + "/review/t/AB-2/plannotator", form(self.ctx, base=self.c + "^", head=self.c))
+        self.assertEqual((status, headers["Location"]), (303, "http://localhost:4242"))
+        status, _, headers = call(self.base + "/review/t/AB-2/plannotator", form(self.ctx, base=self.c + "^", head=self.c))
+        self.assertEqual((status, headers["Location"]), (303, "http://localhost:4242"))
+        section = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("Plannotator running", section)
+        self.assertIn("href='http://localhost:4242'", section)
+        self.assertIn(">Close session</button>", section)
+        self.assertIn("target='_blank'", section)
+        self.assertEqual(call(self.base + "/review/t/AB-2/close", form(self.ctx))[0], 303)
+        wait_for(self.ctx.jobs["AB-2"])
+        section = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("closed without a review", section)
+        self.assertNotIn("Close session", section)
+        self.ctx.plannotator = "/nonexistent/plannotator"
+        status, body, _ = call(self.base + "/review/t/AB-2/plannotator", form(self.ctx, base=self.c + "^", head=self.c))
+        self.assertEqual(status, 200)
+        self.assertIn("No such file", body)
+
+    def test_review_actions_need_the_token_and_the_gate(self):
+        self.assertEqual(call(self.base + "/review/t/AB-2/open", b"token=wrong&path=f")[0], 403)
+        self.assertEqual(call(self.base + "/review/t/AB-2/open", form(self.ctx, path="f"), {"Origin": "http://evil.example"})[0], 403)
+        self.assertEqual(call(self.base + "/review/t/AB-2/open", form(self.ctx, path="f"))[0], 303)
+        self.assertIn("--reuse-window " + str(self.repo / "f"), wait_file(self.tools / "code.log"))
+        call(self.base + "/review/t/AB-2/open", form(self.ctx, path="../outside"))
+        self.assertIn("not a repository path", call(self.base + "/review/t/AB-2")[1])
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}]
+        call(self.base + "/review/t/AB-2/complete", form(self.ctx))
+        self.assertIn("not completed", call(self.base + "/review/t/AB-2")[1])
+        self.assertEqual(self.calls, [])
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
+        call(self.base + "/review/t/AB-2/complete", form(self.ctx))
+        self.assertEqual(self.calls, [("status", "AB-2", "done", "--no-auto-review")])
+
+
+@unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
+class CliTests(RepoFixture):
+    def test_review_lands_on_the_task_and_completes_it_through_the_cli(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "g", "feat: g\n\nTask: " + sid)
+        lattice(board, "status", sid, "in_progress", "--no-auto-review", "--actor", "agent:test")
+        lattice(board, "status", sid, "in_review", "--no-auto-review", "--actor", "agent:test")
         ctx = self.context(board=board, repo=self.repo)
-        ctx.plannotator = fake_plannotator(self.repo)
-        job = ctx.start_plannotator(sid, record_on=sid, base=self.c + "^", head=self.c)
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="Code review completed")
+        rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+        job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
         wait_for(job)
         self.assertTrue(job.done and not job.error, job.error)
-        self.assertEqual(job.result_path, job.out_path)
-        comments = json.loads(subprocess.run(["lattice", "comments", sid, "--json"], cwd=board, env=ENV, check=True,
-                                             capture_output=True, text=True).stdout)["data"]
-        self.assertEqual(len(comments), 1)
-        self.assertEqual(comments[0]["role"], "review")
-        self.assertIn("line 2: rename it", comments[0]["body"])
-        self.assertIn(lr.REVIEWED + self.b + ".." + self.c, comments[0]["body"])
-
-    def test_pages_tokens_and_stale_completion(self):
-        ctx = self.context()
-        ctx.plannotator = "/nonexistent/plannotator"
-        calls = []
-        ctx.board_write = lambda key, *args: calls.append(args) or True
-        server = ThreadingHTTPServer(("127.0.0.1", 0), lr.make_handler(ctx))
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        comments = ctx.comments(sid)
+        self.assertEqual([c["role"] for c in comments], ["review"])
+        self.assertIn(lr.REVIEWED + rng["base_sha"] + ".." + rng["head_sha"], comments[0]["body"])
+        self.assertEqual(lr.review_decision(comments[0]["body"]), "approved")
+        self.assertIsNone(lr.completion_block(self.repo, lr.find_task(board, sid), "main", comments))
+        StubDashboard.static_dir = self.repo / "static"
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
         base = "http://127.0.0.1:%d" % server.server_address[1]
-
-        def rows(html):
-            return {row.split("</a>")[0].split(">")[-1]: row for row in html.split("<tr>")[2:]}
-
         try:
-            index = urllib.request.urlopen(base + "/").read().decode()
-            self.assertIn("http://127.0.0.1:8700", index)
-            by_id = rows(index)
-            self.assertIn("Plannotator", by_id["AB-2"])
-            self.assertIn("Plannotator", by_id["AB-4"])
-            self.assertNotIn("Plannotator", by_id["AB-1"])
-            self.assertNotIn("Plannotator", by_id["AB-9"])
-            split = urllib.request.urlopen(base + "/t/AB-1").read().decode()
-            self.assertEqual(split.count("<button class='quiet'>Plannotator</button>"), 2)
-            self.assertNotIn("exact range", split)
-            self.assertNotIn("live tree", split)
-            detail = urllib.request.urlopen(base + "/t/AB-4").read().decode()
-            self.assertIn("vscode://" + lr.EXTENSION_ID, detail)
-            self.assertIn("exact range", detail)
-            self.assertNotIn("live tree", detail)
-            req = urllib.request.Request(base + "/t/AB-4/status", data=b"token=wrong&to=done", method="POST")
-            with self.assertRaises(urllib.error.HTTPError) as err:
-                urllib.request.urlopen(req)
-            self.assertEqual(err.exception.code, 403)
-            stale = self.repo / "stale.md"
-            stale.write_text("Plannotator approved\n%s%s..%s\n\nfine\n" % (lr.REVIEWED, self.a, self.b))
-            form = urllib.parse.urlencode({"token": ctx.token, "result": str(stale)}).encode()
-            after = urllib.request.urlopen(urllib.request.Request(base + "/t/AB-2/complete", data=form, method="POST")).read().decode()
-            self.assertIn("not completed", after)
-            self.assertEqual(calls, [])
-            with self.assertRaises(urllib.error.HTTPError) as err:
-                urllib.request.urlopen(base + "/t/AB-99")
-            self.assertEqual(err.exception.code, 404)
+            self.assertIn("Mark done: approved at " + rng["head_sha"][:12], call(base + "/review/t/" + sid)[1])
+            call(base + "/review/t/%s/complete" % sid, form(ctx))
+            self.assertEqual(lr.find_task(board, sid)["status"], "done")
+            self.assertNotIn("Mark done", call(base + "/review/t/" + sid)[1])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+@unittest.skipUnless(HAVE_CLI and HAVE_MODULE, "lattice not importable; run with the Python that has lattice installed")
+class DashboardTests(RepoFixture):
+    def test_the_real_dashboard_runs_in_process_with_the_review_section(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "g", "feat: g\n\nTask: " + sid)
+        lattice(board, "status", sid, "in_progress", "--no-auto-review", "--actor", "agent:test")
+        lattice(board, "status", sid, "in_review", "--no-auto-review", "--actor", "agent:test")
+        ctx = self.context(board=board, repo=self.repo)
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
+        ctx.code = fake_code(self.tools)
+        server = serve(lr.make_handler(ctx))
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        try:
+            status, index, _ = call(base + "/")
+            self.assertEqual(status, 200)
+            self.assertIn(lr.HOOK + "</head>", index)
+            self.assertIn("<html", index)
+            tasks = json.loads(call(base + "/api/tasks")[1])["data"]
+            self.assertEqual([t["short_id"] for t in tasks], [sid])
+            task_id = tasks[0]["id"]
+            self.assertIn("the whole range", call(base + "/review/t/" + sid)[1])
+            done = json.dumps({"status": "done", "actor": "dashboard:web"}).encode()
+            headers = origin(base)
+            status, body, _ = call(base + "/api/tasks/%s/status" % task_id, done, headers)
+            self.assertEqual((status, json.loads(body)["error"]["code"]), (409, "REVIEW_REQUIRED"))
+            self.assertEqual(lr.find_task(board, sid)["status"], "in_review")
+            rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+            job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
+            wait_for(job)
+            self.assertTrue(job.done and not job.error, job.error)
+            status, body, _ = call(base + "/api/tasks/%s/status" % task_id, done, headers)
+            self.assertEqual(status, 200, body)
+            self.assertEqual(lr.find_task(board, sid)["status"], "done")
+            status, body, _ = call(base + "/api/tasks/%s/open-plans" % task_id, b"{}", headers)
+            self.assertEqual(status, 200, body)
+            plan = board / ".lattice" / "plans" / (task_id + ".md")
+            self.assertTrue(plan.is_file())
+            self.assertEqual(json.loads(body)["data"]["opened"], str(plan.resolve()))
+            self.assertIn("--reuse-window " + str(plan.resolve()), wait_file(self.tools / "code.log"))
+            status, body, _ = call(base + "/api/tasks/%s/open-notes" % task_id, b"{}", headers)
+            self.assertEqual((status, json.loads(body)["error"]["code"]), (404, "NOT_FOUND"))
         finally:
             server.shutdown()
             server.server_close()

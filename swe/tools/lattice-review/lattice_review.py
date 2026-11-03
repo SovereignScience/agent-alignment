@@ -1,49 +1,61 @@
 #!/usr/bin/env python3
-"""Local review launcher for a Lattice board.
+"""The Lattice dashboard with a review section on every task.
 
-Serves a page on 127.0.0.1 that lists the board's tasks, resolves each
-task's commits from its linked branch or from "Task: <ID>" commit
-trailers, and opens them in Plannotator or the VS Code multi-diff editor.
-Plannotator's decision lands on the task as a comment, bound to the
-reviewed revision, and the task can be completed with it only while that
-revision is still the task's work.
+One local server: the Lattice dashboard (its own handler class, run in
+this process) plus, inside each task's detail view, the commits that
+belong to the task: a linked branch or the commits whose message carries
+a "Task: <ID>" trailer. Buttons open them in Plannotator, or file by
+file in VS Code. Plannotator's decision lands on the task as a comment
+bound to the reviewed commits. A task with work can be marked done, here
+or with the dashboard's own status control, only while its latest review
+approves exactly the commits it has now. Notes and plans opened from the
+dashboard open in VS Code.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
+import io
 import json
 import os
 import re
 import secrets
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-STATUS_ORDER = ["in_review", "in_progress", "todo", "backlog", "done", "cancelled"]
-EXTENSION_ID = "agent-alignment.lattice-review-links"
+REVIEW_PATH = "/review"
 WORKTREE = "WORKTREE"
 REVIEWED = "Reviewed: "
+REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
+DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+MAX_BODY = 1_048_576
+HOOK = "<script>window.LATTICE_REVIEW_URL=%s</script>" % json.dumps(REVIEW_PATH)
 INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, then running it: "
                 "<code>curl -fsSLo plannotator-install.sh https://plannotator.ai/install.sh</code>, "
                 "<code>less plannotator-install.sh</code>, <code>bash plannotator-install.sh --minimal</code>. "
-                "Then restart the launcher.")
+                "Then restart this server.")
 
 
 # --------------------------------------------------------------------------
 # git and board reads (pure functions, covered by the tests)
 # --------------------------------------------------------------------------
 
-def run_git(repo, *args, check=True):
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+def run_git(repo, *args, check=True, binary=False):
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=not binary)
     if check and result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "git " + " ".join(args) + " failed")
+        err = result.stderr if not binary else result.stderr.decode(errors="replace")
+        raise RuntimeError(err.strip() or "git " + " ".join(args) + " failed")
     return result.stdout
 
 
@@ -57,25 +69,8 @@ def board_config(board):
     return json.loads((Path(board) / ".lattice" / "config.json").read_text())
 
 
-def task_number(short_id):
-    tail = (short_id or "").rsplit("-", 1)[-1]
-    return int(tail) if tail.isdigit() else 0
-
-
 def load_tasks(board):
-    tasks = [json.loads(p.read_text()) for p in (Path(board) / ".lattice" / "tasks").glob("*.json")]
-
-    def key(task):
-        status = task.get("status") or ""
-        rank = STATUS_ORDER.index(status) if status in STATUS_ORDER else len(STATUS_ORDER)
-        return (rank, task_number(task.get("short_id")))
-
-    return sorted(tasks, key=key)
-
-
-def needs_human(task):
-    flag = task.get("needs_human")
-    return flag.get("reason", "flagged") if isinstance(flag, dict) else ("flagged" if flag else "")
+    return [json.loads(p.read_text()) for p in (Path(board) / ".lattice" / "tasks").glob("*.json")]
 
 
 def find_task(board, short_id):
@@ -133,23 +128,21 @@ def resolve_range(repo, task, main):
 
 
 def changed_files(repo, base, head):
-    """Name-status rows; renames and copies keep the old path for the base side."""
-    args = ["diff", "--name-status", "-M", base] + ([] if head == WORKTREE else [head])
+    """Name-status rows (NUL-delimited, so any file name survives); renames and
+    copies keep the old path for the base side."""
+    args = ["diff", "--name-status", "-M", "-z", base] + ([] if head == WORKTREE else [head])
+    fields = run_git(repo, *args).split("\0")
     files = []
-    for line in run_git(repo, *args).splitlines():
-        parts = line.split("\t")
-        if len(parts) == 3:
-            files.append({"status": parts[0][0], "path": parts[2], "old_path": parts[1]})
-        elif len(parts) == 2:
-            files.append({"status": parts[0][0], "path": parts[1], "old_path": parts[1]})
+    i = 0
+    while i < len(fields) and fields[i]:
+        status = fields[i][0]
+        if status in "RC":
+            files.append({"status": status, "path": fields[i + 2], "old_path": fields[i + 1]})
+            i += 3
+        else:
+            files.append({"status": status, "path": fields[i + 1], "old_path": fields[i + 1]})
+            i += 2
     return files
-
-
-def unpushed(repo, main, remote):
-    upstream = remote + "/" + main
-    if not rev(repo, upstream):
-        return {"upstream": upstream, "exists": False, "commits": []}
-    return {"upstream": upstream, "exists": True, "commits": log_commits(repo, upstream + "..HEAD")}
 
 
 def current_branch(repo):
@@ -160,18 +153,14 @@ def worktree_dirty(repo):
     return bool(run_git(repo, "status", "--porcelain", check=False).strip())
 
 
-def vscode_uri(repo, base, head, title):
-    query = urllib.parse.urlencode({"repo": str(repo), "base": base, "head": head, "title": title})
-    return "vscode://" + EXTENSION_ID + "/diff?" + query
-
-
 def plannotator_args(plannotator, base=None, head=None, live=False):
     """Command for one Plannotator session: the live checked-out tree from base,
-    or a static patch of base..head fed on stdin."""
+    or a static patch of base..head fed on stdin. Plannotator opens no browser
+    itself; the session URL it prints is opened by the page that asked."""
     if live:
-        args = [plannotator, "review", "--git", "--no-git-remote-check", "--json"]
+        args = [plannotator, "--browser", "none", "review", "--git", "--no-git-remote-check", "--json"]
         return args + (["--base", base] if base else []), None
-    return [plannotator, "review", "--patch-file", "-", "--json"], ["diff", base] + ([] if head == WORKTREE else [head])
+    return [plannotator, "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", base] + ([] if head == WORKTREE else [head])
 
 
 def parse_review(stdout):
@@ -182,27 +171,47 @@ def parse_review(stdout):
         except json.JSONDecodeError:
             continue
         if isinstance(record, dict) and "decision" in record:
-            return record["decision"], (record.get("message") or "").strip()
+            decision, message = record["decision"], record.get("message")
+            if not isinstance(message, str):
+                message = "" if message is None else json.dumps(message)
+            return (decision if isinstance(decision, str) else None), message.strip()
     return None, stdout.strip()
 
 
-def reviewed_revision(result_path):
-    """The (base_sha, head_sha, clean) a recorded review was taken against."""
-    for line in Path(result_path).read_text().splitlines():
+def reviewed_revision(text):
+    """(base_sha, head_sha, qualifier) from a review's Reviewed line.
+
+    qualifier is None for a committed range and "live" for a working-tree
+    review. A missing or malformed line gives (None, None, None)."""
+    for line in text.splitlines():
         if line.startswith(REVIEWED):
-            fields = line[len(REVIEWED):].split()
-            base_sha, head_sha = fields[0].split("..")
-            return base_sha, head_sha, "dirty" not in fields
-    return None, None, False
+            match = REVISION.match(line[len(REVIEWED):].strip())
+            return (match.group(1), match.group(2), (match.group(3) or "").strip() or None) if match else (None, None, None)
+    return None, None, None
 
 
-def stale_reason(repo, task, main, result_path):
-    """Why a recorded review may not complete the task now, or None when it may."""
-    base_sha, head_sha, clean = reviewed_revision(result_path)
+def review_decision(text):
+    """approved or annotated, from the first line of a recorded review."""
+    match = DECISION.match(text.splitlines()[0] if text else "")
+    return match.group(1) if match else None
+
+
+def latest_review(comments):
+    """The newest top-level comment with role review that names a revision, or
+    None. Deleted reviews count: a deleted one withdraws what came before it.
+    Ties on the one-second timestamps go to the later event."""
+    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
+               if c.get("role") == "review" and (c.get("deleted") or reviewed_revision(c.get("body") or "")[1])]
+    return max(reviews)[2] if reviews else None
+
+
+def stale_reason(repo, task, main, text):
+    """Why a recorded review does not cover the task's work now, or None when it does."""
+    base_sha, head_sha, qualifier = reviewed_revision(text)
     if not head_sha:
         return "the recorded review names no revision"
-    if not clean:
-        return "the review was taken on a working tree with uncommitted changes; review the committed range instead"
+    if qualifier:
+        return "the review was taken on the live working tree; review the committed range to complete"
     rng = resolve_range(repo, task, main)
     if not rng["head_sha"]:
         return "the task has no single commit range now"
@@ -212,13 +221,58 @@ def stale_reason(repo, task, main, result_path):
     return None
 
 
+def completion_block(repo, task, main, comments):
+    """Why the task may not be completed now, or None: its latest bound review
+    must approve exactly the commits it has now."""
+    review = latest_review(comments)
+    if not review:
+        return "no Plannotator review is recorded for this task"
+    if review.get("deleted"):
+        return "the latest review was deleted; review again"
+    if review_decision(review.get("body") or "") != "approved":
+        return "the latest review requested changes; approve the current revision first"
+    return stale_reason(repo, task, main, review["body"])
+
+
+def session_url(log_text):
+    """The URL of the Plannotator session a run printed, or None."""
+    match = re.search(r"session ready: (http://\S+)", log_text)
+    return match.group(1) if match else None
+
+
+def with_hook(index_html):
+    """The dashboard page with the hook that makes it render the review section."""
+    return index_html.replace(b"</head>", HOOK.encode() + b"</head>", 1)
+
+
+def local_host(value):
+    """True when a Host or Origin header names this machine."""
+    if not value:
+        return False
+    try:
+        host = urllib.parse.urlsplit(value if "//" in value else "//" + value).hostname
+    except ValueError:
+        return False
+    return host in LOCAL_HOSTS
+
+
+def same_origin(origin, host):
+    """True when an Origin header is this server as the browser addresses it."""
+    try:
+        parts = urllib.parse.urlsplit(origin or "")
+    except ValueError:
+        return False
+    return parts.scheme == "http" and local_host(origin) and parts.netloc.lower() == (host or "").lower()
+
+
 # --------------------------------------------------------------------------
-# launcher state and actions
+# state and actions
 # --------------------------------------------------------------------------
 
 class Job:
-    def __init__(self, key, out_path, err_path):
+    def __init__(self, key, what, out_path, err_path):
         self.key = key
+        self.what = what
         self.out_path = out_path
         self.err_path = err_path
         self.started = time.time()
@@ -228,7 +282,7 @@ class Job:
         self.result_path = None
         self.error = None
         self.decision = None
-        self.what = ""
+        self.closed = False
 
 
 class Context:
@@ -239,13 +293,13 @@ class Context:
         self.main = args.main
         self.remote = args.remote
         self.actor = args.actor
-        self.dashboard = args.dashboard_url or "http://127.0.0.1:%d" % self.config.get("dashboard_port", 8799)
         code = self.config.get("project_code", "board")
         self.state = Path(args.state or Path.home() / ".local" / "state" / "lattice-review" / code)
         self.state.mkdir(parents=True, exist_ok=True)
         self.token = secrets.token_hex(16)
         self.jobs = {}
         self.notices = {}
+        self.runs = 0
         self.plannotator = shutil.which("plannotator")
         self.code = shutil.which("code")
         self.lattice = shutil.which("lattice")
@@ -264,32 +318,41 @@ class Context:
         return rc == 0
 
     def comments(self, short_id):
-        rc, out = self.lattice_cmd("comments", short_id, "--json")
-        if rc != 0:
-            return []
+        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+        result = subprocess.run([self.lattice, "comments", short_id, "--json"], cwd=self.board, env=env, capture_output=True, text=True)
         try:
-            return json.loads(out).get("data", [])
+            return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
         except json.JSONDecodeError:
             return []
 
     def start_plannotator(self, key, record_on=None, base=None, head=None, live=False):
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        out_path = self.state / (key + "-" + stamp + ".review.md")
-        err_path = self.state / (key + "-" + stamp + ".log")
-        job = Job(key, out_path, err_path)
+        """One Plannotator session. The range is resolved to commit IDs once, and
+        those IDs feed both the patch and the recorded Reviewed line."""
         if live:
-            base_sha, head_sha = (rev(self.repo, base) if base else None), rev(self.repo, "HEAD")
-            dirty = worktree_dirty(self.repo)
-            job.what = "live tree" + (" from " + base if base else "") + (", dirty" if dirty else ", clean")
-            revision = "%s..%s%s" % (base_sha or "-", head_sha, " dirty" if dirty else "")
+            base_sha = rev(self.repo, base) if base else None
+            head_sha = rev(self.repo, "HEAD")
+            what = "live tree" + (" from " + base_sha[:12] if base_sha else "")
+            revision = "%s..%s live" % (base_sha or "-", head_sha)
+            args, patch_args = plannotator_args(self.plannotator, base_sha, live=True)
         else:
             base_sha, head_sha = rev(self.repo, base), rev(self.repo, head)
-            job.what = "patch %s..%s" % (str(base)[:12], str(head)[:12])
+            if not (base_sha and head_sha):
+                raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
+            what = "patch %s..%s" % (base_sha[:12], head_sha[:12])
             revision = "%s..%s" % (base_sha, head_sha)
+            args, patch_args = plannotator_args(self.plannotator, base_sha, head_sha)
+        with self.lock:
+            running = self.jobs.get(key)
+            if running and not running.done:
+                raise RuntimeError("a Plannotator session for %s is already open; finish or close it first" % key)
+            self.runs += 1
+            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            name = "%s-%s-%d" % (key, stamp, self.runs)
+            job = Job(key, what, self.state / (name + ".review.md"), self.state / (name + ".log"))
+            self.jobs[key] = job
         env = dict(os.environ, PLANNOTATOR_AI="disabled", PLANNOTATOR_SHARE="disabled")
-        args, patch_args = plannotator_args(self.plannotator, base, head, live)
-        out = open(out_path, "w")
-        err = open(err_path, "w")
+        out = open(job.out_path, "w")
+        err = open(job.err_path, "w")
         try:
             job.proc = subprocess.Popen(args, cwd=self.repo, env=env, stdout=out, stderr=err,
                                         stdin=subprocess.PIPE if patch_args else None)
@@ -301,75 +364,122 @@ class Context:
             job.done = True
             out.close()
             err.close()
-        with self.lock:
-            self.jobs[key] = job
-        if job.error:
             return job
 
-        def wait():
+        def finish():
             job.rc = job.proc.wait()
             out.close()
             err.close()
-            decision, message = parse_review(out_path.read_text())
-            job.decision = decision
-            if decision != "dismissed" and (message or decision) and record_on:
-                body = "Plannotator %s (%s), %s\n%s%s\n\n%s\n" % (decision or "result", job.what, stamp, REVIEWED, revision, message)
-                out_path.write_text(body)
-                rc, msg = self.lattice_cmd("comment", record_on, "--file", str(out_path), "--role", "review")
+            decision, message = parse_review(job.out_path.read_text(errors="replace"))
+            job.decision = "dismissed" if job.closed else decision
+            if job.closed:
+                job.out_path.unlink(missing_ok=True)
+            elif job.rc != 0 or decision not in ("approved", "annotated", "dismissed"):
+                detail = (job.err_path.read_text(errors="replace").strip() or job.out_path.read_text(errors="replace").strip())[-400:]
+                job.error = "plannotator exited %s without a decision: %s" % (job.rc, detail or "no output")
+                job.out_path.unlink(missing_ok=True)
+            elif decision == "dismissed" or not record_on:
+                job.out_path.unlink(missing_ok=True)
+            else:
+                body = "Plannotator %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, REVIEWED, revision, message)
+                job.out_path.write_text(body)
+                rc, msg = self.lattice_cmd("comment", record_on, "--file", str(job.out_path), "--role", "review")
                 if rc == 0:
-                    job.result_path = out_path
+                    job.result_path = job.out_path
                 else:
                     job.error = "the review was not recorded on the task: " + msg
-            else:
-                out_path.unlink(missing_ok=True)
-            job.done = True
+
+        def wait():
+            try:
+                finish()
+            except Exception as exc:  # noqa: BLE001 - any failure must end the job visibly
+                job.error = "the review result could not be handled: %r" % exc
+            finally:
+                job.done = True
 
         threading.Thread(target=wait, daemon=True).start()
         return job
 
+    def close_session(self, key):
+        """End an abandoned Plannotator session; nothing is recorded."""
+        job = self.jobs.get(key)
+        if job and not job.done and job.proc:
+            job.closed = True
+            job.proc.terminate()
+
+    def close_all(self):
+        for key in list(self.jobs):
+            self.close_session(key)
+
+    def repo_path(self, path):
+        full = (self.repo / path).resolve()
+        if self.repo not in full.parents:
+            raise RuntimeError("not a repository path: " + path)
+        return full
+
+    def code_open(self, path):
+        """Open one file in the VS Code window this server was started from."""
+        subprocess.Popen([self.code, "--reuse-window", str(path)])
+
+    def side(self, sha, path):
+        """A temp copy's name: commit, a digest of the full path, the file name."""
+        return self.state / "tmp" / ("%s-%s-%s" % (sha[:12], hashlib.sha1(path.encode()).hexdigest()[:8], Path(path).name))
+
     def code_diff(self, base, head, path, old_path, status):
         """Open one file of the range in VS Code's two-file diff."""
-        tmp = self.state / "tmp"
-        tmp.mkdir(exist_ok=True)
-        left = tmp / (base[:12].replace("/", "_") + "-" + Path(old_path or path).name)
-        left.write_text("" if status == "A" else run_git(self.repo, "show", base + ":" + (old_path or path)))
+        base_sha = rev(self.repo, base)
+        head_sha = None if head == WORKTREE else rev(self.repo, head)
+        if not base_sha or (head != WORKTREE and not head_sha):
+            raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
+        (self.state / "tmp").mkdir(exist_ok=True)
+        left = self.side(base_sha, old_path or path)
+        left.write_bytes(b"" if status == "A" else run_git(self.repo, "show", base_sha + ":" + (old_path or path), binary=True))
         if head == WORKTREE:
-            right = self.repo / path
+            right = self.repo_path(path)
         else:
-            right = tmp / (head[:12].replace("/", "_") + "-" + Path(path).name)
-            right.write_text("" if status == "D" else run_git(self.repo, "show", head + ":" + path))
-        subprocess.Popen([self.code, "--diff", str(left), str(right)])
+            right = self.side(head_sha, path)
+            right.write_bytes(b"" if status == "D" else run_git(self.repo, "show", head_sha + ":" + path, binary=True))
+        subprocess.Popen([self.code, "--reuse-window", "--diff", str(left), str(right)])
 
 
 # --------------------------------------------------------------------------
-# html
+# the review section
 # --------------------------------------------------------------------------
 
 STYLE = """
-body{font:14px/1.45 system-ui,sans-serif;margin:0;padding:1.2rem 2rem;background:#14171c;color:#e4e7eb}
-a{color:#7fb3ff}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.3rem .5rem;border-bottom:1px solid #2a2f37;vertical-align:top}
-th{color:#9aa4b2;font-weight:600}pre{white-space:pre-wrap;background:#1c2128;padding:.6rem;border-radius:4px}
-form{display:inline}button,input[type=submit]{background:#2b6cb0;color:#fff;border:0;padding:.25rem .6rem;border-radius:3px;cursor:pointer;margin:.1rem}
-button.quiet{background:#3a4250}textarea{width:100%;min-height:6rem;background:#1c2128;color:#e4e7eb;border:1px solid #3a4250}
-.tag{background:#2a2f37;border-radius:3px;padding:0 .35rem;margin-right:.2rem;font-size:12px}
-.muted{color:#9aa4b2}.warn{color:#f6c343}.err{color:#ff7b72}.ok{color:#7ee787}h1,h2{margin:.4rem 0}
+body{margin:0;padding:0 0 .5rem;background:transparent;color:var(--text-primary,#e4e7eb);font:.85rem/1.45 var(--font-body,system-ui,sans-serif)}
+table{border-collapse:collapse;width:100%;margin:.3rem 0}td,th{text-align:left;padding:.15rem .4rem;border-bottom:1px solid var(--border,#2a2f37);vertical-align:top}
+th{color:var(--text-muted,#9aa4b2);font-weight:600}code{font-family:var(--font-mono,monospace);font-size:.8rem}
+pre{white-space:pre-wrap;font:.8rem/1.4 var(--font-mono,monospace);margin:.3rem 0;padding:.4rem;border:1px solid var(--border,#2a2f37);border-radius:var(--radius-sm,4px)}
+form{display:inline}button{padding:.125rem .5rem;margin:.1rem .2rem .1rem 0;border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);background:var(--surface,#2a2f37);color:var(--text-primary,#e4e7eb);font-size:.8rem;cursor:pointer}
+button:hover{background:var(--surface-hover,#3a4250)}button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}
+p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-warning,#f6c343)}.err{color:var(--color-danger,#ff7b72)}.ok{color:var(--color-success,#7ee787)}
 """
+
+INHERIT = """<script>try{var s=getComputedStyle(parent.document.documentElement);
+["--text-primary","--text-muted","--accent-primary","--text-on-accent","--surface","--surface-hover","--border","--radius-sm",
+"--font-body","--font-mono","--color-warning","--color-danger","--color-success"].forEach(function(v){
+document.documentElement.style.setProperty(v,s.getPropertyValue(v))})}catch(e){}</script>"""
 
 
 def e(value):
     return html.escape("" if value is None else str(value))
 
 
-def page(title, body):
-    return ("<!doctype html><html><head><meta charset='utf-8'><title>" + e(title) + "</title><style>" + STYLE
-            + "</style></head><body>" + body + "</body></html>").encode()
+def page(title, body, refresh=False):
+    meta = "<meta http-equiv='refresh' content='5'>" if refresh else ""
+    return ("<!doctype html><html><head><meta charset='utf-8'><title>" + e(title) + "</title>" + meta + INHERIT
+            + "<style>" + STYLE + "</style></head><body>" + body + "</body></html>").encode()
 
 
-def button(ctx, action, label, fields=None, quiet=False):
+def button(ctx, action, label, fields=None, primary=False, tab=False):
+    """A one-button form. tab=True submits into a new tab of the same browser
+    and reloads this page shortly after, so the section shows the new state."""
     hidden = "".join("<input type='hidden' name='%s' value='%s'>" % (e(k), e(v)) for k, v in (fields or {}).items())
-    cls = " class='quiet'" if quiet else ""
-    return ("<form method='post' action='%s'><input type='hidden' name='token' value='%s'>%s<button%s>%s</button></form>"
-            % (e(action), ctx.token, hidden, cls, e(label)))
+    cls = " class='primary'" if primary else ""
+    target = " target='_blank' onsubmit=\"setTimeout(function(){location.reload()},1500)\"" if tab else ""
+    return ("<form method='post' action='%s'%s><input type='hidden' name='token' value='%s'>%s<button%s>%s</button></form>"
+            % (e(action), target, ctx.token, hidden, cls, e(label)))
 
 
 def tool_notes(ctx):
@@ -377,7 +487,7 @@ def tool_notes(ctx):
     if not ctx.plannotator:
         notes.append("<p class='warn'>plannotator is not on PATH. " + INSTALL_HINT + "</p>")
     if not ctx.code:
-        notes.append("<p class='warn'>The <code>code</code> command is not on PATH. Start the launcher from a VS Code terminal for per-file diffs.</p>")
+        notes.append("<p class='warn'>The <code>code</code> command is not on PATH. Start this server from a VS Code terminal to open files.</p>")
     return "".join(notes)
 
 
@@ -398,68 +508,32 @@ def range_summary(task, rng):
     return "no linked branch and no commit carries <code>Task: %s</code> yet" % e(task["short_id"])
 
 
-def render_index(ctx):
-    tasks = load_tasks(ctx.board)
-    up = unpushed(ctx.repo, ctx.main, ctx.remote)
-    body = ["<h1>%s</h1>" % e(ctx.config.get("project_name", "Board")),
-            "<p class='muted'>board <code>%s</code>, repo <code>%s</code> on <code>%s</code>. <a href='%s'>Lattice dashboard</a></p>"
-            % (e(ctx.board), e(ctx.repo), e(current_branch(ctx.repo)), e(ctx.dashboard)), tool_notes(ctx), notice(ctx, "index")]
-    if up["exists"]:
-        body.append("<p>Unpushed on this branch: %d commit(s) past <code>%s</code>. " % (len(up["commits"]), e(up["upstream"])))
-        if up["commits"]:
-            body.append("<a href='%s'>VS Code multi-diff</a> " % e(vscode_uri(ctx.repo, up["upstream"], "HEAD", "unpushed vs " + up["upstream"])))
-        if ctx.plannotator:
-            body.append(button(ctx, "/unpushed/plannotator", "Plannotator (working tree, not recorded)", {"base": up["upstream"]}))
-        body.append("</p>")
-    body.append("<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Prio</th><th>Tags</th><th>Work</th><th></th></tr>")
-    for task in tasks:
-        sid = task.get("short_id") or task["id"]
-        rng = resolve_range(ctx.repo, task, ctx.main)
-        flag = " <span class='warn' title='%s'>needs human</span>" % e(needs_human(task)) if needs_human(task) else ""
-        actions = []
-        if rng["base_sha"]:
-            actions.append("<a href='%s'>VS Code</a>" % e(vscode_uri(ctx.repo, rng["base"], rng["head"], sid + " " + task.get("title", ""))))
-            if ctx.plannotator:
-                actions.append(button(ctx, "/t/%s/plannotator" % sid, "Plannotator", {"base": rng["base"], "head": rng["head"]}, quiet=True))
-        body.append("<tr><td><a href='/t/%s'>%s</a></td><td>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td class='muted'>%s</td><td>%s</td></tr>" % (
-            e(sid), e(sid), e(task.get("title")), flag, e(task.get("status")), e(task.get("priority")),
-            "".join("<span class='tag'>%s</span>" % e(t) for t in task.get("tags", [])), range_summary(task, rng), " ".join(actions)))
-    body.append("</table>")
-    return page(ctx.config.get("project_name", "Board"), "".join(body))
-
-
-def render_task(ctx, task):
+def render_review(ctx, task):
     sid = task["short_id"]
+    act = REVIEW_PATH + "/t/" + sid + "/"
     rng = resolve_range(ctx.repo, task, ctx.main)
-    branch_now = current_branch(ctx.repo)
-    body = ["<p><a href='/'>all tasks</a> | <a href='%s/#/task/%s'>open in the Lattice dashboard</a></p>" % (e(ctx.dashboard), e(task["id"])),
-            "<h1>%s %s</h1>" % (e(sid), e(task.get("title"))),
-            "<p>%s, %s, %s %s</p>" % (e(task.get("status")), e(task.get("priority")), e(task.get("type")),
-                                      "".join("<span class='tag'>%s</span>" % e(t) for t in task.get("tags", []))),
-            tool_notes(ctx), notice(ctx, sid)]
-    if needs_human(task):
-        body.append("<p class='warn'>Needs human: %s</p>" % e(needs_human(task)))
-    body.append("<pre>%s</pre>" % e(task.get("description") or "No description"))
-    criteria = [c for c in task.get("acceptance_criteria", []) if not c.get("retired")]
-    if criteria:
-        body.append("<h2>Acceptance criteria</h2><ul>" + "".join("<li>%s</li>" % e(c.get("outcome")) for c in criteria) + "</ul>")
-    body.append("<h2>Work</h2><p>%s</p>" % range_summary(task, rng))
-    if rng["mode"] == "branch" and rng["branch"] != branch_now:
-        body.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The exact-range review and the VS Code links use the task's branch.</p>" % (e(branch_now), e(rng["branch"])))
+    head_now = rev(ctx.repo, "HEAD")
+    dirty = worktree_dirty(ctx.repo)
+    body = [tool_notes(ctx), notice(ctx, sid), "<p>Work: %s</p>" % range_summary(task, rng)]
+    if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
+        body.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
+                    % (e(current_branch(ctx.repo)), e(rng["branch"])))
     actions = []
-    if rng["base_sha"]:
-        actions.append("<a href='%s'><button type='button'>VS Code multi-diff</button></a>" % e(vscode_uri(ctx.repo, rng["base"], rng["head"], sid + " " + task.get("title", ""))))
-        if ctx.plannotator:
-            actions.append(button(ctx, "/t/%s/plannotator" % sid, "Plannotator: exact range", {"base": rng["base"], "head": rng["head"]}))
-            if rng["head_sha"] == rev(ctx.repo, "HEAD"):
-                actions.append(button(ctx, "/t/%s/plannotator" % sid, "Plannotator: live tree from base", {"base": rng["base"], "live": "1"}, quiet=True))
-    body.append("<p>" + " ".join(actions) + "</p>")
+    if ctx.plannotator:
+        if rng["base_sha"]:
+            actions.append(button(ctx, act + "plannotator", "Plannotator: the whole range", {"base": rng["base"], "head": rng["head"]}, primary=True, tab=True))
+            if rng["head_sha"] == head_now and dirty:
+                actions.append(button(ctx, act + "plannotator", "Plannotator: live tree, feedback only", {"base": rng["base"], "live": "1"}, tab=True))
+        elif rng["mode"] == "none" and dirty:
+            actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes, feedback only", {"base": "HEAD", "live": "1"}, tab=True))
+    if actions:
+        body.append("<p>" + " ".join(actions) + "</p>")
     if rng["commits"]:
         body.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
         for c in rng["commits"]:
-            body.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td><a href='%s'>VS Code</a> %s</td></tr>" % (
-                e(c["hash"][:12]), e(c["subject"]), e(c["date"]), e(vscode_uri(ctx.repo, c["hash"] + "^", c["hash"], c["subject"])),
-                button(ctx, "/t/%s/plannotator" % sid, "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, quiet=True) if ctx.plannotator else ""))
+            body.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+                e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
+                button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True) if ctx.plannotator else ""))
         body.append("</table>")
     if rng["base_sha"]:
         try:
@@ -467,153 +541,276 @@ def render_task(ctx, task):
         except RuntimeError as exc:
             files = []
             body.append("<p class='err'>%s</p>" % e(exc))
-        body.append("<h2>Files (%d)</h2><table>" % len(files))
+        body.append("<table><tr><th></th><th>File (%d)</th><th></th></tr>" % len(files))
         for f in files:
             shown = f["path"] if f["old_path"] == f["path"] else f["old_path"] + " → " + f["path"]
-            row = "<tr><td>%s</td><td><a href='vscode://file%s'>%s</a></td><td>" % (e(f["status"]), e(urllib.parse.quote(str(ctx.repo / f["path"]))), e(shown))
+            cells = ""
             if ctx.code:
-                row += button(ctx, "/t/%s/filediff" % sid, "diff in VS Code",
-                              {"path": f["path"], "old_path": f["old_path"], "status": f["status"], "base": rng["base"], "head": rng["head"]}, quiet=True)
-            body.append(row + "</td></tr>")
+                if rng["head_sha"] == head_now and (ctx.repo / f["path"]).is_file():
+                    cells += button(ctx, act + "open", "open", {"path": f["path"]})
+                cells += button(ctx, act + "filediff", "diff", {"path": f["path"], "old_path": f["old_path"], "status": f["status"],
+                                                                "base": rng["base"], "head": rng["head"]})
+            body.append("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(f["status"]), e(shown), cells))
         body.append("</table>")
     job = ctx.jobs.get(sid)
+    running = bool(job and not job.done)
     if job:
-        state = "running since " + time.strftime("%H:%M:%S", time.localtime(job.started)) if not job.done else "finished, exit %s, decision %s" % (job.rc, job.decision)
-        body.append("<h2>Plannotator</h2><p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path)))
+        state = "Plannotator running since " + time.strftime("%H:%M:%S", time.localtime(job.started)) if running else "Plannotator finished"
+        body.append("<p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path)))
+        url = session_url(job.err_path.read_text()) if job.err_path.is_file() else None
+        if running:
+            link = "<a href='%s' target='_blank' rel='noopener'>Open the session</a>. " % e(url) if url else ""
+            body.append("<p>%sAnnotations stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
+                        % (link, button(ctx, act + "close", "Close session")))
         if job.error:
             body.append("<p class='err'>%s</p>" % e(job.error))
-        if job.result_path:
-            body.append("<p class='ok'>Recorded on %s as a comment with role review.</p><pre>%s</pre>" % (e(sid), e(job.result_path.read_text())))
-            stale = stale_reason(ctx.repo, task, ctx.main, job.result_path)
-            if stale:
-                body.append("<p class='warn'>Cannot complete with this review: %s.</p>" % e(stale))
-            else:
-                body.append(button(ctx, "/t/%s/complete" % sid, "Mark done with this review", {"result": str(job.result_path)}))
-        elif job.done and not job.error:
-            body.append("<p class='muted'>Plannotator closed without a review (dismissed).</p>")
-    body.append("<h2>Comments</h2>")
-    for c in ctx.comments(sid)[-10:]:
-        body.append("<p><b>%s</b> <span class='muted'>%s%s</span></p><pre>%s</pre>" % (
-            e(c.get("author")), e(c.get("created_at")), " (" + e(c["role"]) + ")" if c.get("role") else "", e(c.get("body"))))
-    body.append("<form method='post' action='/t/%s/comment' style='display:block'><input type='hidden' name='token' value='%s'>"
-                "<textarea name='body' placeholder='Comment as %s'></textarea><br><input type='submit' value='Add comment'></form>" % (e(sid), ctx.token, e(ctx.actor)))
-    body.append("<h2>Status</h2><p>")
-    for to in ctx.config.get("workflow", {}).get("transitions", {}).get(task.get("status"), []):
-        body.append(button(ctx, "/t/%s/status" % sid, "set " + to, {"to": to}, quiet=True))
-    body.append("</p><form method='post' action='/t/%s/complete' style='display:block'><input type='hidden' name='token' value='%s'>"
-                "<textarea name='review' placeholder='Review findings to record with lattice complete (your own words, not bound to a revision)'></textarea><br>"
-                "<input type='submit' value='Mark done with this text'></form>" % (e(sid), ctx.token))
-    return page(sid, "".join(body))
+        elif job.done and not job.result_path:
+            body.append("<p class='muted'>Plannotator closed without a review.</p>")
+    comments = ctx.comments(sid)
+    review = latest_review(comments)
+    if review:
+        text = review.get("body") or ""
+        label = {"approved": "approved", "annotated": "changes requested"}.get(review_decision(text), "review")
+        body.append("<p>Latest review: <b>%s</b> <span class='muted'>%s %s</span></p><pre>%s</pre>" % (
+            e(label), e(review.get("author")), e(review.get("created_at")), e(text)))
+    if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
+        block = completion_block(ctx.repo, task, ctx.main, comments)
+        if block:
+            body.append("<p class='muted'>Completion: %s.</p>" % e(block))
+        else:
+            body.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+    return page(sid + " review", "".join(body), refresh=running)
 
 
 # --------------------------------------------------------------------------
-# http
+# http: the dashboard's handler class, with the review routes on top
 # --------------------------------------------------------------------------
 
-def make_handler(ctx):
-    class Handler(BaseHTTPRequestHandler):
+def make_handler(ctx, base=None, static_dir=None):
+    """The dashboard handler class extended with the review routes.
+
+    base and static_dir default to Lattice's own; the tests pass a stand-in."""
+    if base is None:
+        from lattice.dashboard import server as dashboard
+        base = dashboard._make_handler_class(ctx.board / ".lattice")
+        static_dir = dashboard.STATIC_DIR
+
+    class Handler(base):
         def log_message(self, fmt, *args):
-            sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
+            if not self.path.startswith("/api/"):
+                sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
 
-        def send_page(self, data, status=200):
+        def send_page(self, data, status=200, content_type="text/html; charset=utf-8"):
             self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def send_json(self, status, record):
+            self.send_page(json.dumps(record).encode(), status, "application/json; charset=utf-8")
 
         def redirect(self, location):
             self.send_response(303)
             self.send_header("Location", location)
             self.end_headers()
 
+        def forbidden(self, why):
+            self.send_page(page("forbidden", "<p>" + e(why) + "</p>"), 403)
+
         def do_GET(self):
-            url = urllib.parse.urlsplit(self.path)
-            parts = [p for p in url.path.split("/") if p]
-            if not parts:
-                return self.send_page(render_index(ctx))
-            if parts[0] == "t" and len(parts) == 2:
+            if not local_host(self.headers.get("Host")):
+                return self.forbidden("requests must address this machine")
+            parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
+            if parts[:1] == ["t"] and len(parts) == 2:
                 task = find_task(ctx.board, parts[1])
+                return self.redirect("/#/task/" + task["id"]) if task else self.send_page(page("not found", "<p>not found</p>"), 404)
+            if parts[:1] != [REVIEW_PATH.strip("/")]:
+                return super().do_GET()
+            if parts[1:2] == ["t"] and len(parts) == 3:
+                task = find_task(ctx.board, parts[2])
                 if task:
-                    return self.send_page(render_task(ctx, task))
-            if parts[0] == "vscode":
-                q = urllib.parse.parse_qs(url.query)
-                return self.redirect(vscode_uri(ctx.repo, q.get("base", [""])[0], q.get("head", [WORKTREE])[0], q.get("title", [""])[0]))
+                    return self.send_page(render_review(ctx, task))
+            if len(parts) == 1:
+                return self.redirect("/")
             self.send_page(page("not found", "<p>not found</p>"), 404)
 
+        def _serve_static(self, filename, content_type):
+            path = static_dir / filename
+            if filename != "index.html" or not path.is_file():
+                return super()._serve_static(filename, content_type)
+            self.send_page(with_hook(path.read_bytes()))
+
         def do_POST(self):
-            length = int(self.headers.get("Content-Length") or 0)
-            form = {k: v[0] for k, v in urllib.parse.parse_qs(self.rfile.read(length).decode()).items()}
+            host = self.headers.get("Host")
+            if not local_host(host):
+                return self.forbidden("requests must address this machine")
+            origin = self.headers.get("Origin")
+            if origin and not same_origin(origin, host):
+                return self.forbidden("cross-site request refused")
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0 or length > MAX_BODY:
+                return self.send_json(413, {"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "request body too large"}})
+            raw = self.rfile.read(length)
+            parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
+            if parts[:1] == [REVIEW_PATH.strip("/")]:
+                return self.review_post(parts, raw)
+            if not origin:
+                return self.forbidden("dashboard writes need an Origin header from this machine")
+            try:
+                record = json.loads(raw)
+            except ValueError:
+                record = None
+            if not isinstance(record, dict):
+                return self.send_json(400, {"ok": False, "error": {"code": "BAD_REQUEST", "message": "the body must be a JSON object"}})
+            if not self.gate(parts, record):
+                return
+            raw = json.dumps(record).encode()
+            self.rfile = io.BytesIO(raw)
+            del self.headers["Content-Length"]
+            self.headers["Content-Length"] = str(len(raw))
+            super().do_POST()
+
+        def gate(self, parts, record):
+            """Dashboard writes carry this server's actor; done needs an approved
+            review of the task's current work. False means a reply was sent."""
+            if record.get("actor") == "dashboard:web":
+                record["actor"] = ctx.actor
+            if parts[:2] == ["api", "tasks"] and parts[3:] == ["status"] and record.get("status") == "done":
+                task = find_task(ctx.board, parts[2])
+                if task and resolve_range(ctx.repo, task, ctx.main)["mode"] != "none":
+                    block = completion_block(ctx.repo, task, ctx.main, ctx.comments(task["short_id"]))
+                    if block:
+                        self.send_json(409, {"ok": False, "error": {"code": "REVIEW_REQUIRED", "message": "not completed: " + block}})
+                        return False
+            return True
+
+        def review_post(self, parts, raw):
+            form = {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode()).items()}
             if form.get("token") != ctx.token:
-                return self.send_page(page("forbidden", "<p>bad token</p>"), 403)
-            parts = [p for p in self.path.split("/") if p]
-            if parts == ["unpushed", "plannotator"]:
-                ctx.start_plannotator("unpushed", base=form.get("base") or None, live=True)
-                return self.redirect("/")
-            if len(parts) != 3 or parts[0] != "t":
+                return self.forbidden("bad token")
+            if len(parts) != 4 or parts[1] != "t":
                 return self.send_page(page("not found", "<p>not found</p>"), 404)
-            sid, action = parts[1], parts[2]
+            sid, action = parts[2], parts[3]
             task = find_task(ctx.board, sid)
             if not task:
                 return self.send_page(page("not found", "<p>not found</p>"), 404)
             try:
                 if action == "plannotator":
-                    ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None,
-                                          live=form.get("live") == "1")
+                    return self.open_session(sid, form)
+                elif action == "close":
+                    ctx.close_session(sid)
+                elif action == "open":
+                    ctx.code_open(ctx.repo_path(form["path"]))
                 elif action == "filediff":
                     ctx.code_diff(form["base"], form["head"], form["path"], form.get("old_path"), form.get("status", "M"))
-                elif action == "comment" and form.get("body", "").strip():
-                    path = ctx.state / ("%s-comment-%d.md" % (sid, int(time.time())))
-                    path.write_text(form["body"].strip() + "\n")
-                    ctx.board_write(sid, "comment", sid, "--file", str(path))
-                elif action == "status":
-                    ctx.board_write(sid, "status", sid, form["to"], "--no-auto-review")
                 elif action == "complete":
-                    result = form.get("result")
-                    if result:
-                        stale = stale_reason(ctx.repo, task, ctx.main, result)
-                        if stale:
-                            ctx.notices[sid] = ("err", "not completed: " + stale)
-                            return self.redirect("/t/" + sid)
+                    block = completion_block(ctx.repo, task, ctx.main, ctx.comments(sid))
+                    if block:
+                        ctx.notices[sid] = ("err", "not completed: " + block)
                     else:
-                        result = str(ctx.state / ("%s-review-%d.md" % (sid, int(time.time()))))
-                        Path(result).write_text(form.get("review", "").strip() + "\n")
-                    ctx.board_write(sid, "complete", sid, "--review-file", result)
-            except (RuntimeError, OSError) as exc:
+                        ctx.board_write(sid, "status", sid, "done", "--no-auto-review")
+            except (RuntimeError, OSError, KeyError) as exc:
                 ctx.notices[sid] = ("err", str(exc))
-            self.redirect("/t/" + sid)
+            self.redirect(REVIEW_PATH + "/t/" + sid)
+
+        def open_session(self, sid, form):
+            """Start Plannotator and send this tab to its session; the task page
+            reloads on its own. Runs in the browser the owner already uses."""
+            try:
+                job = ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None,
+                                            live=form.get("live") == "1")
+            except RuntimeError as exc:
+                job = ctx.jobs.get(sid)
+                url = session_url(job.err_path.read_text()) if job and not job.done and job.err_path.is_file() else None
+                if url:
+                    return self.redirect(url)
+                return self.send_page(page("Plannotator", "<p class='err'>%s</p>" % e(exc)))
+            for _ in range(100):
+                if job.err_path.is_file():
+                    url = session_url(job.err_path.read_text())
+                    if url:
+                        return self.redirect(url)
+                if job.done:
+                    break
+                time.sleep(0.2)
+            why = job.error or "Plannotator printed no session URL within 20 seconds; see %s" % job.err_path
+            self.send_page(page("Plannotator", "<p class='err'>%s</p>" % e(why)))
+
+        def _handle_post_open_notes(self, ld, task_id):
+            self.open_prose(ld, task_id, "notes")
+
+        def _handle_post_open_plans(self, ld, task_id):
+            self.open_prose(ld, task_id, "plan")
+
+        def open_prose(self, ld, task_id, kind):
+            """Lattice's notes and plans buttons, opening in VS Code instead of xdg-open."""
+            from lattice.core.ids import validate_id
+            from lattice.storage.operations import resolve_task_prose_path, scaffold_plan
+            if not validate_id(task_id, "task"):
+                return self.send_json(400, {"ok": False, "error": {"code": "INVALID_ID", "message": "Invalid task ID format"}})
+            if not ctx.code:
+                return self.send_json(500, {"ok": False, "error": {"code": "OPEN_ERROR", "message": "the code command is not on PATH; start the server from a VS Code terminal"}})
+            path, authority = resolve_task_prose_path(ld, task_id, kind)
+            if path is None:
+                if kind != "plan" or authority.location != "active":
+                    return self.send_json(404, {"ok": False, "error": {"code": "NOT_FOUND", "message": "No %s file for task %s" % (kind, task_id)}})
+                snapshot = authority.snapshot
+                scaffold_plan(ld, task_id, snapshot.get("title", "Untitled"), snapshot.get("short_id"), snapshot.get("description"))
+                path = ld / "plans" / (task_id + ".md")
+            resolved = path.resolve()
+            if not str(resolved).startswith(str(ld.resolve())):
+                return self.send_json(403, {"ok": False, "error": {"code": "FORBIDDEN", "message": "Path traversal not allowed"}})
+            ctx.code_open(resolved)
+            self.send_json(200, {"ok": True, "data": {"opened": str(resolved)}})
 
     return Handler
 
 
+def ensure_lattice(argv):
+    """Run under the interpreter the lattice command uses, so its dashboard imports."""
+    try:
+        import lattice.dashboard.server  # noqa: F401
+        return
+    except ImportError:
+        pass
+    script = shutil.which("lattice")
+    first = Path(script).read_text(errors="replace").splitlines()[0] if script else ""
+    command = shlex.split(first[2:]) if first.startswith("#!") else []
+    if not command or os.environ.get("LATTICE_REVIEW_REEXEC"):
+        sys.exit("lattice is not importable from %s; run this with the Python that has lattice installed" % sys.executable)
+    os.environ["LATTICE_REVIEW_REEXEC"] = "1"
+    os.execv(command[0], command + [os.path.abspath(__file__), *argv])
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--board", default=".", help="directory holding .lattice (default: cwd)")
     parser.add_argument("--repo", help="git repository to read commits from (default: the board directory)")
-    parser.add_argument("--port", type=int, default=8798)
+    parser.add_argument("--port", type=int, help="the one port to open in the browser (default: the board's dashboard_port)")
     parser.add_argument("--main", default="main", help="integration branch name")
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--actor", default="human:" + os.environ.get("USER", "owner"), help="actor recorded on writes")
-    parser.add_argument("--dashboard-url", help="Lattice dashboard URL (default: 127.0.0.1 and the board's dashboard_port)")
-    parser.add_argument("--state", help="where review output and logs are kept")
-    parser.add_argument("--with-dashboard", action="store_true", help="also start lattice dashboard on the board's port")
+    parser.add_argument("--state", help="where review output, logs and temp files for diffs are kept")
     args = parser.parse_args(argv)
+    ensure_lattice(argv)
     ctx = Context(args)
     if not ctx.lattice:
         sys.exit("lattice is not on PATH")
-    dashboard = None
-    if args.with_dashboard:
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
-        dashboard = subprocess.Popen([ctx.lattice, "dashboard", "--port", str(ctx.config.get("dashboard_port", 8799))], cwd=ctx.board, env=env)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(ctx))
-    print("review launcher at http://127.0.0.1:%d (board %s, actor %s)" % (args.port, ctx.board, ctx.actor))
+    port = args.port or ctx.config.get("dashboard_port", 8799)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx))
+    print("board with review at http://127.0.0.1:%d (board %s, repo %s, actor %s, logs %s)" % (port, ctx.board, ctx.repo, ctx.actor, ctx.state))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        if dashboard:
-            dashboard.terminate()
+        ctx.close_all()
 
 
 if __name__ == "__main__":
