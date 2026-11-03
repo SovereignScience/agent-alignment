@@ -48,7 +48,40 @@ REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
 DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 1_048_576
-HOOK = "<script>window.LATTICE_REVIEW_URL=%s</script>" % json.dumps(REVIEW_PATH)
+# The task side panel opens at 60% of the window instead of Lattice's 30rem,
+# on an opaque background (the themes' surface is translucent, so the board
+# showed through); its left edge drags to resize, the width is kept in
+# localStorage, and a double-click on the edge resets it. The edge sits outside the panel, so its
+# clicks stop before the dashboard's click-outside-closes-the-panel listener.
+PANEL = """<style>
+.detail-panel{width:var(--lr-panel-w,60vw);max-width:96vw;background:linear-gradient(var(--surface),var(--surface)),var(--bg-base,#111)}
+.lr-resize{display:none;position:fixed;top:var(--nav-h,52px);bottom:0;right:calc(var(--lr-panel-w,60vw) - 4px);width:8px;cursor:col-resize;z-index:101}
+.detail-panel.open+.lr-resize{display:block}
+.lr-resize:hover,.lr-resize.dragging{background:var(--accent-primary,#2b6cb0);opacity:.5}
+body.lr-dragging{cursor:col-resize;user-select:none}body.lr-dragging iframe{pointer-events:none}
+</style><script>(function(){
+var KEY="lattice-review.panel-width",MIN=360,root=document.documentElement;
+function clamp(w){return Math.round(Math.max(MIN,Math.min(w,root.clientWidth*0.96)))}
+function wanted(){var w=parseInt(localStorage.getItem(KEY)||"",10);return w>0?w:root.clientWidth*0.6}
+function apply(w){root.style.setProperty("--lr-panel-w",clamp(w)+"px")}
+function refit(){document.querySelectorAll("iframe.review-frame").forEach(function(f){
+f.style.height="1px";f.style.height=(f.contentDocument.documentElement.scrollHeight+4)+"px"})}
+apply(wanted());
+window.addEventListener("resize",function(){apply(wanted())});
+document.addEventListener("DOMContentLoaded",function(){
+var panel=document.getElementById("detail-panel");if(!panel)return;
+var edge=document.createElement("div");edge.className="lr-resize";edge.title="Drag to resize; double-click to reset";
+panel.insertAdjacentElement("afterend",edge);
+edge.addEventListener("click",function(e){e.stopPropagation()});
+edge.addEventListener("dblclick",function(e){e.stopPropagation();localStorage.removeItem(KEY);apply(wanted());refit()});
+edge.addEventListener("pointerdown",function(e){
+e.preventDefault();edge.setPointerCapture(e.pointerId);document.body.classList.add("lr-dragging");edge.classList.add("dragging");
+function move(ev){apply(root.clientWidth-ev.clientX)}
+function up(ev){edge.removeEventListener("pointermove",move);edge.removeEventListener("pointerup",up);
+document.body.classList.remove("lr-dragging");edge.classList.remove("dragging");
+localStorage.setItem(KEY,String(clamp(root.clientWidth-ev.clientX)));refit()}
+edge.addEventListener("pointermove",move);edge.addEventListener("pointerup",up)})})})();</script>"""
+HOOK = "<script>window.LATTICE_REVIEW_URL=%s</script>" % json.dumps(REVIEW_PATH) + PANEL
 INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, then running it: "
                 "<code>curl -fsSLo plannotator-install.sh https://plannotator.ai/install.sh</code>, "
                 "<code>less plannotator-install.sh</code>, <code>bash plannotator-install.sh --minimal</code>. "
