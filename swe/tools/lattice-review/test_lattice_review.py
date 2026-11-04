@@ -360,6 +360,8 @@ class PureTests(RepoFixture):
         self.assertEqual(lr.quoted_lines(text, "lines 3-12 (old)"), ["> line %d" % n for n in range(3, 8)])
         self.assertEqual(lr.quoted_lines(text, "whole file"), [])
         self.assertEqual(lr.review_notes("# Code Review\n\nNo changes requested."), [])
+        spaced = "## a\n\n### Line 1 (new)\nfirst\n\n\n\nstill the first note\n\n### Line 5 (new)\nsecond\n\n\n\nInstruction tail.\n"
+        self.assertEqual(lr.review_notes(spaced), [("a", "line 1 (new)", "first\n\n\n\nstill the first note"), ("a", "line 5 (new)", "second")])
 
     def test_plan_feedback_is_split_into_notes_and_the_plan_has_a_state(self):
         self.assertEqual(lr.plan_notes(PLAN_FEEDBACK), [
@@ -374,10 +376,46 @@ class PureTests(RepoFixture):
         self.assertEqual(lr.plan_status([changes], "the plan"), "changes requested")
         self.assertEqual(lr.plan_status([changes, approved], "the plan"), "approved")
         self.assertIn("changed since it was approved", lr.plan_status([changes, approved], "the plan, edited"))
+        deleted = {"role": "plan-review", "created_at": "3", "deleted": True, "body": ""}
+        self.assertEqual(lr.plan_status([changes, approved, deleted], "the plan"), "the latest plan review was deleted; review it again")
         self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: approve plan"}}))
         self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Approve or revise the decisions in the LILY-10 plan"}}))
         self.assertFalse(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: which OAuth provider?"}}))
         self.assertFalse(lr.waits_for_plan_approval({"needs_human": None}))
+
+    def test_history_says_what_changed_and_why_and_drops_noise(self):
+        def ev(i, kind, data, actor="agent:x", **prov):
+            return {"id": "ev_%d" % i, "type": kind, "actor": actor, "ts": "2026-11-03T22:%02d:00Z" % i, "data": data,
+                    **({"provenance": prov} if prov else {})}
+        thread = {"id": "ev_9", "created_at": "2026-11-03T22:09:00Z", "author": "human:t",
+                  "body": "%sREADME.md, line 3 at abc\n%sev_8\nwhy?" % (lr.THREAD, lr.REVIEW_OF)}
+        events = [
+            ev(1, "task_created", {"title": "t"}),
+            ev(2, "task_short_id_assigned", {"short_id": "T-1"}),
+            ev(3, "status_changed", {"from": "in_progress", "to": "in_review"}, reason="work complete"),
+            ev(4, "needs_human_flagged", {"reason": "Need: approve plan"}),
+            ev(5, "needs_human_cleared", {"note": "approved in chat"}, on_behalf_of="human:t"),
+            ev(6, "field_updated", {"field": "description", "from": "a\nb", "to": "a\nc"}),
+            ev(7, "relationship_added", {"type": "blocks", "target_task_id": "task_2"}),
+            ev(8, "comment_added", {"body": "just a note"}, actor="human:t"),
+            ev(9, "comment_added", {"body": thread["body"]}, actor="human:t"),
+            ev(10, "reaction_added", {"comment_id": "ev_9", "emoji": lr.RESOLVED}, actor="human:t"),
+            ev(11, "comment_added", {"role": "review", "body": "Plannotator approved (patch a..b), s\n%sa..b\n" % lr.REVIEWED}, actor="human:t"),
+            ev(12, "acceptance_criterion_added", {"criterion_id": "AC-1", "outcome": "it works"})]
+        commits = [{"hash": "c" * 40, "when": "2026-11-03T14:30:00-08:00", "author": "Pat", "subject": "fix: x"}]
+        entries = lr.history(events, [thread], commits, {"task_2": "T-2"})
+        texts = [x["text"] for x in entries]
+        self.assertEqual(texts, ["committed cccccccccccc fix: x", "added AC-1: it works", "approved the code review of patch a..b",
+                                 "resolved the thread on README.md, line 3 at abc", "opened a thread on README.md, line 3 at abc",
+                                 "made it block T-2", "edited the description", "cleared the owner question: approved in chat",
+                                 "asked the owner: Need: approve plan", "moved it from in progress to in review", "created the task"])
+        by_text = {x["text"]: x for x in entries}
+        self.assertEqual(by_text["moved it from in progress to in review"]["why"], "work complete")
+        self.assertEqual(by_text["cleared the owner question: approved in chat"]["behalf"], "human:t")
+        self.assertEqual(by_text["edited the description"]["details"], "-b\n+c")
+        self.assertEqual(by_text["made it block T-2"]["link"], ("task", "T-2"))
+        self.assertEqual(by_text["resolved the thread on README.md, line 3 at abc"]["link"], ("thread", "ev_9"))
+        self.assertEqual(by_text["committed cccccccccccc fix: x"]["link"], ("commit", "c" * 40))
 
     def test_threads_follow_the_last_speaker_and_only_the_owner_resolves(self):
         body = "Plannotator annotated (patch x), s\n%sa..b\n\n## f\n\n### Line 1 (new)\nwhy?\n" % lr.REVIEWED
@@ -403,6 +441,21 @@ class PureTests(RepoFixture):
         (thread,) = lr.review_threads([legacy])
         self.assertEqual((thread["anchor"], thread["note"], thread["state"]), ("f, line 1 (new)", "why?", "waiting on you"))
         self.assertEqual(lr.review_threads([{"role": "review", "created_at": "x", "body": self.approved("a", "b")}]), [])
+
+    def test_a_note_continues_only_the_one_thread_it_can_belong_to(self):
+        def t(where, quote):
+            return {"path": "f", "where": where, "quote": quote}
+        one, five = t("line 1 (new)", ["> same"]), t("line 5 (new)", ["> same"])
+        self.assertIs(lr.thread_for([one, five], "f", "line 1 (new)", ["> same"]), one)
+        self.assertIs(lr.thread_for([one, five], "f", "line 5 (new)", ["> same"]), five)
+        self.assertIsNone(lr.thread_for([one, five], "f", "line 9 (new)", ["> same"]))
+        self.assertIs(lr.thread_for([one], "f", "line 9 (new)", ["> same"]), one)
+        self.assertIsNone(lr.thread_for([one], "f", "line 1 (new)", ["> other"]))
+        bare = t("line 1 (new)", [])
+        self.assertIs(lr.thread_for([bare], "f", "line 1 (new)", ["> same"]), bare)
+        self.assertIs(lr.thread_for([bare, five], "f", "line 1 (new)", []), bare)
+        self.assertIsNone(lr.thread_for([bare, t("line 1 (new)", ["> x"])], "f", "line 1 (new)", []))
+        self.assertIsNone(lr.thread_for([one], "g", "line 1 (new)", ["> same"]))
 
     def test_plannotator_runs_resolve_the_range_once_and_record_only_decisions(self):
         ctx = self.context()
@@ -530,6 +583,14 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1], ("/api/tasks/task_AB9/status", {"status": "todo", "actor": "human:t"}))
 
+    def test_dashboard_writes_without_an_actor_carry_the_owner(self):
+        call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "native comment"}).encode(), origin(self.base))
+        self.assertEqual(StubDashboard.received[-1][1], {"body": "native comment", "actor": "human:t"})
+        call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "x", "actor": "dashboard:web"}).encode(), origin(self.base))
+        self.assertEqual(StubDashboard.received[-1][1]["actor"], "human:t")
+        call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "x", "actor": "agent:bot"}).encode(), origin(self.base))
+        self.assertEqual(StubDashboard.received[-1][1]["actor"], "agent:bot")
+
     def test_done_through_the_dashboard_needs_an_approved_current_review(self):
         done = json.dumps({"status": "done", "actor": "dashboard:web"}).encode()
         headers = origin(self.base)
@@ -645,6 +706,27 @@ class SectionTests(RepoFixture):
         call(self.base + "/review/t/AB-2/openplan", form(self.ctx))
         self.assertIn(str(plan), wait_file(self.tools / "code.log"))
 
+    def test_history_block_lists_events_and_commits_with_jump_targets(self):
+        events = self.repo / ".lattice" / "events"
+        events.mkdir(exist_ok=True)
+        (events / "task_AB2.jsonl").write_text("\n".join(json.dumps(x) for x in [
+            {"id": "ev_1", "type": "status_changed", "actor": "agent:x", "ts": "2026-11-03T22:00:00Z",
+             "data": {"from": "in_progress", "to": "in_review"}},
+            {"id": "ev_2", "type": "needs_human_cleared", "actor": "agent:x", "ts": "2026-11-03T22:01:00Z",
+             "data": {"note": "approved"}, "provenance": {"on_behalf_of": "human:t"}}]) + "\n")
+        self.reviews["AB-2"] = [{"id": "ev_3", "created_at": "2026-11-03T22:02:00Z", "author": "human:t",
+                                 "body": "%sc, whole file at abc\n%sev_r\nwhy?" % (lr.THREAD, lr.REVIEW_OF)}]
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("<h4>History</h4>", page)
+        self.assertIn("moved it from in progress to in review", page)
+        self.assertIn("<span class='warn'>on behalf of human:t</span>", page)
+        self.assertIn("committed %s fix: c" % self.c[:12], page)
+        self.assertIn("href='#commit-%s'" % self.c[:12], page)
+        self.assertIn("<tr id='commit-%s'>" % self.c[:12], page)
+        self.assertIn("id='thread-ev_3'", page)
+        self.assertIn("id='code'", page)
+        self.assertIn('if(k==="history"', lr.PANEL)
+
     def test_thread_actions_write_to_the_board_as_the_owner(self):
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="  still unclear  "))
         self.assertEqual(self.calls[0][:4], ("comment", "AB-2", "--reply-to", "ev_1"))
@@ -664,6 +746,16 @@ class SectionTests(RepoFixture):
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="", resolve="1"))
         self.assertEqual(self.calls, [("react", "AB-2", "ev_1", lr.RESOLVED)])
         self.assertEqual(call(self.base + "/review/t/AB-2/resolve", b"token=wrong&comment=ev_1")[0], 403)
+        self.ctx.board_write = lambda key, *args: self.calls.append(args) or args[0] != "comment"
+        self.reviews["AB-2"] = [{"id": "ev_1", "created_at": "2026-01-01T00:00:01Z", "author": "human:t",
+                                 "body": lr.THREAD + "c, whole file at abc\n" + lr.REVIEW_OF + "ev_r\nwhy?"}]
+        del self.calls[:]
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="not lost", resolve="1"))
+        self.assertEqual([c[0] for c in self.calls], ["comment"])
+        self.assertIn(">not lost</textarea>", call(self.base + "/review/t/AB-2")[1])
+        self.ctx.board_write = lambda key, *args: self.calls.append(args) or True
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="not lost"))
+        self.assertIn("></textarea>", call(self.base + "/review/t/AB-2")[1])
 
 
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
@@ -742,6 +834,58 @@ class CliTests(RepoFixture):
         finally:
             server.shutdown()
             server.server_close()
+    def test_an_approval_whose_notes_were_not_all_recorded_cannot_complete(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "m", "feat: m\n\nTask: " + sid, content="one\ntwo")
+        ctx = self.context(board=board, repo=self.repo)
+        rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+        real = ctx.lattice_cmd
+        ctx.lattice_cmd = lambda *args: (1, "disk full") if any(str(a).endswith(".note2.md") for a in args) else real(*args)
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="## m\n\n### Line 1 (new)\nfine, but rename\n\n### Line 2 (new)\nand this")
+        job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
+        wait_for(job)
+        self.assertIn("note 2 of the review was not recorded", job.error)
+        comments = ctx.comments(sid)
+        self.assertEqual(lr.review_decision(lr.latest_review(comments)["body"]), "approved")
+        (thread,) = lr.review_threads(comments)
+        lattice(board, "react", sid, thread["root"]["id"], lr.RESOLVED, "--actor", "human:t")
+        restarted = self.context(board=board, repo=self.repo)
+        self.assertIn("only 1 of the 2 notes", lr.completion_block(self.repo, lr.find_task(board, sid), "main", restarted.comments(sid)))
+        StubDashboard.static_dir = self.repo / "static"
+        server = serve(lr.make_handler(restarted, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        try:
+            page = call(base + "/review/t/" + sid)[1]
+            self.assertIn("Only 1 of its 2 notes were recorded", page)
+            self.assertNotIn("Mark done", page)
+            call(base + "/review/t/%s/complete" % sid, form(restarted))
+            self.assertIn("not completed: only 1 of the 2 notes", call(base + "/review/t/" + sid)[1])
+            self.assertNotEqual(lr.find_task(board, sid)["status"], "done")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_a_note_on_repeated_lines_continues_the_thread_at_its_own_place(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        commit(self.repo, "r", "feat: r\n\nTask: " + sid, content="same\nb\nc\nd\nsame")
+        ctx = self.context(board=board, repo=self.repo)
+        rng = lr.resolve_range(self.repo, lr.find_task(board, sid), "main")
+
+        def review(message):
+            ctx.plannotator = fake_plannotator(self.tools, message=message)
+            job = ctx.start_plannotator(sid, record_on=sid, base=rng["base"], head=rng["head"])
+            wait_for(job)
+            self.assertTrue(job.done and not job.error, job.error)
+            return lr.review_threads(ctx.comments(sid))
+        threads = review("## r\n\n### Line 1 (new)\ntop\n\n### Line 5 (new)\nbottom")
+        self.assertEqual([(t["where"], t["quote"]) for t in threads], [("line 1 (new)", ["> same"]), ("line 5 (new)", ["> same"])])
+        threads = review("## r\n\n### Line 1 (new)\ntop again")
+        self.assertEqual(len(threads), 2)
+        self.assertTrue(threads[0]["messages"][-1]["body"].strip().endswith("top again"))
+        self.assertEqual(len(threads[1]["messages"]), 1)
+
     def test_a_note_on_the_place_of_an_older_unsplit_review_continues_its_thread(self):
         board = init_board(self.repo)
         sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
@@ -791,6 +935,25 @@ class CliTests(RepoFixture):
         review("approved", "")
         self.assertIsNone(lr.find_task(board, sid).get("needs_human"))
         self.assertEqual(lr.plan_status(ctx.comments(sid), plan.read_text()), "approved")
+        lattice(board, "needs-human", sid, "Need: approve plan", "--actor", "agent:test")
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="", key="feedback", delay=2)
+        job = ctx.start_plan_review(lr.find_task(board, sid))
+        wait_file(job.err_path)
+        plan.write_text(plan.read_text() + "3. Slipped in during the review.\n")
+        wait_for(job)
+        self.assertIn("changed during the session", job.error)
+        self.assertTrue(lr.waits_for_plan_approval(lr.find_task(board, sid)))
+        self.assertIn("changed since it was approved", lr.plan_status(ctx.comments(sid), plan.read_text()))
+        job = ctx.start_plan_review(lr.find_task(board, sid))
+        wait_file(job.err_path)
+        lattice(board, "needs-human", sid, "--clear", "--note", "withdrawn", "--actor", "agent:test")
+        lattice(board, "needs-human", sid, "Need: approve plan v2", "--actor", "agent:test")
+        wait_for(job)
+        self.assertIn("flag changed", job.error)
+        self.assertEqual(lr.find_task(board, sid)["needs_human"]["reason"], "Need: approve plan v2")
+        self.assertEqual(lr.plan_status(ctx.comments(sid), plan.read_text()), "approved")
+        review("approved", "")
+        self.assertIsNone(lr.find_task(board, sid).get("needs_human"))
         StubDashboard.static_dir = self.repo / "static"
         server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
         base = "http://127.0.0.1:%d" % server.server_address[1]

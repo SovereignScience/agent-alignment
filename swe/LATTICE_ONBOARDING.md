@@ -276,7 +276,8 @@ review the plan" and "Open the plan in VS Code" (see the plan rule in
 `context.md`). Code review says where the task's work is (branch,
 trailer commits, or nothing yet) and offers: Plannotator on the whole
 range, Plannotator per commit, and for every file of the range `open` in
-VS Code or `diff` in VS Code's two-file view. Plannotator opens as a new
+VS Code or `diff` in VS Code's two-file view. A History block below says
+what changed on the task, by whom and why. Plannotator opens as a new
 tab of the same browser; annotations stay there until Send Feedback
 (changes requested) or Approve, and only then do they land on the task
 as a comment with role `review`, visible to every browser and every
