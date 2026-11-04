@@ -199,7 +199,7 @@ class RepoFixture(unittest.TestCase):
         self.tmp.cleanup()
 
     def context(self, board=None, repo=None):
-        return lr.Context(Namespace(board=str(board or self.repo), repo=str(repo) if repo else None, main="main", remote="origin",
+        return lr.Context(Namespace(board=str(board or self.repo), repo=str(repo) if repo else None, main="main",
                                     actor="human:t", state=str(self.repo / "state")))
 
     def approved(self, base, head, qualifier=""):
@@ -389,7 +389,7 @@ class PureTests(RepoFixture):
         deleted = {"role": "plan-review", "created_at": "3", "author": "human:t", "deleted": True, "body": ""}
         self.assertEqual(lr.plan_status([changes, approved, deleted], "the plan"), "the latest plan review was deleted; review it again")
         self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: approve plan"}}))
-        self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Approve or revise the decisions in the LILY-10 plan"}}))
+        self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Approve or revise the decisions in the AB-10 plan"}}))
         self.assertFalse(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: which OAuth provider?"}}))
         self.assertFalse(lr.waits_for_plan_approval({"needs_human": None}))
 

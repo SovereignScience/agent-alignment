@@ -24,8 +24,9 @@ effect of another task. Words in angle brackets are placeholders.
 The owner initializes the board and selects or authorizes its tasks.
 The agent resumes only the selected task and leaves prepared work in
 `in_review`; it commits only when asked. The owner installs tools, runs
-the review server, reads diffs, completes tasks, pushes and deploys. Agents never run `lattice next`, `lattice complete`
-or `git push`, and never commit `.lattice/` unless told to.
+the review server, reads diffs, completes tasks, pushes and deploys.
+Agents never run `lattice next`, `lattice complete`, `lattice status
+<ID> done` or `git push`, and never commit `.lattice/` unless told to.
 
 ## One-time installs, by the owner
 
@@ -69,9 +70,8 @@ blank lines keep it out of the last note's thread.
 ```
 
 Skip Plannotator's VS Code extension: it does not take over reviews
-started from the Claude Code VS Code extension (backnotprop/plannotator
-issue 496), and the review server already opens Plannotator in the
-browser. With the plugin installed, plan mode opens Claude's plans in
+started from the Claude Code VS Code extension, and the review server
+already opens Plannotator in the browser. With the plugin installed, plan mode opens Claude's plans in
 Plannotator too; the task's Lattice plan file stays the plan of record.
 
 The dashboard patch, applied once to the Lattice checkout the `lattice`
@@ -113,7 +113,7 @@ During setup, the owner configures `.lattice/config.json`:
 |---|---|---|
 | `auto_code_review_on_transition` | `false` | a status change never starts a review |
 | `auto_plan_review_on_transition` | `false` | same |
-| `dashboard.theme` | `"holographic"` | the theme the existing boards use; any theme works |
+| `dashboard.theme` | `"holographic"` | any theme works |
 | `dashboard_port` | next free port | one port per board; the review server serves the dashboard there |
 
 Keep a line in `context.md` naming the port the owner opens.
@@ -145,30 +145,51 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   session clears a flag only when the owner tells it to, and quotes the
   owner's words in the note; being told to start work does not approve a
   plan.
+- Lattice is the source of truth for scope, decisions, status,
+  criteria, evidence and remaining work. Chat notifies the owner and
+  summarizes what Lattice says; a decision made in chat is written to the
+  task first, then reported. If task records conflict, stop and say so.
 - Every write passes --actor agent:<tool> and runs with
   LATTICE_NO_UPDATE_CHECK=1. Sessions use lattice show to resume the task
-  they were given; agents never use lattice next or lattice complete.
+  they were given, then lattice comments <ID> --json and the task's plan,
+  plus the plans of tasks it depends on; agents never use lattice next,
+  lattice complete or lattice status <ID> done.
+- An owner comment or plan note is reconciled into the plan, description,
+  criteria, needs_human reason and status before the result is reported;
+  a comment that asks a question gets a reply. Detailed decisions live in
+  one owning task; dependent tasks link to it and inherit them, and a
+  proposed deviation is a needs_human on the owning task. Run lattice
+  doctor after a reconciliation round.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan to the file `lattice plan <ID>` names, sets
-  `needs-human <ID> "Need: approve plan"` and stops. The owner reviews it
-  with "Plannotator: review the plan" in the task's review section. Notes
+  `needs-human <ID> "Need: approve plan"` and stops, in todo. The owner
+  reviews it with "Plannotator: review the plan" in the task's review
+  section, or comments on the task; a question is not an approval. Notes
   become threads that the session answers like code review threads,
   revising the plan file and setting the flag again. Approve records the
   approval for the plan as it was opened and clears the flag; if the file
-  changed during the session, the owner reviews it once more. Otherwise
-  the flag rule above applies.
+  changed during the session, the owner reviews it once more. Keep the
+  words approve and plan in that flag: the server clears only such a
+  flag, and only if it did not change during the session. Otherwise the
+  flag rule above applies.
+- in_progress only while implementation is active; in_review while the
+  prepared result waits for the owner. Record assignment and status before
+  dispatching a subagent; the coordinating session owns the board writes
+  and records the result when delegated work ends.
 - One task, one branch, one worktree. Before its first edit a task gets
   branch feature/<CODE>-<n>-<slug> from <branch> in its own worktree at
   <worktree root>/<CODE>-<n>, linked with lattice branch-link. All edits,
-  tests and dev servers for it run there, on its own ports. The main
-  checkout stays on <branch> for the owner's merges and board writes; no
-  session edits files there. At most three sessions or workers at once.
+  tests and dev servers for it run there, on its own ports, with
+  LATTICE_ROOT=<board directory> set. The main checkout stays on <branch>
+  for the owner's merges and board writes; no session edits files there.
+  At most three sessions or workers at once.
 - The comment roles review and plan-review are written by the review
   server for the owner's Plannotator decisions. Agents use validation for
   evidence and no role otherwise.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
-  review section can find them. Branch work is linked with lattice
-  branch-link. The integration branch is <branch>.
+  review section can find them; it looks on the integration branch, the
+  checkout's HEAD and linked branches, so branch work is linked with
+  lattice branch-link. The integration branch is <branch>.
 - The task record holds the request, scope, acceptance criteria, owner,
   revision, coverage boundary, evidence and remaining work. Never secrets.
 - Findings, decisions and evidence go on the task they belong to, as
@@ -176,8 +197,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   Attach only sanitized references: no client documents, personal data,
   credentials, transcripts or raw request and response bodies.
 - Review flow: the owner opens the board at http://127.0.0.1:<port>
-  (the review server, which is the dashboard plus a review section on
-  every task). There the owner opens the task's commits in Plannotator
+  (the review server, started with --main <branch> and a human: actor,
+  which is the dashboard plus a review section on every task). There
+  the owner opens the task's commits in Plannotator
   or file by file in VS Code; the review lands on the task as a comment
   bound to the reviewed commits. Each note in it becomes its own thread:
   a top-level comment that starts with `Thread:`, names the file, line
@@ -185,10 +207,11 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   Reply in the review section; a later note on the same lines while the
   thread is open lands in that thread. Only the owner resolves a thread.
   A task with commits can be marked done only while its latest review
-  approves exactly those commits and every thread is resolved. Done is
-  not deployed.
+  approves exactly those commits and every code and plan thread is
+  resolved. Done is not deployed.
 - Answering a review: read `lattice comments <ID> --json`, then reply
-  once in every thread that waits on you, with
+  once in every thread whose last message is the owner's (the section
+  shows it as waiting on the agent), with
   `lattice comment <ID> --reply-to <thread id> --file <reply.md>`, in
   this shape (leave out Why and Question when there is nothing to say):
 
@@ -242,6 +265,8 @@ must hold from the first edit in AGENTS.md as well:
 - The comment roles review and plan-review are only for the owner's
   Plannotator results. Agents use validation, or no role.
 - At most three workers at once, each in its own task's worktree.
+- Never run lattice status <ID> done, lattice complete or lattice next;
+  completion is the owner's, through the review section.
 ```
 
 ### 4. Backlog
@@ -284,13 +309,14 @@ task records remain private unless the owner asks to share them.
    change, reply in every thread that waits on the agent, in the shape
    and under the rules in `context.md`. A thread is a top-level comment
    that starts with `Thread:`; an older annotated review with no
-   `Thread:` comments is one thread itself. `lattice status <ID>
-   in_progress --no-auto-review`.
+   `Thread:` comments is one thread itself. Once the plan is approved
+   and work starts, `lattice status <ID> in_progress --no-auto-review`.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
 3. Before the first edit, the task's worktree and branch:
    `git worktree add <worktree root>/<ID> -b feature/<ID>-<slug> <branch>`
-   and `lattice branch-link <ID> feature/<ID>-<slug>`. Edit, test and run
+   and `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <ID>
+   feature/<ID>-<slug> --actor agent:<tool>`. Edit, test and run
    dev servers only there. Lattice finds the board by walking up from the
    working directory, so the session sets `LATTICE_ROOT=<board
    directory>`.
@@ -313,39 +339,48 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 `--main` defaults to `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
 http://127.0.0.1:<port> and click a task. Its detail view has a Review
-section with two blocks. Plan shows the plan's state with "Plannotator:
-review the plan" and "Open the plan in VS Code" (see the plan rule in
-`context.md`). Code review says where the task's work is (branch,
-trailer commits, or nothing yet) and offers: Plannotator on the whole
-range, Plannotator per commit, and for every file of the range `open` in
-VS Code or `diff` in VS Code's two-file view. A History block below says
-what changed on the task, by whom and why. Plannotator opens as a new
+section with two blocks, after a Dependencies block when the task has
+links. Plan shows the plan's state with "Plannotator: review the plan"
+and "Open the plan in VS Code"; with no plan file its one button is
+"Write the plan in VS Code" (see the plan rule in `context.md`). Code
+review says where the task's work is (branch, trailer commits, or
+nothing yet) and offers: Plannotator on the whole range, Plannotator per
+commit, and for every file of the range `diff` in VS Code's two-file
+view, and `open` when the range ends at this checkout's HEAD. The task's
+History section, below Comments, says what changed on the task, by whom
+and why. Plannotator opens as a new
 tab of the same browser; annotations stay there until Send Feedback
 (changes requested) or Approve, and only then do they land on the task
 as a comment with role `review`, visible to every browser and every
 agent. Plannotator then shows a page saying the feedback went back to
 the agent: close that tab and return to the board. Each note lands as
 its own thread in the Review section, with the quoted line, every reply
-in order, a Reply box, Reply and resolve, and Resolve. While a thread is
+in order, a Reply box, Reply and resolve, and Resolve; a resolved thread
+has Reopen. To accept an answer with a last word use Reply and resolve;
+a plain Reply leaves the thread waiting on the agent. While a thread is
 open, a second note on the same lines adds to it instead of starting
 another. A line at the top of the section says what to do next. One
-session per task at a time: the button returns to the open one, and
-"Close session" ends one that was abandoned. When the checkout that has
-the task's branch checked out (often the task's worktree) has
-uncommitted changes, a second button names that checkout and reviews
-them, for feedback only: it never completes a task. Status, comments,
+Plannotator session per task, plan and code together: any Plannotator
+button returns to the open one, and "Close session" ends one that was
+abandoned. When the checkout that has the task's branch checked out
+(often the task's worktree) has uncommitted changes, a second button
+names that checkout and reviews them, for feedback only: it never
+completes a task and, as the latest review, it withdraws an earlier
+approval until the range is reviewed again. Status, comments,
 notes and plans are the dashboard's own controls on the same page;
 writes made there carry the owner's actor. The review is bound to the
 commit IDs it covered: "Mark done" appears only while the latest review
 is an approval of the task's current commits and every thread is
 resolved, the dashboard's status control refuses `done` under the same
 rule, and the section says why otherwise. Mark done before merging a
-linked branch into the integration branch: after the merge the branch's
-range is empty and the review no longer matches it. Then merge locally;
-pushing can wait for a checkpoint, since every commit was reviewed.
+linked branch: after the merge the task's work is found only through
+its `Task:` trailers, and a task whose commits lack them reads as having
+no work and is no longer gated. Then merge locally; pushing can wait for
+a checkpoint, since every commit was reviewed.
 
-Feedback that needs more work: "Move to in progress" in the section,
-then give the agent the task ID. Lattice has no notifications; the side
+Feedback that needs more work: "Move to in progress" in the section, or
+the status control when the section offers no button, then give the
+agent the task ID. Lattice has no notifications; the side
 panel refreshes when the task record changes, the full task page does
 so when it was reached from the board or list, and the Refresh button
 in the top bar forces it.
@@ -360,12 +395,13 @@ the browser flow are unverified until the owner has used them once).
 ## Day to day
 
 The owner: start the review server, read the in-review tasks, review,
-reply in or resolve threads, complete, push and deploy, answer the
-`needs_human` questions by clearing the flag with a note
+reply in or resolve threads, complete, push and deploy, approve plans
+in Plannotator (which clears that flag) and answer other `needs_human`
+questions by clearing the flag with a note
 (`lattice needs-human <ID> --clear --note "<decision>" --actor human:<name>`).
 
-The agent: take only the task it was given, answer every open thread in
-the reply shape before changing code, keep the task record current
+The agent: take only the task it was given, answer every thread that
+waits on the agent in the reply shape before changing code, keep the task record current
 (evidence, coverage boundary, remaining work), commit with the trailer,
 leave the task in review, never resolve a thread, complete or push. A
 new finding becomes a comment on the task it belongs to, or a question

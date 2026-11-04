@@ -23,9 +23,10 @@ one step lighter than the panel, with a quiet hue by kind, and the
 dropdown menus and the review section follow the theme's color scheme.
 
 Everything stays on the machine. The server binds to 127.0.0.1 only,
-answers only requests whose Host and Origin name this machine, and
-starts Plannotator with its AI and sharing features disabled and with
-`--no-git-remote-check`, so a review never contacts the remote.
+answers only requests whose Host names this machine and refuses POSTs
+from another origin, starts Plannotator with its AI and sharing features
+disabled, feeds committed ranges to it as a static patch, and passes
+`--no-git-remote-check` to reviews of uncommitted changes.
 
 ## How a task's work is found
 
@@ -33,10 +34,11 @@ starts Plannotator with its AI and sharing features disabled and with
    its own: the diff is the merge-base with the integration branch to the
    branch tip. A linked branch with no commits of its own is no work yet,
    and the section says so.
-2. Otherwise, commits whose message ends with a trailer line
-   `Task: <ID>` (several IDs may be listed, comma separated). If they are
-   consecutive they form one range; if not, each commit opens on its own
-   and the task cannot be approved as a whole.
+2. Otherwise, commits on this checkout's HEAD, the integration branch
+   or a linked branch whose message has a line `Task: <ID>` (several
+   IDs separated by `, `). If they are consecutive they form one range;
+   if not, each commit opens on its own and the task cannot be approved
+   or marked done until its commits form one range.
 3. Otherwise the task has no work yet, and an empty range is refused
    before Plannotator starts.
 
@@ -49,15 +51,17 @@ it is: in the checkout that has the task's linked branch checked out
 branch, in this checkout when its commits end at HEAD or it has none.
 When that checkout has uncommitted changes, a second button names it and
 reviews them from the task's base; such reviews are recorded as feedback
-and never complete a task. Every file of the range has `open` (the file in VS Code, when it
-exists in the tree) and `diff` (VS Code's two-file diff through `code
---diff`, with the old path on the base side for renames).
+and never complete a task. Every file of the range has `diff` (VS
+Code's two-file diff through `code --diff`, with the old path on the
+base side for renames), and `open` (the file in VS Code) when the range
+ends at this checkout's HEAD and the file exists there.
 
 Plannotator is started with `--browser none`, so it never launches a
 browser of its own; the button opens the session as a new tab of the
 browser the board is in, whatever machine that browser runs on. One
-session per task at a time: pressing the button again returns to the
-open session, and "Close session" ends an abandoned one (closing its
+Plannotator session per task, plan and code together: any of its
+Plannotator buttons returns to the open session, and "Close session"
+ends an abandoned one (closing its
 tab does not; the process waits for a decision until then). Sessions
 end with the server.
 
@@ -72,7 +76,7 @@ nests one level, so replies hang off top-level comments only) in this
 shape:
 
 ```
-Thread: README.md, line 239 (new) at 4c43cb015c54
+Thread: <file>, line <N> (new) at <commit>
 From review ev_...
 > the reviewed line, at most five lines, read from the reviewed commit
 the note
@@ -83,8 +87,9 @@ or whose file and place match when there is no quote, goes into that
 thread as a reply starting `Follow-up from review <id>`, so one line
 keeps one history even when its line number moves. When more than one
 open thread could take the note (the same text on two lines, say), it
-starts a thread of its own. An annotated review recorded before notes
-were split is one thread of its own.
+starts a thread of its own. An annotated review with no `Thread:`
+comments of its own (no file notes, or the split failed) is one thread
+of its own and must be resolved like any other.
 
 The section lists every thread with the quoted line and its messages in
 order, a Reply box (posted as the owner's actor), Reply and resolve for
@@ -95,9 +100,11 @@ the owner spoke last and waits on the owner when an agent did; an agent
 reply's `Status:` line is shown next to it. A line at the top of the
 section says what the owner does next, including the closing page
 Plannotator shows after Send Feedback, and offers "Move to in progress"
-when threads wait on the agent. Once the latest review approves the
-current commits, it asks for the open threads to be resolved instead. Agents reply with `lattice comment <ID>
---reply-to <thread id>` in the shape given in the board's `context.md`.
+when threads wait on the agent and the workflow allows the move;
+otherwise the dashboard's status control does it. Once the latest
+review approves the current commits, it asks for the open threads to be
+resolved instead. Agents reply with `lattice comment <ID> --reply-to
+<thread id>` in the shape given in the board's `context.md`.
 
 To keep Plannotator's own instruction out of the agent's way, set
 `prompts.review.denied` in `~/.plannotator/config.json` (see
@@ -105,11 +112,13 @@ To keep Plannotator's own instruction out of the agent's way, set
 
 ## Plan review
 
-The section has two blocks: Plan, then Code review. The Plan block shows
-the state of the task's plan file (`.lattice/plans/<task id>.md`, the
-one `lattice plan <ID>` names) with "Plannotator: review the plan" and
-"Open the plan in VS Code", which scaffolds a plan the way the
-dashboard's own button does when there is none. While the section is on
+The section has two blocks, Plan then Code review, after a Dependencies
+block when the task has links. The Plan block shows the state of the
+task's plan file (`.lattice/plans/<task id>.md`, the one `lattice plan
+<ID>` names) with "Plannotator: review the plan" and "Open the plan in
+VS Code"; with no plan file its one button is "Write the plan in VS
+Code", which scaffolds it the way the dashboard's own button does. While
+the section is on
 the page the dashboard's own Show Plan button is hidden, so the plan has
 one place. "Plannotator: review the plan" opens the plan in Plannotator's
 annotate mode (`plannotator annotate <plan> --gate --json`), where the
@@ -125,9 +134,10 @@ review it once more. Each note becomes a thread, anchored
 block, and follows the thread rules above. An approval also clears the
 `needs_human` flag that asked for the plan's approval when the session
 started, if that same flag is still set, so the agent never has to clear
-it. The state reads not reviewed yet, changes requested, approved,
-changed since it was approved, or deleted. Plan reviews never complete a
-task.
+it. The state reads none yet, not reviewed yet, changes requested,
+approved, changed since it was approved, or the latest plan review was
+deleted. Plan reviews never complete a task, but an open plan thread
+blocks done like a code thread.
 
 ## Dependencies and the branch check
 
@@ -136,7 +146,7 @@ it waits on (depends_on or blocked_by from this task, blocks pointing at
 it), what it holds up, its parent, its subtasks and related tasks, each
 with its status and a link that opens it. Links are read from both ends,
 since Lattice stores each one on the task that made it. A task in
-progress or in review that still waits on unfinished tasks gets a
+progress, in review or done that still waits on unfinished tasks gets a
 warning, and so does one in progress or in review with no branch of its
 own, because its work is then outside a task worktree. The DAG tab in
 the dashboard draws the whole graph.
@@ -146,10 +156,9 @@ the dashboard draws the whole graph.
 At the bottom of the task, below Comments, the dashboard's own History
 section shows this server's history instead, in its own frame
 (`/review/t/<ID>/history`), which stops growing at 60% of the window and
-scrolls inside. It follows what Jira's History and Activity views and
-GitHub's issue timeline show:
+scrolls inside. It shows:
 
-- Every event in the task's log, newest first, grouped by day, with the
+- The task's log, newest first, grouped by day, with the
   time and, on hover, how long ago: what the task was created as, status
   from and to, the question asked or the note that cleared it, criteria
   text, description edits (expand "What changed"), links, reviews, plan
@@ -167,7 +176,7 @@ GitHub's issue timeline show:
 - Links: related tasks open in the dashboard; "show" scrolls the panel to
   the review, thread, commit, comment or criterion and flashes it.
 
-Bookkeeping events (short IDs, comment edits) are left out.
+Bookkeeping events (short IDs, comment edits, other reactions) are left out.
 
 ## What completes a task
 
@@ -175,13 +184,14 @@ The latest comment with role `review` that carries a `Reviewed:` line
 decides. "Mark done" appears only when that review is an approval, its
 commit IDs are the task's current work, every one of its notes was
 recorded as a thread and every review thread is resolved; a later
-annotated review, a moved branch, a new trailer commit, a live-tree
-review, a note whose recording failed or an open thread all withdraw
-it, and the section says why. The dashboard's status control is held to the
+annotated review, a deleted review, a moved branch, a new trailer
+commit, a live-tree review, a note whose recording failed or an open
+code or plan thread all withdraw it, and the section says why. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
-spikes) are not gated. Completion is `lattice status <ID> done` with the
-review already on the task (`lattice complete` only works with a status
-literally named `review`). A Plannotator run that exits with an error or
+spikes) are not gated. Completion is `lattice status <ID> done
+--no-auto-review` with the review already on the task; the command
+itself is not gated, so agents never run it (`lattice complete` only
+works with a status literally named `review`). A Plannotator run that exits with an error or
 without a decision is shown as an error and records nothing. Board
 writes that fail are shown in the section, never reported as done.
 
@@ -200,9 +210,11 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 
 Then open http://127.0.0.1:<dashboard_port> and click a task. Options:
 `--board DIR`, `--repo DIR` when the git repository is not the board
-directory, `--port` (default: the board's `dashboard_port`), `--main`
-(integration branch, default `main`), `--remote`, `--state` (review
-output, Plannotator logs and temp files for diffs, default
+directory, `--port` (default: the board's `dashboard_port`, else
+8799), `--main` (integration branch, default `main`), `--actor` (default
+`human:$USER`; it must be a `human:` actor, since only those resolve
+threads and approve plans), `--state` (review output, Plannotator logs
+and temp files for diffs, default
 `~/.local/state/lattice-review/<project code>/`).
 
 ## The dashboard patch
@@ -224,10 +236,13 @@ cd <lattice checkout>
 git apply <agent-alignment>/swe/tools/lattice-review/lattice-dashboard-review.patch
 ```
 
-The patch is inert when the dashboard runs on its own. Re-apply it
-after updating Lattice; if it no longer applies, the two insertion
-points are `renderDetail` and `_renderPanelContent` in
-`src/lattice/dashboard/static/index.html`. The server also builds on
+Without this server the patch adds no review section; its comment,
+artifact and refresh changes still apply. Re-apply it after updating
+Lattice; if it no longer applies, it touches `_read_artifact_info` in
+`src/lattice/dashboard/server.py` and, in
+`src/lattice/dashboard/static/index.html`, one CSS rule,
+`openDetailPanel`, `_renderPanelContent`, `_refreshAfterPanelEdit`,
+`route`, `renderDetail` and `startAutoRefresh`. The server also builds on
 Lattice's handler class (`_make_handler_class`, `_serve_static`, the
 notes and plans handlers), written against Lattice 0.2.
 
@@ -251,13 +266,14 @@ notes and plans handlers), written against Lattice 0.2.
 | `/review/t/<ID>/history` | the task's history, shown in the dashboard's History section |
 | `POST /review/t/<ID>/openplan` | the plan in VS Code, scaffolded when missing |
 | `POST /review/t/<ID>/plan` | `plannotator annotate <plan file> --gate --json`; redirects to the session; the decision becomes a `plan-review` comment and threads |
-| `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work and no thread is open |
+| `POST /review/t/<ID>/complete` | `lattice status <ID> done --no-auto-review` under the rule in What completes a task |
 | `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction, once the reply posted |
 | `POST /review/t/<ID>/resolve`, `/reopen` | `lattice react` or `unreact` with `resolved` on a thread |
 | `POST /review/t/<ID>/rework` | `lattice status <ID> in_progress --no-auto-review` |
 | `POST /api/tasks/<id>/status` | the dashboard's status change; `done` is refused with `REVIEW_REQUIRED` under the same rule |
 | `POST /api/tasks/<id>/open-notes`, `/open-plans` | Lattice's notes and plans, opened with `code` instead of xdg-open |
-| `/t/<ID>` | redirects to the task in the dashboard (older links) |
+| `/t/<ID>` | redirects to the task in the dashboard; the Dependencies and History links use it |
+| `/review` | redirects to `/` |
 
 Review POSTs carry a per-run token; dashboard POSTs must carry an Origin
 equal to the address the page was served from, a JSON object body, and
@@ -265,6 +281,8 @@ at most 1 MiB. Neither is a boundary against an agent that can already
 edit the files and the board.
 
 ## Tests
+
+From `swe/tools/lattice-review`:
 
 ```
 python3 -m unittest test_lattice_review
