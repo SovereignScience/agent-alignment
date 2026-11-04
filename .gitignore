@@ -10,7 +10,7 @@ node_modules/
 dist/
 build/
 
-# Claude Code runtime
-.claude/settings.local.json
-.claude/cache/
-.claude/projects/
+# Claude Code local files, in any subtree
+**/.claude/settings.local.json
+**/.claude/cache/
+**/.claude/projects/

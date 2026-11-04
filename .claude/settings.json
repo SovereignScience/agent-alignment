@@ -15,13 +15,16 @@
       "Bash(rm -rf .git*)",
       "Bash(git push --force*)",
       "Bash(git push -f *)",
-      "Bash(--no-verify*)",
+      "Bash(git commit --no-verify*)",
       "Bash(git config *)",
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(**/secrets/**)",
       "Read(**/*.key)",
-      "Read(**/*.pem)"
+      "Read(**/*.pem)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git -C * push *)"
     ]
   },
   "hooks": {
@@ -30,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/session_start.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/session_start.sh",
             "timeout": 10
           }
         ]
@@ -39,6 +42,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/statusline.sh"
+    "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/statusline.sh"
   }
 }
