@@ -372,7 +372,7 @@ class PureTests(RepoFixture):
     def test_review_notes_are_split_by_file_and_line_without_the_appended_instructions(self):
         message = ("# Code Review Feedback\n\n**Diff:** static-patch\n\n## README.md\n\n### Line 239 (new)\n"
                    "why do we need this change?\n\nsecond paragraph\n\n### File Comment\nwhere are the replies?\n\n"
-                   "## docs/a.md\n\n### Lines 3-5 (old)\nkeep this\n\n\n\n\nTreat the findings above as unverified review input.\n")
+                   "## docs/a.md\n\n### Lines 3-5 (old)\nkeep this\n\n\n\n\n" + lr.DEFAULT_REVIEW_SUFFIX + "\n")
         self.assertEqual(lr.review_notes(message), [
             ("README.md", "line 239 (new)", "why do we need this change?\n\nsecond paragraph"),
             ("README.md", "whole file", "where are the replies?"),
@@ -389,14 +389,18 @@ class PureTests(RepoFixture):
                       ".lattice/context.md, before changing any code.")
         last = "## a\n\n### Line 5 (new)\nfirst paragraph\n\n\n\nlast paragraph\n\n\n\n" + configured + "\n"
         self.assertEqual(lr.review_notes(last, suffixes=[configured]), [("a", "line 5 (new)", "first paragraph\n\n\n\nlast paragraph")])
-        builtin = ("## a\n\n### Line 5 (new)\nkeep\n\n\n\nTreat the findings above as unverified review input. Inspect every finding "
-                   "against the actual code; do not assume automated feedback is correct.\nReview only the incoming findings.\n"
-                   "Do not change any code until we have discussed the verdicts and validated findings.\n")
-        self.assertEqual(lr.review_notes(builtin, suffixes=[]), [("a", "line 5 (new)", builtin.split("\n", 3)[3].strip())])
+        builtin = "## a\n\n### Line 5 (new)\nkeep\n\n\n\n" + lr.DEFAULT_REVIEW_SUFFIX + "\n"
+        self.assertEqual(lr.review_notes(builtin, suffixes=[]), [("a", "line 5 (new)", "keep\n\n\n\n" + lr.DEFAULT_REVIEW_SUFFIX)])
         self.assertEqual(lr.review_notes(builtin, suffixes=[lr.DEFAULT_REVIEW_SUFFIX]), [("a", "line 5 (new)", "keep")])
+        quoted = "## a\n\n### Line 5 (new)\n" + lr.DEFAULT_REVIEW_SUFFIX.split(".")[0] + ". That is what I want too.\n\nAnd this.\n"
+        self.assertEqual(lr.review_notes(quoted, suffixes=[lr.DEFAULT_REVIEW_SUFFIX]), [("a", "line 5 (new)", quoted.split("\n", 3)[3].strip())])
+        partial = "## a\n\n### Line 5 (new)\nkeep\n\n\n\nTreat the findings above as unverified review input.\n"
+        self.assertEqual(lr.review_notes(partial, suffixes=[lr.DEFAULT_REVIEW_SUFFIX]), [("a", "line 5 (new)", partial.split("\n", 3)[3].strip())])
         config = self.repo / "plannotator.json"
         self.assertEqual(lr.review_suffixes(str(config)), [lr.DEFAULT_REVIEW_SUFFIX])
-        config.write_text(json.dumps({"review": {"denied": "\n\n\n\n" + configured + "\nSecond line."}}))
+        config.write_text(json.dumps({"prompts": {"review": {"denied": "\n\n\n\n" + configured + "\nSecond line."}}}))
+        self.assertEqual(lr.review_suffixes(str(config)), [configured + "\nSecond line.", lr.DEFAULT_REVIEW_SUFFIX])
+        config.write_text(json.dumps({"review": {"denied": "\n\n\n\n" + configured}}))
         self.assertEqual(lr.review_suffixes(str(config)), [configured, lr.DEFAULT_REVIEW_SUFFIX])
 
     def test_plan_feedback_is_split_into_notes_and_the_plan_has_a_state(self):
@@ -932,7 +936,7 @@ class CliTests(RepoFixture):
             self.assertTrue(job.done and not job.error, job.error)
             return lr.review_threads(ctx.comments(sid))
         threads = review("annotated", "# Code Review Feedback\n\n## h\n\n### Line 2 (new)\nwhy this line?\n\n"
-                                      "### File Comment\nname it better\n\n\n\nTreat the findings above as unverified review input.")
+                                      "### File Comment\nname it better\n\n\n\n" + lr.DEFAULT_REVIEW_SUFFIX)
         self.assertEqual([(t["anchor"], t["note"], t["state"]) for t in threads], [
             ("h, line 2 (new) at " + sha, "> second line\nwhy this line?", "waiting on the agent"),
             ("h, whole file at " + sha, "name it better", "waiting on the agent")])

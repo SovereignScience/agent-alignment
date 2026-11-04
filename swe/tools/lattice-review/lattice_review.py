@@ -309,21 +309,30 @@ def review_decision(text):
     return match.group(1) if match else None
 
 
-DEFAULT_REVIEW_SUFFIX = "Treat the findings above as unverified review input."
+DEFAULT_REVIEW_SUFFIX = (
+    "Treat the findings above as unverified review input. Inspect every finding against the actual code; do not assume "
+    "automated feedback is correct. For each finding, give a clear verdict (Confirmed / Partly / Not a bug / Intended) "
+    "with concise code evidence. Say whether it was introduced by the current changes, was pre-existing, or reflects "
+    "deliberate scope.\nReview only the incoming findings. Do not independently review the rest of the diff or search "
+    "for issues that were not submitted.\nDo not change any code until we have discussed the verdicts and validated findings."
+)
 PLANNOTATOR_CONFIG = os.path.expanduser("~/.plannotator/config.json")
 
 
 def review_suffixes(config=PLANNOTATOR_CONFIG):
-    """The first line of each instruction text Plannotator appends after the
-    last review note: the review.denied prompt in its config file, when one
-    is set, and its built-in default."""
+    """The instruction texts Plannotator appends after the last review note:
+    the review.denied prompt in its config file (under prompts, as
+    documented, or at the top level), when one is set, and its built-in
+    default."""
     try:
         with open(config) as fh:
-            configured = (json.load(fh).get("review") or {}).get("denied") or ""
+            data = json.load(fh)
+        configured = (((data.get("prompts") or {}).get("review") or {}).get("denied")
+                      or (data.get("review") or {}).get("denied") or "")
     except (OSError, ValueError, AttributeError):
         configured = ""
-    starts = [configured.strip().splitlines()[0].strip()] if configured.strip() else []
-    return starts + [DEFAULT_REVIEW_SUFFIX]
+    texts = [configured.strip()] if isinstance(configured, str) and configured.strip() else []
+    return texts + [DEFAULT_REVIEW_SUFFIX]
 
 
 def review_notes(message, suffixes=None):
@@ -331,11 +340,12 @@ def review_notes(message, suffixes=None):
 
     The message has a "## <file>" heading per file and a "### Line N (new)",
     "### Lines N-M (old)" or "### File Comment" heading per note. Plannotator
-    appends its instructions after the last note; they are cut from the line
-    that starts one of the known instruction texts (review_suffixes), and
-    nothing else is cut, so the reviewer's own text survives whole, blank
-    lines included. where is "line 239 (new)", "lines 3-5 (old)", "whole
-    file", or empty for text directly under a "##" heading."""
+    appends its instructions after the last note; only a trailing block equal
+    to one of the known instruction texts (review_suffixes) is cut, so the
+    reviewer's own text survives whole, blank lines included, and anything
+    that only resembles the instructions stays. where is "line 239 (new)",
+    "lines 3-5 (old)", "whole file", or empty for text directly under a "##"
+    heading."""
     notes, path, where, anchor, text = [], None, "", None, []
 
     def flush():
@@ -355,14 +365,14 @@ def review_notes(message, suffixes=None):
         elif anchor:
             text.append(line)
     flush()
-    if notes:
-        path, where, tail = notes[-1]
-        starts = tuple(suffixes if suffixes is not None else review_suffixes())
-        for i, line in enumerate(tail):
-            if line.strip().startswith(starts):
-                notes[-1] = (path, where, tail[:i])
+    out = [(path, where, "\n".join(lines).strip()) for path, where, lines in notes]
+    if out:
+        path, where, last = out[-1]
+        for suffix in (suffixes if suffixes is not None else review_suffixes()):
+            if suffix and last.endswith(suffix):
+                out[-1] = (path, where, last[:-len(suffix)].strip())
                 break
-    return [(path, where, "\n".join(text).strip()) for path, where, text in notes if "\n".join(text).strip()]
+    return [(path, where, text) for path, where, text in out if text]
 
 
 def plan_notes(feedback):
