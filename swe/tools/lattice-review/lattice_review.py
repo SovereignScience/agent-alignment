@@ -72,6 +72,7 @@ PANEL = """<style>
 [data-lr=description]{--lr-hue:#7aa2f7}[data-lr=criteria]{--lr-hue:#4ade80}[data-lr=review]{--lr-hue:var(--accent-primary,#2b6cb0)}
 [data-lr=plans]{--lr-hue:#c084fc}[data-lr=comments]{--lr-hue:#38bdf8}[data-lr=history]{--lr-hue:#2dd4bf}
 .dp-comment,.comment-item{background:color-mix(in srgb,var(--lr-hue,#38bdf8) 8%,transparent);border-color:color-mix(in srgb,var(--lr-hue,#38bdf8) 20%,transparent)}
+@keyframes lrflash{from{box-shadow:0 0 0 3px var(--accent-primary,#2b6cb0)}to{box-shadow:0 0 0 3px transparent}}.lr-flash{animation:lrflash 1.6s ease-out}
 :root{color-scheme:dark}[data-theme="linear"]{color-scheme:light}
 select{background-color:color-mix(in srgb,var(--text-primary) 8%,var(--bg-base,#111));color:var(--text-primary);border:1px solid color-mix(in srgb,var(--text-primary) 24%,transparent);border-radius:var(--radius-sm,4px)}
 select option{background-color:var(--bg-base,#111);color:var(--text-primary)}
@@ -84,8 +85,9 @@ var KEY="lattice-review.panel-width",MIN=360,root=document.documentElement;
 function clamp(w){return Math.round(Math.max(MIN,Math.min(w,root.clientWidth*0.96)))}
 function wanted(){var w=parseInt(localStorage.getItem(KEY)||"",10);return w>0?w:root.clientWidth*0.6}
 function apply(w){root.style.setProperty("--lr-panel-w",clamp(w)+"px")}
-function refit(){document.querySelectorAll("iframe.review-frame").forEach(function(f){
-f.style.height="1px";f.style.height=(f.contentDocument.documentElement.scrollHeight+4)+"px"})}
+function fit(f){f.style.height="1px";var h=f.contentDocument.documentElement.scrollHeight+4;
+f.style.height=(f.classList.contains("history-frame")?Math.min(h,Math.round(innerHeight*0.6)):h)+"px"}
+function refit(){document.querySelectorAll("iframe.review-frame").forEach(fit)}
 apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
 var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments",history:"history"};
@@ -98,7 +100,7 @@ s.hidden=!s.querySelector("button:not([hidden])")}
 var rf=k==="history"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame:not(.history-frame)");
 if(rf&&!s.querySelector("iframe.history-frame")){var h3=s.querySelector("h3");s.textContent="";if(h3)s.appendChild(h3);
 var hf=document.createElement("iframe");hf.className="review-frame history-frame";hf.src=rf.getAttribute("src")+"/history";
-hf.onload=function(){hf.style.height="1px";hf.style.height=(hf.contentDocument.documentElement.scrollHeight+4)+"px"};s.appendChild(hf)}})}
+hf.onload=function(){fit(hf)};s.appendChild(hf)}})}
 document.addEventListener("DOMContentLoaded",function(){
 tag();new MutationObserver(tag).observe(document.body,{childList:true,subtree:true});
 var panel=document.getElementById("detail-panel");if(!panel)return;
@@ -449,11 +451,11 @@ def when(ts):
 
 def history(events, comments, commits, short_ids):
     """What happened to a task, newest first, one entry per event that says
-    what changed, with the reason given and any on-behalf-of actor. Plain
-    comments live in their own section; here only the ones that carry a
-    decision (a code or plan review, a new thread) and resolved threads, plus
-    the task's commits. Entries: ts, actor, text, why, behalf, link, details;
-    link is (kind, target) with kind task, thread, plan, code or commit."""
+    what changed, with the reason given and any on-behalf-of actor, plus the
+    task's commits. Entries: ts, raw_ts, actor, kind (the event type), cat
+    (change or comment, for the filters), text, why, behalf, link, details;
+    link is (kind, target) with kind task, thread, plan, code, commit,
+    comment or criterion."""
     by_id = {}
     for c in comments:
         by_id[c.get("id")] = c
@@ -482,8 +484,10 @@ def history(events, comments, commits, short_ids):
             text = "changed %s from %s to %s" % (d.get("field"), d.get("from") or "nothing", d.get("to") or "nothing")
         elif kind == "acceptance_criterion_added":
             text = "added %s: %s" % (d.get("criterion_id"), d.get("outcome") or "")
+            link = ("criterion", d.get("criterion_id"))
         elif kind == "acceptance_criterion_edited":
             text = "revised %s%s" % (d.get("criterion_id"), ": " + d["outcome"] if d.get("outcome") else "")
+            link = ("criterion", d.get("criterion_id"))
         elif kind == "acceptance_criterion_retired":
             text = "retired %s" % d.get("criterion_id")
         elif kind in ("relationship_added", "relationship_removed"):
@@ -493,6 +497,7 @@ def history(events, comments, commits, short_ids):
             link = ("task", target)
         elif kind in ("branch_linked", "branch_unlinked"):
             text = "%s branch %s" % ("linked" if kind == "branch_linked" else "unlinked", d.get("branch") or d.get("branch_name"))
+            link = ("code", None) if kind == "branch_linked" else None
         elif kind == "artifact_attached":
             text = "attached %s" % (d.get("title") or d.get("artifact_id") or "a file")
         elif kind in ("reaction_added", "reaction_removed") and d.get("emoji") == RESOLVED and d.get("comment_id") in anchors:
@@ -512,18 +517,120 @@ def history(events, comments, commits, short_ids):
             elif body.startswith(THREAD):
                 text = "opened a thread on %s" % first[len(THREAD):].strip()
                 link = ("thread", ev.get("id"))
+            elif d.get("parent_id") in anchors:
+                text = "replied in the thread on %s" % anchors[d["parent_id"]]
+                link = ("thread", d["parent_id"])
+            elif body.strip():
+                text = "commented: %s" % excerpt(body)
+                link = ("comment", (ev.get("actor") or "", ev.get("ts") or ""))
         elif kind == "comment_deleted" and (by_id.get(d.get("comment_id")) or {}).get("role") in ("review", "plan-review"):
             text = "deleted a %s" % ("plan review" if by_id[d["comment_id"]].get("role") == "plan-review" else "code review")
         elif kind in ("task_archived", "task_unarchived"):
             text = "archived the task" if kind == "task_archived" else "restored the task from the archive"
         if text:
-            prov = ev.get("provenance") or {}
-            out.append({"ts": when(ev["ts"]), "actor": ev.get("actor") or "", "text": text, "why": prov.get("reason"),
-                        "behalf": prov.get("on_behalf_of"), "link": link, "details": details})
+            out.append(entry(ev, kind, "comment" if kind in ("comment_added", "comment_deleted") else "change", text, link, details))
     for c in commits:
-        out.append({"ts": when(c["when"]), "actor": c["author"], "text": "committed %s %s" % (c["hash"][:12], c["subject"]),
-                    "why": None, "behalf": None, "link": ("commit", c["hash"]), "details": None})
-    return sorted(out, key=lambda entry: entry["ts"], reverse=True)
+        out.append({"ts": when(c["when"]), "raw_ts": c["when"], "actor": c["author"], "kind": "commit", "cat": "change",
+                    "text": "committed %s %s" % (c["hash"][:12], c["subject"]), "why": None, "behalf": None,
+                    "link": ("commit", c["hash"]), "details": None})
+    return sorted(out, key=lambda item: item["ts"], reverse=True)
+
+
+def entry(ev, kind, cat, text, link=None, details=None):
+    prov = ev.get("provenance") or {}
+    return {"ts": when(ev["ts"]), "raw_ts": ev["ts"], "actor": ev.get("actor") or "", "kind": kind, "cat": cat, "text": text,
+            "why": prov.get("reason"), "behalf": prov.get("on_behalf_of"), "link": link, "details": details}
+
+
+def excerpt(body, size=140):
+    flat = " ".join(body.split())
+    return flat if len(flat) <= size else flat[:size - 3] + "..."
+
+
+# What another task's link to this one means, read from this task.
+INCOMING = {"depends_on": "%s now waits on this task", "blocked_by": "%s now waits on this task",
+            "blocks": "%s now blocks this task (it must finish first)", "subtask_of": "%s became a subtask of this task"}
+
+
+def cross_references(task, tasks, events_of):
+    """What other tasks did about this one, like GitHub's cross-referenced
+    events: links they made to it (Lattice keeps a link only on the task that
+    made it) and their comments that mention its ID."""
+    mention = re.compile(r"(?<![A-Za-z0-9-])%s(?!\d)" % re.escape(task["short_id"]))
+    out = []
+    for other in tasks:
+        if other["id"] == task["id"]:
+            continue
+        for ev in events_of(other["id"]):
+            d, kind = ev.get("data") or {}, ev.get("type")
+            if kind == "relationship_added" and d.get("target_task_id") == task["id"]:
+                text = INCOMING.get(d.get("type"), "%s linked itself to this task (" + (d.get("type") or "").replace("_", " ") + ")")
+                out.append(entry(ev, "incoming_link", "change", text % other["short_id"], ("task", other["short_id"])))
+            elif kind == "relationship_removed" and d.get("target_task_id") == task["id"]:
+                text = "%s removed its %s link to this task" % (other["short_id"], (d.get("type") or "").replace("_", " "))
+                out.append(entry(ev, "incoming_link", "change", text, ("task", other["short_id"])))
+            elif kind == "comment_added" and mention.search(d.get("body") or ""):
+                text = "mentioned this task in a comment on %s: %s" % (other["short_id"], excerpt(d["body"]))
+                out.append(entry(ev, "mention", "comment", text, ("task", other["short_id"])))
+    return out
+
+
+def commit_mentions(repo, short_id, exclude):
+    """Commits on any branch whose message mentions the task ID, other than
+    the task's own (GitHub's referenced events)."""
+    out = []
+    log = run_git(repo, "log", "--all", "-E", "--grep=%s([^0-9]|$)" % short_id, "--format=%H%x1f%cI%x1f%an%x1f%s", check=False)
+    for line in log.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 4 and parts[0] not in exclude:
+            out.append({"ts": when(parts[1]), "raw_ts": parts[1], "actor": parts[2], "kind": "referenced", "cat": "change",
+                        "text": "mentioned this task in commit %s %s" % (parts[0][:12], parts[3]), "why": None, "behalf": None,
+                        "link": None, "details": None})
+    return out
+
+
+# Bookkeeping edits that fold when one actor makes three or more in a row,
+# minutes apart, the way GitHub folds a run of label changes. Status changes,
+# questions, reviews, comments, commits and anything done on someone's behalf
+# always stay on their own line.
+FOLDABLE = {"acceptance_criterion_added": ("added", "criterion", "criteria"),
+            "acceptance_criterion_edited": ("revised", "criterion", "criteria"),
+            "acceptance_criterion_retired": ("retired", "criterion", "criteria"),
+            "field_updated": ("changed", "field", "fields"), "relationship_added": ("added", "link", "links"),
+            "relationship_removed": ("removed", "link", "links"), "branch_linked": ("linked", "branch", "branches"),
+            "branch_unlinked": ("unlinked", "branch", "branches"), "artifact_attached": ("attached", "file", "files"),
+            "assignment_changed": ("changed", "assignee", "assignees")}
+
+
+def fold_bursts(entries, gap=600):
+    """entries newest first; runs of three or more foldable entries by one
+    actor, each within gap seconds of the next, become one group entry."""
+    out, run = [], []
+
+    def close():
+        if len(run) >= 3:
+            counts = {}
+            for item in run:
+                counts[item["kind"]] = counts.get(item["kind"], 0) + 1
+            parts = []
+            for kind, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+                verb, one, many = FOLDABLE[kind]
+                parts.append("%s %d %s" % (verb, n, one if n == 1 else many))
+            out.append(dict(run[0], kind="group", text="made %d changes: %s" % (len(run), ", ".join(parts)),
+                            why=None, link=None, details=None, group=list(run)))
+        else:
+            out.extend(run)
+        run.clear()
+
+    for item in entries:
+        foldable = item["kind"] in FOLDABLE and not item["behalf"]
+        if foldable and run and item["actor"] == run[-1]["actor"] and (run[-1]["ts"] - item["ts"]).total_seconds() <= gap:
+            run.append(item)
+            continue
+        close()
+        (run if foldable else out).append(item)
+    close()
+    return out
 
 
 def commit_details(repo, hashes):
@@ -1083,7 +1190,9 @@ p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-
 .event{margin:.15rem 0;padding:.3rem .5rem;border-radius:6px;border:1px solid color-mix(in srgb,#2dd4bf 14%,transparent);background:color-mix(in srgb,#2dd4bf 7%,transparent)}
 .event .who{font-weight:600}.event .who.owner{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 70%,var(--text-primary,#e4e7eb))}
 a{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 75%,var(--text-primary,#e4e7eb))}
-@keyframes lrflash{from{box-shadow:0 0 0 3px var(--accent-primary,#2b6cb0)}to{box-shadow:0 0 0 3px transparent}}.flash{animation:lrflash 1.6s ease-out}
+@keyframes lrflash{from{box-shadow:0 0 0 3px var(--accent-primary,#2b6cb0)}to{box-shadow:0 0 0 3px transparent}}.lr-flash{animation:lrflash 1.6s ease-out}
+body[data-f=change] .event.comment,body[data-f=comment] .event.change{display:none}.filters{margin:.2rem 0 .4rem}
+.event.group>details>summary{cursor:pointer}.event.group .event{margin-left:1rem}
 .next{margin:.2rem 0 .6rem;padding:.55rem .75rem;border:1px solid var(--accent-primary,#2b6cb0);border-left-width:4px;border-radius:8px;background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 12%,transparent)}
 .thread{--hue:var(--color-warning,#f6c343);border-left-width:4px}.thread.resolved{--hue:var(--color-success,#7ee787)}
 .msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--hue,#94a3b8) 8%,transparent)}.msg .text{white-space:pre-wrap}
@@ -1158,19 +1267,53 @@ def render_threads(ctx, sid, threads, title):
 def task_history(ctx, task):
     """The entries of a task's history: its event log, comments and commits."""
     rng = resolve_range(ctx.repo, task, ctx.main)
-    events = [json.loads(line) for line in ctx.events(task["id"])]
-    short_ids = {t["id"]: t.get("short_id") for t in load_tasks(ctx.board)}
-    return history(events, ctx.comments(task["short_id"]), commit_details(ctx.repo, [c["hash"] for c in rng["commits"]]), short_ids)
+    tasks = load_tasks(ctx.board)
+
+    def events_of(task_id):
+        return [json.loads(line) for line in ctx.events(task_id)]
+    own = [c["hash"] for c in rng["commits"]]
+    entries = history(events_of(task["id"]), ctx.comments(task["short_id"]), commit_details(ctx.repo, own),
+                      {t["id"]: t.get("short_id") for t in tasks})
+    entries += cross_references(task, tasks, events_of) + commit_mentions(ctx.repo, task["short_id"], set(own))
+    return fold_bursts(sorted(entries, key=lambda item: item["ts"], reverse=True))
 
 
-# The history frame is as tall as its content and so is the review frame; it is
-# the panel around them (or the page) that scrolls. A jump scrolls that to the
-# target in the review frame and flashes it.
-JUMP = """<script>function lrJump(id){var P=parent.document,f=P.querySelector("iframe.review-frame:not(.history-frame)"),
-t=f&&f.contentDocument.getElementById(id);if(!t)return false;var pane=f.closest(".detail-panel"),
-dy=f.getBoundingClientRect().top+t.getBoundingClientRect().top-(pane?pane.getBoundingClientRect().top:0)-90;
-if(pane)pane.scrollBy({top:dy,behavior:"smooth"});else parent.scrollBy({top:dy,behavior:"smooth"});
-t.classList.remove("flash");void t.offsetWidth;t.classList.add("flash");return false}</script>"""
+# The history frame is capped and the review frame is as tall as its content;
+# it is the panel around them (or the page) that scrolls. A jump scrolls that
+# to the target, in the review frame or in the dashboard's own sections
+# (comments, criteria), and flashes it. The filters show all entries, only
+# changes or only comments, as Jira's History and Activity views do.
+JUMP = """<script>function lrScroll(el,f){var P=parent.document,pane=P.getElementById("detail-panel"),
+inPane=pane&&pane.contains(f||el),top=el.getBoundingClientRect().top+(f?f.getBoundingClientRect().top:0),
+dy=top-(inPane?pane.getBoundingClientRect().top:0)-90;(inPane?pane:parent).scrollBy({top:dy,behavior:"smooth"});
+el.classList.remove("lr-flash");void el.offsetWidth;el.classList.add("lr-flash");return false}
+function lrJump(id){var f=parent.document.querySelector("iframe.review-frame:not(.history-frame)"),t=f&&f.contentDocument.getElementById(id);
+return t?lrScroll(t,f):false}
+function lrFind(sel,test){var hit=[].find.call(parent.document.querySelectorAll(sel),test);return hit?lrScroll(hit.closest("div")||hit,null):false}
+function lrComment(who,ts){return lrFind(".dp-comment,.comment-item",function(c){return c.textContent.indexOf(who+" \\u00b7 "+ts)>=0})}
+function lrCriterion(id){return lrFind("[data-lr=criteria] strong",function(s){return s.textContent.trim()===id})}
+function lrFilter(f){document.body.dataset.f=f;[].forEach.call(document.querySelectorAll(".filters button"),function(b){
+b.classList.toggle("primary",b.dataset.f===f)});var fe=frameElement;if(fe){fe.style.height="1px";
+fe.style.height=Math.min(document.documentElement.scrollHeight+4,Math.round(parent.innerHeight*0.6))+"px"}}</script>"""
+
+
+def ago(ts, now):
+    """A relative time like GitHub's: just now, 5m ago, 3h ago, yesterday, or the date."""
+    seconds = (now - ts).total_seconds()
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return "%dm ago" % (seconds // 60)
+    if seconds < 86400:
+        return "%dh ago" % (seconds // 3600)
+    if seconds < 172800:
+        return "yesterday"
+    return ts.astimezone().strftime("%b %d").replace(" 0", " ")
+
+
+def js(value):
+    """A value as a JavaScript literal inside a double-quoted HTML attribute."""
+    return e(json.dumps(value))
 
 
 def render_dependencies(task, links):
@@ -1197,40 +1340,59 @@ def render_dependencies(task, links):
     return out
 
 
+def render_entry(item, now):
+    who = item["actor"]
+    kind, target = item["link"] or (None, None)
+    show = " <a href='#' onclick=\"return %s\">show</a>"
+    if kind == "task":
+        more = " <a href='/t/%s' target='_top'>open %s</a>" % (e(target), e(target))
+    elif kind == "thread":
+        more = show % ("lrJump(%s)" % js("thread-" + target))
+    elif kind in ("plan", "code"):
+        more = show % ("lrJump(%s)" % js(kind))
+    elif kind == "commit":
+        more = show % ("lrJump(%s)" % js("commit-" + target[:12]))
+    elif kind == "comment":
+        more = show % ("lrComment(%s,%s)" % (js(target[0]), js(target[1])))
+    elif kind == "criterion":
+        more = show % ("lrCriterion(%s)" % js(target))
+    else:
+        more = ""
+    exact = item["ts"].astimezone().strftime("%a %b %d %Y, %H:%M")
+    line = "<span class='muted' title='%s'>%s</span> <span class='who%s'>%s</span> %s%s" % (
+        e(exact), e(ago(item["ts"], now)), " owner" if who.startswith("human:") else "", e(who), e(item["text"]), more)
+    if item["behalf"]:
+        line += " <span class='%s'>on behalf of %s</span>" % ("warn" if not who.startswith("human:") else "muted", e(item["behalf"]))
+    if item["why"]:
+        line += "<br><span class='muted'>Why: %s</span>" % e(item["why"])
+    if item["details"]:
+        line += "<details><summary>What changed</summary><pre>%s</pre></details>" % e(item["details"])
+    return line
+
+
 def render_history(ctx, sid, entries):
-    """The history, grouped by day in local time, newest first. It is served
-    in its own frame at the bottom of the task, below the comments; its links
-    jump to their place in the review section's frame."""
+    """The history, grouped by day in local time, newest first, with filters.
+    It is served in its own frame at the bottom of the task, below the
+    comments; its links jump to their place in the review section's frame or
+    the dashboard's own sections."""
     if not entries:
         return ""
-    jump = "onclick=\"return lrJump('%s')\""
-    out, day = [JUMP], None
-    for entry in entries:
-        local = entry["ts"].astimezone()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    out = [JUMP, "<p class='filters'>%s</p>" % "".join(
+        "<button type='button' class='small%s' data-f='%s' onclick=\"lrFilter('%s')\">%s</button>" % (
+            " primary" if f == "all" else "", f, f, label) for f, label in (("all", "All"), ("change", "Changes"), ("comment", "Comments")))]
+    day = None
+    for item in entries:
+        local = item["ts"].astimezone()
         if local.date() != day:
             day = local.date()
             out.append("<p class='day'>%s</p>" % e(local.strftime("%a %b %d").replace(" 0", " ")))
-        who = entry["actor"]
-        kind, target = entry["link"] or (None, None)
-        if kind == "task":
-            more = " <a href='/t/%s' target='_top'>open %s</a>" % (e(target), e(target))
-        elif kind == "thread":
-            more = " <a href='#' %s>show</a>" % (jump % ("thread-" + e(target)))
-        elif kind in ("plan", "code"):
-            more = " <a href='#' %s>show</a>" % (jump % kind)
-        elif kind == "commit":
-            more = " <a href='#' %s>show</a>" % (jump % ("commit-" + e(target[:12])))
+        if item.get("group"):
+            inner = "".join("<div class='event %s'>%s</div>" % (g["cat"], render_entry(g, now)) for g in item["group"])
+            out.append("<div class='event %s group'><details><summary>%s</summary>%s</details></div>" % (
+                item["cat"], render_entry(item, now), inner))
         else:
-            more = ""
-        line = "<span class='muted'>%s</span> <span class='who%s'>%s</span> %s%s" % (
-            e(local.strftime("%H:%M")), " owner" if who.startswith("human:") else "", e(who), e(entry["text"]), more)
-        if entry["behalf"]:
-            line += " <span class='%s'>on behalf of %s</span>" % ("warn" if not who.startswith("human:") else "muted", e(entry["behalf"]))
-        if entry["why"]:
-            line += "<br><span class='muted'>Why: %s</span>" % e(entry["why"])
-        if entry["details"]:
-            line += "<details><summary>What changed</summary><pre>%s</pre></details>" % e(entry["details"])
-        out.append("<div class='event'>%s</div>" % line)
+            out.append("<div class='event %s'>%s</div>" % (item["cat"], render_entry(item, now)))
     return "".join(out)
 
 

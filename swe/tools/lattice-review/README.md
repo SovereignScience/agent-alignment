@@ -145,17 +145,29 @@ the dashboard draws the whole graph.
 
 At the bottom of the task, below Comments, the dashboard's own History
 section shows this server's history instead, in its own frame
-(`/review/t/<ID>/history`). It reads the
-task's event log and its commits and says, newest first and grouped by
-day in local time, what changed: status from and to, the question asked
-or the note that cleared it, criteria text, description edits (expand
-"What changed"), links to related tasks, reviews and plan reviews,
-threads opened and resolved, and commits. Each entry shows the reason
-given, and an agent acting "on behalf of" a person is highlighted.
-Related tasks open in the dashboard; "show" on a review, thread or commit
-scrolls the panel to it in the review section and flashes it. Plain
-comments stay in Comments, and bookkeeping events (short IDs, comment
-edits) are left out.
+(`/review/t/<ID>/history`), which stops growing at 60% of the window and
+scrolls inside. It follows what Jira's History and Activity views and
+GitHub's issue timeline show:
+
+- Every event in the task's log, newest first, grouped by day, with a
+  relative time ("3h ago") and the exact time on hover: status from and
+  to, the question asked or the note that cleared it, criteria text,
+  description edits (expand "What changed"), links, reviews, plan
+  reviews, threads and comments. Each shows the reason given, and an
+  agent acting "on behalf of" a person is highlighted.
+- Cross-references: links other tasks made to this one (Lattice keeps a
+  link only on the task that made it) and their comments that mention its
+  ID, plus commits on any branch whose message mentions it. The task's
+  own commits appear as commits.
+- Bursts: three or more bookkeeping edits by one actor, minutes apart
+  (criteria, fields, links, branches, attachments, assignment), fold into
+  one expandable line. Status changes, questions, reviews, comments,
+  commits and anything done on someone's behalf stay on their own lines.
+- Filters: All, Changes, Comments.
+- Links: related tasks open in the dashboard; "show" scrolls the panel to
+  the review, thread, commit, comment or criterion and flashes it.
+
+Bookkeeping events (short IDs, comment edits) are left out.
 
 ## What completes a task
 
