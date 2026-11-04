@@ -149,11 +149,11 @@ section shows this server's history instead, in its own frame
 scrolls inside. It follows what Jira's History and Activity views and
 GitHub's issue timeline show:
 
-- Every event in the task's log, newest first, grouped by day, with a
-  relative time ("3h ago") and the exact time on hover: status from and
-  to, the question asked or the note that cleared it, criteria text,
-  description edits (expand "What changed"), links, reviews, plan
-  reviews, threads and comments. Each shows the reason given, and an
+- Every event in the task's log, newest first, grouped by day, with the
+  time and, on hover, how long ago: what the task was created as, status
+  from and to, the question asked or the note that cleared it, criteria
+  text, description edits (expand "What changed"), links, reviews, plan
+  reviews, threads, comments and deleted comments. Each shows the reason given, and an
   agent acting "on behalf of" a person is highlighted.
 - Cross-references: links other tasks made to this one (Lattice keeps a
   link only on the task that made it) and their comments that mention its

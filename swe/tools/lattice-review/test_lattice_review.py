@@ -420,6 +420,11 @@ class PureTests(RepoFixture):
                                  "commented: just a note",
                                  "marked this as blocking (it must finish first) T-2", "edited the description", "cleared the owner question: approved in chat",
                                  "asked the owner: Need: approve plan", "moved it from in progress to in review", "created the task"])
+        deleted = lr.history([ev(13, "comment_deleted", {"comment_id": "ev_9"}, actor="human:t"),
+                              ev(14, "task_created", {"title": "t", "priority": "high", "type": "bug", "status": "backlog"})],
+                             [thread], [], {})
+        self.assertEqual([x["text"] for x in deleted], ["created the task as a high bug in backlog",
+                                                        "deleted a comment by human:t: Thread: README.md, line 3 at abc From review ev_8 why?"])
         by_text = {x["text"]: x for x in entries}
         self.assertEqual(by_text["moved it from in progress to in review"]["why"], "work complete")
         self.assertEqual(by_text["cleared the owner question: approved in chat"]["behalf"], "human:t")

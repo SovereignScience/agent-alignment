@@ -467,7 +467,9 @@ def history(events, comments, commits, short_ids):
         d, kind = ev.get("data") or {}, ev.get("type")
         text, link, details = None, None, None
         if kind == "task_created":
-            text = "created the task"
+            what = " ".join(w for w in (d.get("priority"), d.get("type")) if w)
+            text = "created the task" + (" as a %s" % what if what else "") + (
+                " in %s" % d["status"].replace("_", " ") if d.get("status") else "")
         elif kind == "status_changed":
             text = "moved it from %s to %s" % ((d.get("from") or "?").replace("_", " "), (d.get("to") or "?").replace("_", " "))
         elif kind == "assignment_changed":
@@ -523,8 +525,10 @@ def history(events, comments, commits, short_ids):
             elif body.strip():
                 text = "commented: %s" % excerpt(body)
                 link = ("comment", (ev.get("actor") or "", ev.get("ts") or ""))
-        elif kind == "comment_deleted" and (by_id.get(d.get("comment_id")) or {}).get("role") in ("review", "plan-review"):
-            text = "deleted a %s" % ("plan review" if by_id[d["comment_id"]].get("role") == "plan-review" else "code review")
+        elif kind == "comment_deleted" and d.get("comment_id") in by_id:
+            gone = by_id[d["comment_id"]]
+            role = {"review": "code review", "plan-review": "plan review"}.get(gone.get("role"), "comment")
+            text = "deleted a %s by %s: %s" % (role, gone.get("author") or "someone", excerpt(gone.get("body") or ""))
         elif kind in ("task_archived", "task_unarchived"):
             text = "archived the task" if kind == "task_archived" else "restored the task from the archive"
         if text:
@@ -1358,9 +1362,10 @@ def render_entry(item, now):
         more = show % ("lrCriterion(%s)" % js(target))
     else:
         more = ""
-    exact = item["ts"].astimezone().strftime("%a %b %d %Y, %H:%M")
-    line = "<span class='muted' title='%s'>%s</span> <span class='who%s'>%s</span> %s%s" % (
-        e(exact), e(ago(item["ts"], now)), " owner" if who.startswith("human:") else "", e(who), e(item["text"]), more)
+    local = item["ts"].astimezone()
+    line = "<span class='muted' title='%s, %s'>%s</span> <span class='who%s'>%s</span> %s%s" % (
+        e(ago(item["ts"], now)), e(local.strftime("%a %b %d %Y")), e(local.strftime("%H:%M")),
+        " owner" if who.startswith("human:") else "", e(who), e(item["text"]), more)
     if item["behalf"]:
         line += " <span class='%s'>on behalf of %s</span>" % ("warn" if not who.startswith("human:") else "muted", e(item["behalf"]))
     if item["why"]:
