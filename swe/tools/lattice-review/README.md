@@ -20,7 +20,7 @@ panel at 60% of the window on an opaque background; drag the panel's
 left edge to resize it (the width is remembered in the browser) and
 double-click the edge to reset it. Each panel section is drawn as a card
 one step lighter than the panel, with a quiet hue by kind, and the
-dropdown menus follow the theme.
+dropdown menus and the review section follow the theme's color scheme.
 
 Everything stays on the machine. The server binds to 127.0.0.1 only,
 answers only requests whose Host and Origin name this machine, and
@@ -103,17 +103,21 @@ To keep Plannotator's own instruction out of the agent's way, set
 
 ## Plan review
 
-When the task has a plan file (`.lattice/plans/<task id>.md`, the one
-`lattice plan <ID>` names), the section shows the plan's state and
-"Plannotator: review the plan". That opens the plan in Plannotator's
+The section has two blocks: Plan, then Code review. The Plan block shows
+the state of the task's plan file (`.lattice/plans/<task id>.md`, the
+one `lattice plan <ID>` names) with "Plannotator: review the plan" and
+"Open the plan in VS Code", which scaffolds a plan the way the
+dashboard's own button does when there is none. While the section is on
+the page the dashboard's own Show Plan button is hidden, so the plan has
+one place. "Plannotator: review the plan" opens the plan in Plannotator's
 annotate mode (`plannotator annotate <plan> --gate --json`), where the
 owner comments on selected text or on the whole plan, marks text for
 removal, or edits the plan in place (saved edits are written to the
 file). Send Feedback or Approve is recorded on the task as a comment with
 role `plan-review` and a `Plan: <sha256>` line for the plan as it stood
 when the session ended. Each note becomes a thread, anchored
-`plan, line N` with the selected text quoted, and follows the thread
-rules above. An approval also clears a `needs_human` flag whose reason
+`plan, line N` with the selected text quoted, is listed in the Plan
+block, and follows the thread rules above. An approval also clears a `needs_human` flag whose reason
 asks for the plan's approval, so the agent never has to clear it. The
 state reads not reviewed yet, changes requested, approved, or changed
 since it was approved. Plan reviews never complete a task.
@@ -194,6 +198,7 @@ notes and plans handlers), written against Lattice 0.2.
 | `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` in the checkout that holds the task's uncommitted work; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
+| `POST /review/t/<ID>/openplan` | the plan in VS Code, scaffolded when missing |
 | `POST /review/t/<ID>/plan` | `plannotator annotate <plan file> --gate --json`; redirects to the session; the decision becomes a `plan-review` comment and threads |
 | `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work and no thread is open |
 | `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction |
