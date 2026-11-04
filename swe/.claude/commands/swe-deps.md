@@ -1,11 +1,12 @@
 ---
-description: Audit dependency changes (adds, removes, version bumps, lockfile drift) for CVEs, license drift, maintenance signal, and bundle bloat. Hands off to dependency-auditor; read-only — no edits.
-argument-hint: [base-branch]
+description: Audit dependency changes (adds, removes, version bumps, lockfile drift) for CVEs, license drift, maintenance signal, and bundle bloat. Hands off to dependency-auditor; read-only, no edits.
+argument-hint: "[base-branch]"
 allowed-tools: Bash, Read, Agent
 model: inherit
 ---
 
-Audit dependency changes against `$1` (default `main`).
+Audit dependency changes against `$1`. The base branch defaults to
+`main`.
 
 Capture the manifest and lockfile diffs:
 

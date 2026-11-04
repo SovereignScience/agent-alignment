@@ -12,7 +12,7 @@ for the URL.
 
 Steps:
 
-1. Confirm reachability — `curl -fsS "$ARGUMENTS"`. If not
+1. Confirm reachability: `curl -fsS "$ARGUMENTS"`. If not
    reachable, ask the user to start the dev server.
 2. Spawn `dashboard-probe`. Brief: "probe per the format defined
    in your agent definition. Capture DOM rects, computed styles,

@@ -1,147 +1,137 @@
-# swe/.claude/ — SWE-track Claude Code configuration
+# swe/.claude: SWE track configuration for Claude Code
 
-This directory configures Claude Code (and via the `AGENTS.md`
-symlink at the parent of this folder, Codex CLI / Cursor / any
-AGENTS.md consumer) for **SWE work in this subtree only**.
+This directory configures Claude Code for work in the swe/ subtree. The
+AGENTS.md symlink next to it gives Codex and other AGENTS.md readers the same
+instructions; the Codex profile and rules live in ../codex/.
 
-## What's checked in
+## What is checked in
 
 | Path | Purpose |
 |---|---|
-| [settings.json](settings.json) | Permissions allow/ask/deny lists, env vars, hooks, status line. SWE allowlist (pytest, ruff, mypy, npm, eslint, tsc, cargo, go, make, docker read-only, gh PR/issue read-only, rg). |
-| [agents/](agents/) | 12 SWE specialist subagent definitions. |
-| [commands/](commands/) | 14 SWE slash commands. |
-| [scripts/](scripts/) | Hook + status-line helpers. Shell-only, dependency-free, all guarded with `set -euo pipefail`. |
+| settings.json | Permissions (allow, ask, deny), sandbox, hooks, status line. |
+| managed-settings.example.json | The admin-enforced layer for /etc/claude-code/managed-settings.json. |
+| agents/ | 12 specialist subagent definitions, each run by name. |
+| commands/ | 14 slash commands. |
+| scripts/ | Hooks and the status line. Need bash, python3, git and sha256sum. |
 
-## What's gitignored
+Personal overrides go in .claude/settings.local.json, which is ignored in
+every subtree. Under a managed layer agents cannot write that file; the user
+edits it.
 
-| Path | Why |
-|---|---|
-| `.claude/settings.local.json` | Personal overrides — never committed. |
-| `.claude/cache/` | Claude Code runtime cache. |
-| `.claude/projects/` | Per-project Claude Code state. |
+## The boundary
 
----
+The sandbox and the deny list are the boundary. The allow list runs
+interpreters, build tools and test runners, so it is a convenience, not a
+control. The hooks are guards: they catch what the rules miss and explain
+the refusal, and they can fail. Where a managed layer sets
+allowManagedHooksOnly, only the managed hooks run and the project hooks in
+settings.json are ignored; this directory is for repositories without one.
 
-## Subagent roster (12)
+settings.json carries:
 
-| Name | Tools | Model | Use for |
-|---|---|---|---|
-| `code-reviewer` | Read, Grep, Glob, Bash | opus | Independent diff review |
-| `regression-test-writer` | Read, Grep, Glob, Bash, Write, Edit | sonnet | Failing-test-first for bugs |
-| `security-reviewer` | Read, Grep, Glob, Bash | opus | OWASP top-10 review |
-| `perf-auditor` | Read, Grep, Glob, Bash | opus | Hot-path / budget audit |
-| `dashboard-probe` | Read, Grep, Glob, Bash, Write | sonnet | Headless-Chromium UI verification |
-| `dependency-auditor` | Read, Grep, Glob, Bash | sonnet | CVE / license / maintenance audit |
-| `architecture-explorer` | Read, Grep, Glob, Bash | sonnet | First-pass repo orientation |
-| `refactoring-planner` | Read, Grep, Glob, Bash | opus | Stepwise behavior-preserving refactor plan |
-| `debugger` | Read, Grep, Glob, Bash | opus | Root-cause diagnosis |
-| `docs-writer` | Read, Edit, Write, Grep, Glob, Bash | sonnet | ADRs, READMEs, runbooks, CHANGELOG |
-| `code-skeptic` | Read, Grep, Glob, Bash | opus | Anti-sycophancy flag list over a draft sign-off |
-| `code-arbiter` | Read, Grep, Glob, Bash | opus | Synthesize Skeptic flags into final review verdict |
+- deny rules for common outward commands and live-system changes:
+  git push, gh writes, kubectl, helm, argocd, ansible, ssh, scp, terraform
+  and tofu apply, vault, aws s3 writes, docker push, npm publish, twine,
+  crontab, at, systemd-run, tmux send-keys, and the Workflow, RemoteTrigger,
+  CronCreate and Artifact tools;
+- deny rules for reading credential stores and secret files: ~/.ssh,
+  ~/.kube, ~/.config/gh, ~/.aws, ~/.netrc, ~/.gnupg, ~/.password-store,
+  ~/.config/age, ~/.docker/config.json, .env files, tfvars, tfstate, age,
+  kdbx, pem and key files, id_* keys, and anything named like a token,
+  secret or credential;
+- deny rules for editing this directory's settings, scripts, agents and
+  commands, the user's ~/.claude settings, hooks, agents and CLAUDE.md,
+  ~/.codex and /etc/claude-code;
+- a fail-closed sandbox block with registry and research domains, project
+  and cache writes, and credential denials. Immutable domain restrictions need
+  the managed layer below; a project allowlist alone is not that boundary.
 
-## Slash command roster (14)
+The OS sandbox enforces its configured file and network limits. Command
+patterns and hooks are partial checks, not proof that every interpreter,
+connector or browser action is read-only.
 
-| Command | Hands off to |
-|---|---|
-| `/swe-explore` | `architecture-explorer` |
-| `/swe-review` | `code-reviewer` |
-| `/swe-add-test` | `regression-test-writer` |
-| `/swe-fix-bug` | `debugger` → `regression-test-writer` → `code-reviewer` |
-| `/swe-debug` | `debugger` |
-| `/swe-perf` | `perf-auditor` |
-| `/swe-security` | `security-reviewer` |
-| `/swe-deps` | `dependency-auditor` |
-| `/swe-refactor` | `refactoring-planner` |
-| `/swe-probe` | `dashboard-probe` |
-| `/swe-docs` | `docs-writer` |
-| `/swe-skeptic` | `code-skeptic` + `code-arbiter` |
-| `/swe-swarm-review` | parallel: `code-reviewer`, `security-reviewer`, `perf-auditor`, `dependency-auditor`, `architecture-explorer` |
-| `/swe-init` | `architecture-explorer` + `docs-writer` (install protocols in another repo) |
+Outward actions are denied, not asked. The agent prepares the change and
+the user pushes, posts or applies it in their own terminal.
 
----
+## Hooks
 
-## Hook architecture
+| Event | Script | What it does |
+|---|---|---|
+| SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
+| SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
+| PreToolUse on Bash and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. Unparsable commands that look outward are denied too. |
+| PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
+| PostToolUse on Write and Edit | post_edit_verify.sh | Runs file-level checks when present, leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
-```
-SessionStart  → session_start.sh    surfaces SWE protocol hashes + dispatch table
-PreToolUse    → pre_bash_guard.sh   blocks rm -rf / force-push / --no-verify / curl|sh
-PostToolUse   → post_edit_verify.sh language-aware (ruff/mypy/eslint/tsc/cargo/go/clang-format)
-                                    + canonical-protocol reminders
-                                    + dependency-manifest flag for /swe-deps
-                                    + .claude/* validation
-StatusLine    → statusline.sh       branch + dirty + swe:<canonical-hash>
-```
+pre-push is a git hook for the user, not a Claude hook. It shows what is
+about to leave the machine and asks for a y when a push has more than 3
+commits, more than 80 added doc lines, more than 400 added lines, a new doc
+file, an AI tell in docs or commit messages, or AI attribution anywhere. It
+refuses when there is no terminal. Install it with tells_check.py beside it:
 
-All hooks are best-effort; PostToolUse never blocks. PreToolUse
-returns exit 2 to block destructive bash patterns.
-
----
-
-## Customizing locally
-
-Per-developer changes go in `.claude/settings.local.json`, which is
-gitignored. That file's keys are merged with `settings.json`.
-
-Example `settings.local.json`:
-
-```json
-{
-  "permissions": {
-    "allow": ["Bash(my-personal-tool *)"]
-  },
-  "env": {
-    "SWE_DEBUG": "1"
-  }
-}
+```bash
+(
+  set -eu
+  hook_dir="$(git rev-parse --git-path hooks)"
+  for name in pre-push pre-push.local tells_check.py; do
+    if [ -e "$hook_dir/$name" ] || [ -L "$hook_dir/$name" ]; then
+      echo "Existing $name; preserve and integrate it before installing." >&2
+      exit 1
+    fi
+  done
+  mkdir -p "$hook_dir"
+  source_dir="$(git rev-parse --show-toplevel)/swe/.claude/scripts"
+  cp "$source_dir/pre-push" "$source_dir/tells_check.py" "$hook_dir/"
+  chmod +x "$hook_dir/pre-push"
+)
 ```
 
----
+The scripts assume the default branch is origin/HEAD and fall back to
+origin/main.
 
-## Adding a new specialist
+## Managed layer
 
-1. Drop a markdown file at `agents/<name>.md` with frontmatter
-   (`name`, `description`, `tools`, `model`).
-2. Make `description` start with "Use proactively when…" to
-   encourage auto-delegation, or be neutral for explicit-invoke-only.
-3. Body uses the canonical shape:
-   - Read first (link to relevant protocols)
-   - Invariants you defend
-   - How you work
-   - What you do not do
-   - Report back with
-4. Update the dispatch table in [../CLAUDE.md](../CLAUDE.md) and the
-   roster above.
+managed-settings.example.json is the admin-enforced file this track was
+written against. It requires the sandbox, fails closed when the sandbox is
+unavailable, allows only its own domain list, hides credential files and
+token variables, denies the outward commands, runs only managed hooks and
+disables bypass mode. To use it, copy guard_outward.py, tells_check.py and
+after_summary.sh to /etc/claude-code/hooks/, replace ~/projects with your
+workspace root, and install the file as /etc/claude-code/managed-settings.json.
 
-## Adding a new slash command
+## Codex
 
-1. Drop a markdown file at `commands/<name>.md` with frontmatter
-   (`description`, `argument-hint`, `allowed-tools`).
-2. Body is the command prompt. Use `$1`, `$2`, etc. for positional
-   args, or `$ARGUMENTS` for the full unparsed argument string.
-3. Multi-step workflows hand off to specialists with explicit
-   `subagent_type`.
+../codex/config.snippet.toml holds the permission profile (filesystem
+denials, no network) and ../codex/default.rules the commands Codex refuses
+in every mode. Codex reads AGENTS.md for the rules themselves.
+
+## Adding a specialist
+
+1. Add agents/<name>.md with frontmatter: name, description, tools, model.
+2. Set model to inherit and write the description as "Run only when the
+   user asks for it by name or invokes its command", then what it returns.
+3. Body: read first, invariants, how you work, what you do not do, report
+   back with.
+4. Update the dispatch table in ../CLAUDE.md and the roster in ../README.md.
+
+## Adding a slash command
+
+1. Add commands/<name>.md with frontmatter: description, argument-hint,
+   allowed-tools.
+2. The body is the prompt. Use $1, $2 or $ARGUMENTS for arguments.
+3. Hand off to specialists with an explicit subagent_type, at most three at
+   once.
 
 ## Sanity check
 
-After modifying agent / command / hook / settings files:
-
 ```bash
-# Validate JSON
 python3 -c "import json; json.load(open('.claude/settings.json'))"
-
-# Lint hook scripts
-bash -n .claude/scripts/*.sh
-bash -n scripts/*.sh
-
-# Smoke-test the status line and session-start
+for script in .claude/scripts/*.sh; do bash -n "$script"; done
+python3 -m py_compile .claude/scripts/guard_outward.py .claude/scripts/tells_check.py .claude/scripts/pre-push
+echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | python3 .claude/scripts/guard_outward.py
 bash .claude/scripts/statusline.sh
 bash .claude/scripts/session_start.sh
-
-# Print canonical hashes
-bash scripts/check_drift.sh
 ```
 
-Subagent and command markdown files are validated by Claude Code at
-load time; malformed frontmatter shows up in the `/agents` or
-`/commands` list as a load error.
+Malformed agent or command frontmatter shows as a load error in /agents or
+/help.

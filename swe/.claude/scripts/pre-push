@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""pre-push: show what is about to leave this machine, and stop oversized pushes.
+
+Agents cannot push, so this only ever asks the user. It asks for y when a push has
+more than 3 commits, more than 80 added doc lines, more than 400 added lines in
+total, a new doc file, an AI tell in docs or commit messages, or AI attribution
+anywhere. If git cannot work out what is being pushed, the push is refused.
+An executable pre-push.local beside this hook runs after it.
+"""
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+try:
+    from tells_check import find_tells
+except ImportError:
+    def find_tells(text):
+        return ["tell checker missing"] if text else []
+
+MAX_COMMITS = 3
+MAX_DOC_LINES = 80
+MAX_LINES = 400
+DOCS = (".md", ".txt", ".rst", ".adoc", ".html")
+ZERO = "0" * 40
+
+
+class GitError(Exception):
+    pass
+
+
+def git(*args):
+    out = subprocess.run(["git", *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise GitError("git %s: %s" % (" ".join(args[:2]), out.stderr.strip()[:200]))
+    return out.stdout
+
+
+def pushed_commits(updates):
+    shas = []
+    for line in updates.splitlines():
+        parts = line.split()
+        if len(parts) != 4:
+            raise GitError("unexpected push input: %r" % line[:120])
+        local_sha, remote_sha = parts[1], parts[3]
+        if local_sha == ZERO:
+            continue
+        if remote_sha == ZERO:
+            shas += git("rev-list", local_sha, "--not", "--remotes").split()
+            continue
+        try:
+            git("cat-file", "-e", remote_sha + "^{commit}")
+        except GitError:
+            raise GitError("remote commit %s is not in this clone; fetch first" % remote_sha[:12])
+        shas += git("rev-list", "%s..%s" % (remote_sha, local_sha)).split()
+    return list(dict.fromkeys(shas))
+
+
+def measure(shas):
+    doc_lines = all_lines = 0
+    new_docs, prose, added = [], [], []
+    for sha in shas:
+        for row in git("show", "--numstat", "--format=", sha).splitlines():
+            cols = row.split("\t")
+            if len(cols) == 3 and cols[0].isdigit():
+                all_lines += int(cols[0])
+                if cols[2].lower().endswith(DOCS):
+                    doc_lines += int(cols[0])
+        new_docs += [p for p in git("show", "--diff-filter=A", "--name-only", "--format=", sha).split()
+                     if p.lower().endswith(DOCS)]
+        prose.append(git("log", "-1", "--format=%B", sha))
+        for line in git("show", "--format=", "-U0", sha).splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                added.append(line[1:])
+        diff = git("show", "--format=", "-U0", sha, "--", *["*" + d for d in DOCS])
+        prose += [l[1:] for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++")]
+    tells = find_tells("\n".join(prose))
+    if "AI attribution" in find_tells("\n".join(added)) and "AI attribution" not in tells:
+        tells.append("AI attribution in code")
+    return doc_lines, all_lines, sorted(set(new_docs)), tells
+
+
+def confirm(summary):
+    print(summary, file=sys.stderr)
+    try:
+        with open("/dev/tty") as tty_in, open("/dev/tty", "w") as tty_out:
+            tty_out.write("Push anyway? Type y to continue: ")
+            tty_out.flush()
+            return tty_in.readline().strip().lower() == "y"
+    except OSError:
+        print("No terminal to confirm on; push refused.", file=sys.stderr)
+        return False
+
+
+def main():
+    updates = sys.stdin.read()
+    try:
+        shas = pushed_commits(updates)
+        doc_lines, all_lines, new_docs, tells = measure(shas)
+    except GitError as err:
+        print("Push check could not read this push (%s); push refused." % err, file=sys.stderr)
+        return 1
+    summary = "Push check: %d commits, %d lines added (%d in docs), %d new doc files%s%s." % (
+        len(shas), all_lines, doc_lines, len(new_docs),
+        " (%s)" % ", ".join(new_docs[:5]) if new_docs else "",
+        "; AI tells: " + ", ".join(tells) if tells else "")
+    over = (len(shas) > MAX_COMMITS or doc_lines > MAX_DOC_LINES or all_lines > MAX_LINES
+            or new_docs or tells)
+    if over:
+        limits = "Limits: %d commits, %d lines, %d doc lines, no new docs, no tells." % (
+            MAX_COMMITS, MAX_LINES, MAX_DOC_LINES)
+        if not confirm(summary + "\n" + limits):
+            return 1
+    else:
+        print(summary, file=sys.stderr)
+    local = os.path.join(os.path.dirname(os.path.realpath(__file__)), "pre-push.local")
+    if os.access(local, os.X_OK):
+        return subprocess.run([local, *sys.argv[1:]], input=updates, text=True).returncode
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

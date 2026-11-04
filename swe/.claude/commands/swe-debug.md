@@ -7,7 +7,7 @@ model: inherit
 
 Diagnose a failing observation to root cause.
 
-Input: `$ARGUMENTS` is the failure — a stack trace, a failing test
+Input: `$ARGUMENTS` is the failure: a stack trace, a failing test
 output, a "this returns wrong values" report. If empty, ask for the
 failing observation.
 

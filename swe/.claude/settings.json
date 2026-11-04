@@ -6,8 +6,6 @@
   "permissions": {
     "allow": [
       "Read(./**)",
-      "Read(//home/code0x19/.claude/**)",
-
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -18,15 +16,11 @@
       "Bash(git ls-files*)",
       "Bash(git blame*)",
       "Bash(git add *)",
-      "Bash(git restore *)",
-      "Bash(git stash *)",
       "Bash(git switch *)",
-      "Bash(git checkout *)",
       "Bash(git pull*)",
       "Bash(git fetch*)",
       "Bash(git merge --ff-only*)",
       "Bash(git commit *)",
-
       "Bash(gh pr view *)",
       "Bash(gh pr list *)",
       "Bash(gh pr diff *)",
@@ -36,7 +30,6 @@
       "Bash(gh api repos/*)",
       "Bash(gh run list *)",
       "Bash(gh run view *)",
-
       "Bash(python3 *)",
       "Bash(python *)",
       "Bash(python3 -m pytest *)",
@@ -52,7 +45,6 @@
       "Bash(mypy *)",
       "Bash(black *)",
       "Bash(isort *)",
-
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(npm test)",
@@ -72,7 +64,6 @@
       "Bash(vitest *)",
       "Bash(playwright test *)",
       "Bash(playwright *)",
-
       "Bash(make *)",
       "Bash(cmake *)",
       "Bash(cargo build*)",
@@ -86,14 +77,11 @@
       "Bash(go vet*)",
       "Bash(go fmt*)",
       "Bash(gofmt *)",
-
       "Bash(cppcheck *)",
       "Bash(clang-tidy *)",
       "Bash(clang-format *)",
-
       "Bash(ros2 *)",
       "Bash(colcon *)",
-
       "Bash(docker compose -f docker-compose.yml config*)",
       "Bash(docker compose ps*)",
       "Bash(docker compose logs*)",
@@ -101,11 +89,9 @@
       "Bash(docker images*)",
       "Bash(docker logs *)",
       "Bash(docker inspect *)",
-
       "Bash(curl -fsS http://127.0.0.1:*)",
       "Bash(curl -fsS http://localhost:*)",
       "Bash(curl -fsS https://localhost:*)",
-
       "Bash(ls *)",
       "Bash(find . *)",
       "Bash(grep -r *)",
@@ -123,21 +109,11 @@
       "Bash(touch *)",
       "Bash(ln -sf *)",
       "Bash(chmod +x *)",
-
       "Bash(bash scripts/*)",
       "Bash(bash .claude/scripts/*)",
       "Bash(python3 scripts/*)"
     ],
     "ask": [
-      "Bash(git push *)",
-      "Bash(git push)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh pr close *)",
-      "Bash(gh pr comment *)",
-      "Bash(gh issue create *)",
-      "Bash(gh issue close *)",
-
       "Bash(pip install *)",
       "Bash(.venv/bin/pip install *)",
       "Bash(./.venv/bin/pip install *)",
@@ -151,7 +127,6 @@
       "Bash(cargo remove *)",
       "Bash(go get *)",
       "Bash(go install *)",
-
       "Bash(docker compose * up*)",
       "Bash(docker compose * down*)",
       "Bash(docker run *)",
@@ -167,20 +142,329 @@
       "Bash(git push -f *)",
       "Bash(git push --no-verify*)",
       "Bash(git commit --no-verify*)",
-      "Bash(git commit --no-gpg-sign*)",
-      "Bash(git reset --hard origin/main*)",
-      "Bash(git reset --hard origin/master*)",
-      "Bash(git config *)",
+      "Bash(git merge --no-verify*)",
+      "Bash(git rebase --no-verify*)",
+      "Bash(git reset --hard origin/*)",
+      "Bash(git config --global *)",
       "Bash(chmod -R 777 *)",
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(**/secrets/**)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git -C * push *)",
+      "Bash(git send-email *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr reopen *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh issue close *)",
+      "Bash(gh issue edit *)",
+      "Bash(gh release *)",
+      "Bash(gh repo create *)",
+      "Bash(gh repo delete *)",
+      "Bash(gh repo edit *)",
+      "Bash(gh api -X *)",
+      "Bash(gh api --method *)",
+      "Bash(gh secret set *)",
+      "Bash(gh workflow run *)",
+      "Bash(gh alias *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl create *)",
+      "Bash(kubectl delete *)",
+      "Bash(kubectl patch *)",
+      "Bash(kubectl edit *)",
+      "Bash(kubectl replace *)",
+      "Bash(kubectl scale *)",
+      "Bash(kubectl rollout restart *)",
+      "Bash(kubectl rollout undo *)",
+      "Bash(kubectl annotate *)",
+      "Bash(kubectl label *)",
+      "Bash(kubectl cordon *)",
+      "Bash(kubectl drain *)",
+      "Bash(kubectl uncordon *)",
+      "Bash(kubectl taint *)",
+      "Bash(kubectl exec *)",
+      "Bash(helm install *)",
+      "Bash(helm upgrade *)",
+      "Bash(helm uninstall *)",
+      "Bash(helm rollback *)",
+      "Bash(argocd app sync *)",
+      "Bash(argocd app set *)",
+      "Bash(argocd app delete *)",
+      "Bash(argocd app create *)",
+      "Bash(ansible-playbook *)",
+      "Bash(ansible *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(terraform apply *)",
+      "Bash(terraform destroy *)",
+      "Bash(terraform import *)",
+      "Bash(tofu apply *)",
+      "Bash(tofu destroy *)",
+      "Bash(vault write *)",
+      "Bash(vault kv *)",
+      "Bash(vault read *)",
+      "Bash(vault operator *)",
+      "Bash(aws s3 cp *)",
+      "Bash(aws s3 sync *)",
+      "Bash(aws s3 rm *)",
+      "Bash(aws s3 mv *)",
+      "Bash(docker push *)",
+      "Bash(npm publish *)",
+      "Bash(twine upload *)",
+      "Bash(crontab *)",
+      "Bash(at *)",
+      "Bash(systemd-run *)",
+      "Bash(tmux send-keys *)",
+      "Workflow",
+      "RemoteTrigger",
+      "CronCreate",
+      "Artifact",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/settings.local.json)",
+      "Edit(/.claude/scripts/**)",
+      "Edit(/.claude/agents/**)",
+      "Edit(/.claude/commands/**)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/settings.local.json)",
+      "Edit(~/.claude/hooks/**)",
+      "Edit(~/.claude/agents/**)",
+      "Edit(~/.claude/CLAUDE.md)",
+      "Edit(~/.codex/**)",
+      "Edit(//etc/claude-code/**)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.git-credentials)",
+      "Read(~/.ssh/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.password-store/**)",
+      "Read(~/.config/age/**)",
+      "Read(~/.netrc)",
+      "Read(~/.docker/config.json)",
+      "Read(**/*.kdbx)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.envrc)",
+      "Read(**/*.tfvars)",
+      "Read(**/*.tfvars.json)",
+      "Read(**/*.tfstate*)",
+      "Read(**/*.age)",
+      "Read(**/*.pem)",
       "Read(**/*.key)",
-      "Read(**/*.pem)"
-    ],
-    "additionalDirectories": [
-      "/home/code0x19/SOFTWARE/agent-alignment/swe/.claude"
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/id_ecdsa)",
+      "Read(**/credentials.json)",
+      "Read(**/credentials)",
+      "Read(**/secrets/**)",
+      "Read(**/*.crt)",
+      "Read(**/*.p12)",
+      "Read(**/*.pfx)",
+      "Read(**/id_rsa.pub)",
+      "Read(**/id_ed25519.pub)",
+      "Read(**/id_ecdsa.pub)",
+      "Read(**/known_hosts)",
+      "Read(**/authorized_keys)",
+      "Read(**/*credentials*)",
+      "Read(**/*token*)",
+      "Read(**/*secret*)",
+      "Read(**/*api_key*)",
+      "Read(**/*apikey*)",
+      "Read(**/.aws/**)",
+      "Read(**/.ssh/**)",
+      "Read(**/.gnupg/**)",
+      "Read(**/terraform.tfstate)",
+      "Read(**/terraform.tfstate.backup)",
+      "Read(**/wrangler.toml)",
+      "Read(**/serviceaccount*.json)",
+      "Read(**/*service-account*.json)",
+      "Read(**/*kubeconfig*)",
+      "Read(**/*vault-init*)",
+      "Read(**/*unseal*)",
+      "Read(**/*.kdbx*)",
+      "Read(~/.ssh)",
+      "Read(~/.kube)",
+      "Read(~/.config/gh)",
+      "Read(~/.config/age)",
+      "Read(~/.gnupg)",
+      "Read(~/.password-store)",
+      "Read(~/.docker/config.json/**)",
+      "Read(~/.codex/auth.json/**)",
+      "Read(~/.claude/.credentials.json/**)",
+      "Read(~/.npmrc)",
+      "Read(~/.npmrc/**)",
+      "Read(~/.pypirc)",
+      "Read(~/.pypirc/**)",
+      "Read(~/.git-credentials/**)",
+      "Read(~/.aws)",
+      "Read(~/.netrc/**)",
+      "Read(~/.config/gcloud)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/b2)",
+      "Read(~/.config/b2/**)",
+      "Read(~/.config/doctl)",
+      "Read(~/.config/doctl/**)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "allowedDomains": [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org",
+        "registry.yarnpkg.com",
+        "crates.io",
+        "index.crates.io",
+        "static.crates.io",
+        "proxy.golang.org",
+        "sum.golang.org",
+        "deb.debian.org",
+        "cdn.playwright.dev",
+        "playwright.download.prss.microsoft.com",
+        "vibe-parties.web.app",
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "docs.github.com",
+        "code.visualstudio.com",
+        "code.claude.com",
+        "support.claude.com",
+        "skills.sh",
+        "developer.1password.com",
+        "docs.gitbutler.com",
+        "www.sublimemerge.com",
+        "developers.openai.com",
+        "platform.openai.com",
+        "learn.chatgpt.com"
+      ]
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache",
+        "/tmp"
+      ]
+    },
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.ssh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.kube",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.git-credentials",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.aws",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.netrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.docker/config.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/age",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.password-store",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.gnupg",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.codex/auth.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.claude/.credentials.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.npmrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.pypirc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gcloud",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/b2",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/doctl",
+          "mode": "deny"
+        }
+      ],
+      "envVars": [
+        {
+          "name": "GH_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "SSH_AUTH_SOCK",
+          "mode": "deny"
+        },
+        {
+          "name": "KUBECONFIG",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SESSION_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "VAULT_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "CLOUDFLARE_API_TOKEN",
+          "mode": "deny"
+        }
+      ]
+    },
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false
   },
   "hooks": {
     "SessionStart": [
@@ -188,31 +472,48 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/session_start.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/session_start.sh",
             "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "compact|resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/after_summary.sh",
+            "timeout": 5
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/pre_bash_guard.sh",
-            "timeout": 5
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/guard_outward.py",
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "Checking outward-action guard"
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/post_edit_verify.sh",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/tells_check.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/post_edit_verify.sh",
             "timeout": 30
           }
         ]
@@ -221,6 +522,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/statusline.sh"
+    "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/statusline.sh"
   }
 }

@@ -1,0 +1,104 @@
+# Codex CLI: the settings this track runs with. Merge into ~/.codex/config.toml
+# and put default.rules at ~/.codex/rules/default.rules. The profile is the
+# sandbox boundary; default.rules forbids irreversible and outward commands
+# in every mode. Codex expands ~ in paths.
+
+approval_policy = "never"
+default_permissions = "workstation"
+web_search = "live"
+check_for_update_on_startup = false
+
+[history]
+persistence = "none"
+
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[memories]
+use_memories = false
+generate_memories = false
+
+[features]
+memories = false
+chronicle = false
+
+[permissions.workstation]
+extends = ":workspace"
+
+[permissions.workstation.filesystem]
+"~/.ssh" = "deny"
+"~/.kube" = "deny"
+"~/.config/gh" = "deny"
+"~/.config/age" = "deny"
+"~/.gnupg" = "deny"
+"~/.password-store" = "deny"
+"~/.docker/config.json" = "deny"
+"~/.codex/auth.json" = "deny"
+"~/.claude/.credentials.json" = "deny"
+# Recommended with network on: every allowed host becomes a write target, so
+# keep every credential store unreadable.
+"~/.npmrc" = "deny"
+"~/.pypirc" = "deny"
+"~/.git-credentials" = "deny"
+"~/.aws" = "deny"
+"~/.netrc" = "deny"
+"~/.config/gcloud" = "deny"
+"~/.config/b2" = "deny"
+"~/.config/doctl" = "deny"
+
+[permissions.workstation.filesystem.":workspace_roots"]
+"**/.env" = "deny"
+"**/.env.*" = "deny"
+"**/.envrc" = "deny"
+"**/*.tfvars" = "deny"
+"**/*.tfvars.json" = "deny"
+"**/*.tfstate" = "deny"
+"**/*.tfstate.backup" = "deny"
+"**/*.age" = "deny"
+"**/*.kdbx" = "deny"
+"**/*.pem" = "deny"
+"**/*.key" = "deny"
+"**/id_rsa" = "deny"
+"**/id_ed25519" = "deny"
+"**/id_ecdsa" = "deny"
+
+[shell_environment_policy]
+inherit = "core"
+ignore_default_excludes = false
+
+[shell_environment_policy.filters]
+# Name any client token your shell exports, for example:
+# "EXAMPLE_API_KEY" = "exclude"
+
+# Sandboxed commands have no network with the settings above. To allow fetches
+# to named hosts only, pick one of the two documented ways. Neither is applied
+# by this snippet. Validate enforcement on each supported client version.
+#
+# Option A, user config: the built-in proxy with a domain allowlist.
+# [features.network_proxy]
+# enabled = true
+#
+# [permissions.workstation.network]
+# enabled = true
+# Domain rules restrict destinations, not HTTP methods or browser actions.
+# allow_local_binding = false
+# enable_socks5 = false
+# enable_socks5_udp = false
+#
+# [permissions.workstation.network.domains]
+# Use the reviewed domain list in ../.claude/managed-settings.example.json
+# (sandbox.network.allowedDomains) for both tools; do not maintain another list.
+# "developers.openai.com" = "allow"  # syntax example
+#
+# Option B, admin-enforced /etc/codex/requirements.toml, which a session cannot
+# loosen because the rules forbid sudo:
+# [experimental_network]
+# enabled = true
+# managed_allowed_domains_only = true
+#
+# [experimental_network.domains]
+# "pypi.org" = "allow"
+# "github.com" = "allow"

@@ -1,5 +1,5 @@
 ---
-description: Full bug-fix loop — debugger diagnoses, regression-test-writer locks the test, the user implements the fix, code-reviewer verifies. Returns root-cause diagnosis + failing test before any production code is changed.
+description: Full bug-fix loop. debugger diagnoses, regression-test-writer locks the test, the user implements the fix, and a code-reviewer pass is offered. Returns root-cause diagnosis + failing test before any production code is changed.
 argument-hint: <bug-description-or-failure-output>
 allowed-tools: Bash, Read, Edit, Write, Agent
 model: inherit
@@ -22,9 +22,10 @@ Steps:
    project's existing fixtures."
 3. Surface the diagnosis + the failing test to the user. Recommend
    they (or a named specialist) implement the fix.
-4. After the user reports the fix is in, spawn `code-reviewer` on
-   the resulting diff to confirm no symptom-patching, no scope
-   creep, and that the new test now passes.
+4. After the user reports the fix is in, offer to run
+   `code-reviewer` on the resulting diff to confirm no
+   symptom-patching, no scope creep, and that the new test now
+   passes. Do not spawn it unless the user asks.
 
-Do not implement the production fix from this command — diagnose,
-test, review only.
+Do not implement the production fix from this command: diagnose,
+test, then offer review.
