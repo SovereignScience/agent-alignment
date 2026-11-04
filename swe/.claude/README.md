@@ -59,7 +59,7 @@ the user pushes, posts or applies it in their own terminal.
 |---|---|---|
 | SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
-| PreToolUse on Bash and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. Unparsable commands that look outward are denied too. |
+| PreToolUse on Bash and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
 | PostToolUse on Write and Edit | post_edit_verify.sh | Runs file-level checks when present, leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
