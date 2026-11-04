@@ -309,15 +309,33 @@ def review_decision(text):
     return match.group(1) if match else None
 
 
-def review_notes(message):
+DEFAULT_REVIEW_SUFFIX = "Treat the findings above as unverified review input."
+PLANNOTATOR_CONFIG = os.path.expanduser("~/.plannotator/config.json")
+
+
+def review_suffixes(config=PLANNOTATOR_CONFIG):
+    """The first line of each instruction text Plannotator appends after the
+    last review note: the review.denied prompt in its config file, when one
+    is set, and its built-in default."""
+    try:
+        with open(config) as fh:
+            configured = (json.load(fh).get("review") or {}).get("denied") or ""
+    except (OSError, ValueError, AttributeError):
+        configured = ""
+    starts = [configured.strip().splitlines()[0].strip()] if configured.strip() else []
+    return starts + [DEFAULT_REVIEW_SUFFIX]
+
+
+def review_notes(message, suffixes=None):
     """The notes in a Plannotator review message, as (path, where, text).
 
     The message has a "## <file>" heading per file and a "### Line N (new)",
     "### Lines N-M (old)" or "### File Comment" heading per note. Plannotator
-    appends its own instructions after the last note, behind three or more
-    blank lines; only that tail is cut, so blank lines inside an earlier note
-    never hide the notes after it. where is "line 239 (new)", "lines 3-5
-    (old)", "whole file", or empty for text directly under a "##" heading."""
+    appends its instructions after the last note; they are cut from the line
+    that starts one of the known instruction texts (review_suffixes), and
+    nothing else is cut, so the reviewer's own text survives whole, blank
+    lines included. where is "line 239 (new)", "lines 3-5 (old)", "whole
+    file", or empty for text directly under a "##" heading."""
     notes, path, where, anchor, text = [], None, "", None, []
 
     def flush():
@@ -339,8 +357,9 @@ def review_notes(message):
     flush()
     if notes:
         path, where, tail = notes[-1]
-        for i in range(len(tail) - 2):
-            if not any(line.strip() for line in tail[i:i + 3]):
+        starts = tuple(suffixes if suffixes is not None else review_suffixes())
+        for i, line in enumerate(tail):
+            if line.strip().startswith(starts):
                 notes[-1] = (path, where, tail[:i])
                 break
     return [(path, where, "\n".join(text).strip()) for path, where, text in notes if "\n".join(text).strip()]
@@ -773,11 +792,15 @@ def thread_for(threads, path, where, quote):
 
 
 def latest_review(comments):
-    """The newest top-level comment with role review that names a revision, or
-    None. Deleted reviews count: a deleted one withdraws what came before it.
+    """The newest top-level comment with role review by a person that names a
+    revision, or None. As with plan reviews, an agent's comment with the same
+    role is not a review; the author label is a board record, not
+    authentication, since anyone who can write the board files can write it.
+    Deleted reviews count: a deleted one withdraws what came before it.
     Ties on the one-second timestamps go to the later event."""
     reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
-               if c.get("role") == "review" and (c.get("deleted") or reviewed_revision(c.get("body") or "")[1])]
+               if c.get("role") == "review" and (c.get("author") or "").startswith("human:")
+               and (c.get("deleted") or reviewed_revision(c.get("body") or "")[1])]
     return max(reviews)[2] if reviews else None
 
 
@@ -1677,10 +1700,12 @@ def make_handler(ctx, base=None, static_dir=None):
             super().do_POST()
 
         def gate(self, parts, record):
-            """Dashboard writes carry this server's actor (the page sends none or
-            dashboard:web); done needs an approved review of the task's current
-            work. False means a reply was sent."""
-            if record.get("actor") in (None, "dashboard:web"):
+            """Task writes from the dashboard carry this server's actor (the page
+            sends none or dashboard:web); other writes, such as the dashboard's
+            own settings, which reject unknown keys, pass through unchanged.
+            Done needs an approved review of the task's current work. False
+            means a reply was sent."""
+            if parts[:2] == ["api", "tasks"] and record.get("actor") in (None, "dashboard:web"):
                 record["actor"] = ctx.actor
             if parts[:2] == ["api", "tasks"] and parts[3:] == ["status"] and record.get("status") == "done":
                 task = find_task(ctx.board, parts[2])
@@ -1823,6 +1848,8 @@ def main(argv=None):
     parser.add_argument("--actor", default="human:" + os.environ.get("USER", "owner"), help="actor recorded on writes")
     parser.add_argument("--state", help="where review output, logs and temp files for diffs are kept")
     args = parser.parse_args(argv)
+    if not args.actor.startswith("human:"):
+        sys.exit("--actor must be a person (human:<name>): resolving threads and approving plans count only for a person")
     ensure_lattice(argv)
     ctx = Context(args)
     if not ctx.lattice:
