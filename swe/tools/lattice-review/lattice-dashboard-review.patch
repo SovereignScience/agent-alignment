@@ -11,7 +11,7 @@ index 67698f3..fd2ddec 100644
                  pass
          artifacts.append(info)
 diff --git a/src/lattice/dashboard/static/index.html b/src/lattice/dashboard/static/index.html
-index 6507697..2ff4847 100644
+index 6507697..a859cfb 100644
 --- a/src/lattice/dashboard/static/index.html
 +++ b/src/lattice/dashboard/static/index.html
 @@ -299,6 +299,7 @@ tr:hover td{background:var(--surface-hover)}
@@ -204,7 +204,20 @@ index 6507697..2ff4847 100644
      }
      html += '</div>';
  
-@@ -7360,6 +7381,10 @@ function startAutoRefresh() {
+@@ -7287,6 +7308,12 @@ document.getElementById("refresh-btn").addEventListener("click", async function(
+ // --- Auto-refresh ---
+ var autoRefreshInterval = null;
+ var AUTO_REFRESH_MS = 5000;
++var _viewRefreshDue = false;
++var _panelRefreshDue = false;
++function _editingIn(root) {
++  var el = document.activeElement;
++  return !!(root && el && root.contains(el) && /^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test(el.tagName));
++}
+ 
+ function startAutoRefresh() {
+   stopAutoRefresh();
+@@ -7360,6 +7387,10 @@ function startAutoRefresh() {
        // Only re-render if data actually changed
        var tasksChanged = JSON.stringify(newTasks) !== JSON.stringify(tasks);
        var configChanged = JSON.stringify(newConfig) !== JSON.stringify(config);
@@ -215,35 +228,52 @@ index 6507697..2ff4847 100644
        if (tasksChanged || configChanged) {
          tasks = newTasks;
          config = newConfig;
-@@ -7379,17 +7404,25 @@ function startAutoRefresh() {
+@@ -7379,20 +7410,35 @@ function startAutoRefresh() {
      loadDoneDisplaySettings();
      loadMaxItemsSetting();
          }
 -        await route(location.hash.slice(1));
 -        // Silently refresh floating detail panel if open and no active edit
 -        if (_detailPanelTaskId && tasksChanged) {
-+        await route(location.hash.slice(1), true);
-+        // Silently refresh the floating detail panel when its own task changed
-+        // and nothing in it, the review section's frame included, has focus;
-+        // keep the reader's scroll position.
-+        if (_detailPanelTaskId && panelChanged) {
-           var dpBody = document.getElementById("dp-body");
+-          var dpBody = document.getElementById("dp-body");
 -          if (dpBody && !dpBody.querySelector("input:focus, textarea:focus")) {
-+          var dpFocus = document.activeElement;
-+          var editing = dpBody && dpFocus && dpBody.contains(dpFocus) && /^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test(dpFocus.tagName);
-+          if (dpBody && !editing) {
-+            var dpPane = document.getElementById("detail-panel");
-+            var dpScroll = dpPane.scrollTop;
-             try {
-               var dpResults = await Promise.all([
-                 api("/api/tasks/" + _detailPanelTaskId),
+-            try {
+-              var dpResults = await Promise.all([
+-                api("/api/tasks/" + _detailPanelTaskId),
 -                api("/api/tasks/" + _detailPanelTaskId + "/events")
-+                api("/api/tasks/" + _detailPanelTaskId + "/events"),
-+                api("/api/tasks/" + _detailPanelTaskId + "/comments")
-               ]);
+-              ]);
 -              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1]);
-+              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1], dpResults[2]);
-+              dpPane.scrollTop = dpScroll;
-             } catch(ex) { /* panel data fetch failed, ignore */ }
+-            } catch(ex) { /* panel data fetch failed, ignore */ }
++        _viewRefreshDue = true;
++        if (_detailPanelTaskId && panelChanged) _panelRefreshDue = true;
++      }
++      // A view or panel with a focused input, the review section's frame
++      // included, keeps its draft: its refresh waits until focus leaves.
++      if (_viewRefreshDue && !_editingIn(document.getElementById("app"))) {
++        _viewRefreshDue = false;
++        await route(location.hash.slice(1), true);
++      }
++      // Silently refresh the floating detail panel when its own task changed;
++      // keep the reader's scroll position, and drop the data when the panel
++      // moved to another task meanwhile.
++      var dpBody = document.getElementById("dp-body");
++      if (_detailPanelTaskId && _panelRefreshDue && dpBody && !_editingIn(dpBody)) {
++        _panelRefreshDue = false;
++        var dpId = _detailPanelTaskId;
++        var dpPane = document.getElementById("detail-panel");
++        var dpScroll = dpPane.scrollTop;
++        try {
++          var dpResults = await Promise.all([
++            api("/api/tasks/" + dpId),
++            api("/api/tasks/" + dpId + "/events"),
++            api("/api/tasks/" + dpId + "/comments")
++          ]);
++          if (_detailPanelTaskId === dpId) {
++            _renderPanelContent(dpId, dpResults[0], dpResults[1], dpResults[2]);
++            dpPane.scrollTop = dpScroll;
            }
-         }
+-        }
++        } catch(ex) { /* panel data fetch failed, ignore */ }
+       }
+     } catch(e) {
+       // Silently ignore refresh errors — server may be restarting

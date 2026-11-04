@@ -14,8 +14,8 @@ plans opened from the dashboard open in VS Code.
 `lattice_review.py` runs Lattice's own dashboard handler in its process
 (it re-executes itself with the Python the `lattice` command uses) and
 adds the review routes on top, so there is one port and one process.
-Writes made through the dashboard carry the actor given with `--actor`
-instead of `dashboard:web`. The page it serves also opens the task side
+Writes made through the dashboard carry the actor given with `--actor`,
+whether the page sends `dashboard:web` or no actor at all. The page it serves also opens the task side
 panel at 60% of the window on an opaque background; drag the panel's
 left edge to resize it (the width is remembered in the browser) and
 double-click the edge to reset it. Each panel section is drawn as a card
@@ -81,8 +81,10 @@ the note
 A note whose file and quoted lines match a thread that is still open,
 or whose file and place match when there is no quote, goes into that
 thread as a reply starting `Follow-up from review <id>`, so one line
-keeps one history even when its line number moves. An annotated review
-recorded before notes were split is one thread of its own.
+keeps one history even when its line number moves. When more than one
+open thread could take the note (the same text on two lines, say), it
+starts a thread of its own. An annotated review recorded before notes
+were split is one thread of its own.
 
 The section lists every thread with the quoted line and its messages in
 order, a Reply box (posted as the owner's actor), Reply and resolve for
@@ -114,36 +116,56 @@ annotate mode (`plannotator annotate <plan> --gate --json`), where the
 owner comments on selected text or on the whole plan, marks text for
 removal, or edits the plan in place (saved edits are written to the
 file). Send Feedback or Approve is recorded on the task as a comment with
-role `plan-review` and a `Plan: <sha256>` line for the plan as it stood
-when the session ended. Each note becomes a thread, anchored
+role `plan-review` and a `Plan: <sha256>` line for the plan as it was
+opened. If the file is different when the session ends, edits saved
+from Plannotator included, the approval still names the opened version,
+the plan reads as changed since it was approved and the flag stays set:
+review it once more. Each note becomes a thread, anchored
 `plan, line N` with the selected text quoted, is listed in the Plan
-block, and follows the thread rules above. An approval also clears a `needs_human` flag whose reason
-asks for the plan's approval, so the agent never has to clear it. The
-state reads not reviewed yet, changes requested, approved, or changed
-since it was approved. Plan reviews never complete a task.
+block, and follows the thread rules above. An approval also clears the
+`needs_human` flag that asked for the plan's approval when the session
+started, if that same flag is still set, so the agent never has to clear
+it. The state reads not reviewed yet, changes requested, approved,
+changed since it was approved, or deleted. Plan reviews never complete a
+task.
+
+## Dependencies and the branch check
+
+When the task has links, a Dependencies block opens the section: what
+it waits on (depends_on or blocked_by from this task, blocks pointing at
+it), what it holds up, its parent, its subtasks and related tasks, each
+with its status and a link that opens it. Links are read from both ends,
+since Lattice stores each one on the task that made it. A task in
+progress or in review that still waits on unfinished tasks gets a
+warning, and so does one in progress or in review with no branch of its
+own, because its work is then outside a task worktree. The DAG tab in
+the dashboard draws the whole graph.
 
 ## History
 
-Below Plan and Code review, a History block replaces the dashboard's
-own (which is hidden while the section is on the page). It reads the
+At the bottom of the task, below Comments, the dashboard's own History
+section shows this server's history instead, in its own frame
+(`/review/t/<ID>/history`). It reads the
 task's event log and its commits and says, newest first and grouped by
 day in local time, what changed: status from and to, the question asked
 or the note that cleared it, criteria text, description edits (expand
 "What changed"), links to related tasks, reviews and plan reviews,
 threads opened and resolved, and commits. Each entry shows the reason
 given, and an agent acting "on behalf of" a person is highlighted.
-Related tasks open in the dashboard; reviews, threads and commits jump to
-their place in the section. Plain comments stay in Comments, and
-bookkeeping events (short IDs, comment edits) are left out.
+Related tasks open in the dashboard; "show" on a review, thread or commit
+scrolls the panel to it in the review section and flashes it. Plain
+comments stay in Comments, and bookkeeping events (short IDs, comment
+edits) are left out.
 
 ## What completes a task
 
 The latest comment with role `review` that carries a `Reviewed:` line
 decides. "Mark done" appears only when that review is an approval, its
-commit IDs are the task's current work and every review thread is
-resolved; a later annotated review, a moved branch, a new trailer
-commit, a live-tree review or an open thread all withdraw it, and the
-section says why. The dashboard's status control is held to the
+commit IDs are the task's current work, every one of its notes was
+recorded as a thread and every review thread is resolved; a later
+annotated review, a moved branch, a new trailer commit, a live-tree
+review, a note whose recording failed or an open thread all withdraw
+it, and the section says why. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
 spikes) are not gated. Completion is `lattice status <ID> done` with the
 review already on the task (`lattice complete` only works with a status
@@ -180,8 +202,10 @@ the `lattice` command runs from (two files: an iframe section in the
 task views, comments rendered from the materialized thread so replies
 nest and deleted or edited ones show as such, URL artifacts rendered as
 links, and a background refresh that keeps the task panel open, redraws
-it only when its own task changed and nothing in it has focus, and keeps
-its scroll position):
+it only when its own task changed, waits while an input in the view or
+the panel has focus and catches up once focus leaves, drops a panel
+response that arrives after the panel moved to another task, and keeps
+the scroll position):
 
 ```
 cd <lattice checkout>
@@ -212,10 +236,11 @@ notes and plans handlers), written against Lattice 0.2.
 | `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` in the checkout that holds the task's uncommitted work; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
+| `/review/t/<ID>/history` | the task's history, shown in the dashboard's History section |
 | `POST /review/t/<ID>/openplan` | the plan in VS Code, scaffolded when missing |
 | `POST /review/t/<ID>/plan` | `plannotator annotate <plan file> --gate --json`; redirects to the session; the decision becomes a `plan-review` comment and threads |
 | `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work and no thread is open |
-| `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction |
+| `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction, once the reply posted |
 | `POST /review/t/<ID>/resolve`, `/reopen` | `lattice react` or `unreact` with `resolved` on a thread |
 | `POST /review/t/<ID>/rework` | `lattice status <ID> in_progress --no-auto-review` |
 | `POST /api/tasks/<id>/status` | the dashboard's status change; `done` is refused with `REVIEW_REQUIRED` under the same rule |

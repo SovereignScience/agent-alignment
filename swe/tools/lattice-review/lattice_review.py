@@ -67,11 +67,11 @@ MAX_BODY = 1_048_576
 # clicks stop before the dashboard's click-outside-closes-the-panel listener.
 PANEL = """<style>
 .detail-panel{width:var(--lr-panel-w,60vw);max-width:96vw;background:linear-gradient(var(--surface),var(--surface)),var(--bg-base,#111)}
-.dp-section,.detail-section{--lr-hue:#94a3b8;margin-top:.75rem;padding:.7rem .9rem .8rem;border:1px solid color-mix(in srgb,var(--text-primary) 12%,transparent);border-left:3px solid color-mix(in srgb,var(--lr-hue) 75%,transparent);border-radius:10px;background:color-mix(in srgb,var(--lr-hue) 6%,color-mix(in srgb,var(--text-primary) 4%,transparent))}
+.dp-section,.detail-section{--lr-hue:#94a3b8;margin-top:.75rem;padding:.7rem .9rem .8rem;border:1px solid color-mix(in srgb,var(--lr-hue) 22%,transparent);border-left:3px solid color-mix(in srgb,var(--lr-hue) 70%,transparent);border-radius:10px;background:color-mix(in srgb,var(--lr-hue) 7%,var(--bg-base,#111))}
 .dp-section h3,.detail-section h3{margin:0 0 .5rem;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--lr-hue) 60%,var(--text-primary))}
 [data-lr=description]{--lr-hue:#7aa2f7}[data-lr=criteria]{--lr-hue:#4ade80}[data-lr=review]{--lr-hue:var(--accent-primary,#2b6cb0)}
-[data-lr=plans]{--lr-hue:#c084fc}[data-lr=comments]{--lr-hue:#38bdf8}
-.dp-comment,.comment-item{background:color-mix(in srgb,var(--text-primary) 6%,transparent);border-color:color-mix(in srgb,var(--text-primary) 12%,transparent)}
+[data-lr=plans]{--lr-hue:#c084fc}[data-lr=comments]{--lr-hue:#38bdf8}[data-lr=history]{--lr-hue:#2dd4bf}
+.dp-comment,.comment-item{background:color-mix(in srgb,var(--lr-hue,#38bdf8) 8%,transparent);border-color:color-mix(in srgb,var(--lr-hue,#38bdf8) 20%,transparent)}
 :root{color-scheme:dark}[data-theme="linear"]{color-scheme:light}
 select{background-color:color-mix(in srgb,var(--text-primary) 8%,var(--bg-base,#111));color:var(--text-primary);border:1px solid color-mix(in srgb,var(--text-primary) 24%,transparent);border-radius:var(--radius-sm,4px)}
 select option{background-color:var(--bg-base,#111);color:var(--text-primary)}
@@ -90,12 +90,15 @@ apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
 var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments",history:"history"};
 function tag(){document.querySelectorAll(".dp-section,.detail-section").forEach(function(s){
-var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
+var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame:not(.history-frame)")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
 KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k;
 if(k==="plans"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame")){
 s.querySelectorAll("button[onclick*='openPlans(']").forEach(function(b){b.hidden=true});
 s.hidden=!s.querySelector("button:not([hidden])")}
-if(k==="history"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame"))s.hidden=true})}
+var rf=k==="history"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame:not(.history-frame)");
+if(rf&&!s.querySelector("iframe.history-frame")){var h3=s.querySelector("h3");s.textContent="";if(h3)s.appendChild(h3);
+var hf=document.createElement("iframe");hf.className="review-frame history-frame";hf.src=rf.getAttribute("src")+"/history";
+hf.onload=function(){hf.style.height="1px";hf.style.height=(hf.contentDocument.documentElement.scrollHeight+4)+"px"};s.appendChild(hf)}})}
 document.addEventListener("DOMContentLoaded",function(){
 tag();new MutationObserver(tag).observe(document.body,{childList:true,subtree:true});
 var panel=document.getElementById("detail-panel");if(!panel)return;
@@ -384,8 +387,12 @@ def plan_notes(feedback):
 def plan_status(comments, plan_text):
     """The state of a task's plan: not reviewed, changes requested, approved,
     or changed since it was approved (the approval names the plan's sha256).
-    A deleted latest review withdraws what came before it."""
-    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments) if c.get("role") == "plan-review"]
+    A deleted latest review withdraws what came before it. Only plan reviews
+    this server recorded for a person count: an agent's comment with the same
+    role is not a review."""
+    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
+               if c.get("role") == "plan-review" and (c.get("author") or "").startswith("human:")
+               and (c.get("deleted") or PLAN_DECISION.match(c.get("body") or ""))]
     if not reviews:
         return "not reviewed yet"
     latest = max(reviews)[2]
@@ -406,9 +413,33 @@ def waits_for_plan_approval(task):
     return "approv" in reason and "plan" in reason
 
 
-RELATIONS = {"subtask_of": "made it part of", "blocks": "made it block", "blocked_by": "marked it blocked by",
-             "depends_on": "made it depend on", "related_to": "related it to", "duplicate_of": "marked it a duplicate of",
-             "spawned_by": "noted it was spawned by", "supersedes": "made it supersede"}
+RELATIONS = {"subtask_of": "made this a subtask of", "blocks": "marked this as blocking (it must finish first)",
+             "blocked_by": "marked this as waiting on", "depends_on": "marked this as waiting on",
+             "related_to": "linked this as related to", "duplicate_of": "marked this a duplicate of",
+             "spawned_by": "noted this came out of", "supersedes": "marked this as replacing"}
+# Which way each link points, read from the task that holds it: waits (this
+# task waits on the target), holds (the target waits on this task), parent,
+# related. Read from the other end, waits and holds swap and parent becomes
+# child.
+DIRECTION = {"depends_on": "waits", "blocked_by": "waits", "blocks": "holds", "subtask_of": "parent",
+             "related_to": "related", "duplicate_of": "related", "spawned_by": "related", "supersedes": "related"}
+FLIP = {"waits": "holds", "holds": "waits", "parent": "child", "related": "related"}
+
+
+def dependencies(task, tasks):
+    """The task's links in both directions as (kind, other task, note): kind is
+    waits, holds, parent, child or related."""
+    out = []
+    by_id = {t["id"]: t for t in tasks}
+    for rel in task.get("relationships_out") or []:
+        other = by_id.get(rel.get("target_task_id"))
+        if other:
+            out.append((DIRECTION.get(rel.get("type"), "related"), other, rel.get("note")))
+    for other in tasks:
+        for rel in other.get("relationships_out") or []:
+            if rel.get("target_task_id") == task["id"]:
+                out.append((FLIP[DIRECTION.get(rel.get("type"), "related")], other, rel.get("note")))
+    return out
 
 
 def when(ts):
@@ -1045,17 +1076,18 @@ button:focus-visible{outline:2px solid var(--accent-primary,#2b6cb0);outline-off
 button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}button.primary:hover{filter:brightness(1.15)}
 button.small{padding:.12rem .5rem;font-size:.78rem;font-weight:500}
 p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-warning,#f6c343)}.err{color:var(--color-danger,#ff7b72)}.ok{color:var(--color-success,#7ee787)}
-.block,.thread{--hue:#94a3b8;margin:.6rem 0;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--text-primary,#e4e7eb) 14%,transparent);border-left:3px solid color-mix(in srgb,var(--hue) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--hue) 6%,color-mix(in srgb,var(--text-primary,#e4e7eb) 5%,transparent))}
+.block,.thread{--hue:#94a3b8;margin:.6rem 0;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--hue) 22%,transparent);border-left:3px solid color-mix(in srgb,var(--hue) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--hue) 9%,transparent)}
 .block h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--hue) 60%,var(--text-primary,#e4e7eb))}
-.block.plan{--hue:#c084fc}.block.changes{--hue:#7aa2f7}.block.verdict{--hue:var(--accent-primary,#2b6cb0)}
+.block.plan{--hue:#c084fc}.block.changes{--hue:#7aa2f7}.block.verdict{--hue:var(--accent-primary,#2b6cb0)}.block.deps{--hue:#f59e0b}
 .day{margin:.6rem 0 .2rem;font-size:.72rem;font-weight:700;letter-spacing:.04em;color:var(--text-muted,#9aa4b2)}
-.event{margin:.15rem 0;padding:.3rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 4%,transparent)}
+.event{margin:.15rem 0;padding:.3rem .5rem;border-radius:6px;border:1px solid color-mix(in srgb,#2dd4bf 14%,transparent);background:color-mix(in srgb,#2dd4bf 7%,transparent)}
 .event .who{font-weight:600}.event .who.owner{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 70%,var(--text-primary,#e4e7eb))}
 a{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 75%,var(--text-primary,#e4e7eb))}
+@keyframes lrflash{from{box-shadow:0 0 0 3px var(--accent-primary,#2b6cb0)}to{box-shadow:0 0 0 3px transparent}}.flash{animation:lrflash 1.6s ease-out}
 .next{margin:.2rem 0 .6rem;padding:.55rem .75rem;border:1px solid var(--accent-primary,#2b6cb0);border-left-width:4px;border-radius:8px;background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 12%,transparent)}
 .thread{--hue:var(--color-warning,#f6c343);border-left-width:4px}.thread.resolved{--hue:var(--color-success,#7ee787)}
-.msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 6%,transparent)}.msg .text{white-space:pre-wrap}
-.msg.owner{background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 14%,transparent)}.msg .who{font-weight:600;color:var(--text-primary,#e4e7eb)}form.reply{display:flex;gap:.3rem;align-items:flex-end;margin:.3rem 0}
+.msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--hue,#94a3b8) 8%,transparent)}.msg .text{white-space:pre-wrap}
+.msg.owner{background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 11%,transparent)}.msg .who{font-weight:600;color:var(--text-primary,#e4e7eb)}form.reply{display:flex;gap:.3rem;align-items:flex-end;margin:.3rem 0}
 textarea{flex:1;min-height:2.6rem;font:inherit;color:inherit;background:var(--surface,#2a2f37);border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);padding:.25rem}
 """
 
@@ -1123,10 +1155,56 @@ def render_threads(ctx, sid, threads, title):
     return "".join(out)
 
 
+def task_history(ctx, task):
+    """The entries of a task's history: its event log, comments and commits."""
+    rng = resolve_range(ctx.repo, task, ctx.main)
+    events = [json.loads(line) for line in ctx.events(task["id"])]
+    short_ids = {t["id"]: t.get("short_id") for t in load_tasks(ctx.board)}
+    return history(events, ctx.comments(task["short_id"]), commit_details(ctx.repo, [c["hash"] for c in rng["commits"]]), short_ids)
+
+
+# The history frame is as tall as its content and so is the review frame; it is
+# the panel around them (or the page) that scrolls. A jump scrolls that to the
+# target in the review frame and flashes it.
+JUMP = """<script>function lrJump(id){var P=parent.document,f=P.querySelector("iframe.review-frame:not(.history-frame)"),
+t=f&&f.contentDocument.getElementById(id);if(!t)return false;var pane=f.closest(".detail-panel"),
+dy=f.getBoundingClientRect().top+t.getBoundingClientRect().top-(pane?pane.getBoundingClientRect().top:0)-90;
+if(pane)pane.scrollBy({top:dy,behavior:"smooth"});else parent.scrollBy({top:dy,behavior:"smooth"});
+t.classList.remove("flash");void t.offsetWidth;t.classList.add("flash");return false}</script>"""
+
+
+def render_dependencies(task, links):
+    """Waits on, holds up, part of, subtasks and related, each linked task with
+    its status, and a warning when work has started on a task that still waits
+    on unfinished ones."""
+    if not links:
+        return []
+    titles = {"waits": "Waits on", "holds": "Holds up", "parent": "Part of", "child": "Subtasks", "related": "Related"}
+    out = []
+    started = task.get("status") in ("in_progress", "in_review", "done")
+    open_waits = [o for kind, o, _ in links if kind == "waits" and o.get("status") not in ("done", "cancelled")]
+    if started and open_waits:
+        out.append("<p class='warn'>This task is %s but still waits on %s.</p>" % (
+            e((task.get("status") or "").replace("_", " ")),
+            ", ".join("%s (%s)" % (e(o["short_id"]), e((o.get("status") or "").replace("_", " "))) for o in open_waits)))
+    for kind in ("waits", "holds", "parent", "child", "related"):
+        rows = [(o, note) for k, o, note in links if k == kind]
+        if rows:
+            items = ["<a href='/t/%s' target='_top'>%s</a> %s <span class='muted'>%s%s</span>" % (
+                e(o["short_id"]), e(o["short_id"]), e(o.get("title")), e((o.get("status") or "").replace("_", " ")),
+                ", " + e(note) if note else "") for o, note in rows]
+            out.append("<p><b>%s</b><br>%s</p>" % (titles[kind], "<br>".join(items)))
+    return out
+
+
 def render_history(ctx, sid, entries):
-    """The history, grouped by day in local time, newest first."""
-    jump = "onclick=\"var t=document.getElementById('%s');if(t){t.scrollIntoView({behavior:'smooth',block:'start'})}return false\""
-    out, day = [], None
+    """The history, grouped by day in local time, newest first. It is served
+    in its own frame at the bottom of the task, below the comments; its links
+    jump to their place in the review section's frame."""
+    if not entries:
+        return ""
+    jump = "onclick=\"return lrJump('%s')\""
+    out, day = [JUMP], None
     for entry in entries:
         local = entry["ts"].astimezone()
         if local.date() != day:
@@ -1137,11 +1215,11 @@ def render_history(ctx, sid, entries):
         if kind == "task":
             more = " <a href='/t/%s' target='_top'>open %s</a>" % (e(target), e(target))
         elif kind == "thread":
-            more = " <a href='#thread-%s' %s>show</a>" % (e(target), jump % ("thread-" + e(target)))
+            more = " <a href='#' %s>show</a>" % (jump % ("thread-" + e(target)))
         elif kind in ("plan", "code"):
-            more = " <a href='#%s' %s>show</a>" % (kind, jump % kind)
+            more = " <a href='#' %s>show</a>" % (jump % kind)
         elif kind == "commit":
-            more = " <a href='#commit-%s' %s>show</a>" % (e(target[:12]), jump % ("commit-" + e(target[:12])))
+            more = " <a href='#' %s>show</a>" % (jump % ("commit-" + e(target[:12])))
         else:
             more = ""
         line = "<span class='muted'>%s</span> <span class='who%s'>%s</span> %s%s" % (
@@ -1257,6 +1335,10 @@ def render_review(ctx, task):
     plan_part.append(render_threads(ctx, sid, [t for t in threads if is_plan_thread(t)], "Plan threads"))
 
     code = ["<p>Work: %s</p>" % range_summary(task, rng)]
+    if task.get("status") in ("in_progress", "in_review") and not task.get("branch_links"):
+        code.insert(0, "<p class='warn'>This task is %s but has no branch of its own. Task work belongs on its own branch in its "
+                       "own worktree (see .lattice/context.md); work in the main checkout cannot be reviewed as this task.</p>"
+                    % e(task["status"].replace("_", " ")))
     if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
         code.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
                     % (e(current_branch(ctx.repo)), e(rng["branch"])))
@@ -1325,12 +1407,10 @@ def render_review(ctx, task):
 
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
-    events = [json.loads(line) for line in ctx.events(task["id"])]
-    short_ids = {t["id"]: t.get("short_id") for t in load_tasks(ctx.board)}
-    entries = history(events, comments, commit_details(ctx.repo, [c["hash"] for c in rng["commits"]]), short_ids)
+    deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
     body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, live, plan_state),
-            section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code),
-            section("history", "history", "History", [render_history(ctx, sid, entries)]) if entries else ""]
+            section("deps", "deps", "Dependencies", deps) if deps else "",
+            section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
 
 
@@ -1379,10 +1459,14 @@ def make_handler(ctx, base=None, static_dir=None):
                 return self.redirect("/#/task/" + task["id"]) if task else self.send_page(page("not found", "<p>not found</p>"), 404)
             if parts[:1] != [REVIEW_PATH.strip("/")]:
                 return super().do_GET()
-            if parts[1:2] == ["t"] and len(parts) == 3:
+            if parts[1:2] == ["t"] and len(parts) in (3, 4):
                 task = find_task(ctx.board, parts[2])
-                if task:
+                if task and len(parts) == 3:
                     return self.send_page(render_review(ctx, task))
+                if task and parts[3] == "history":
+                    entries = task_history(ctx, task)
+                    return self.send_page(page(task["short_id"] + " history", render_history(ctx, task["short_id"], entries)
+                                               or "<p class='muted'>Nothing has happened on this task yet.</p>"))
             if len(parts) == 1:
                 return self.redirect("/")
             self.send_page(page("not found", "<p>not found</p>"), 404)

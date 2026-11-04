@@ -139,8 +139,12 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - backlog is captured. todo is selected by the owner. in_progress is being
   worked. in_review means prepared locally and waiting to be read, pushed
   and deployed by the owner. Nothing leaves the machine from a session.
-- needs_human marks a decision for the board owner. The flag reason says
-  exactly what is being asked.
+- needs_human holds one question for the board owner, starting with
+  "Need:". Other decisions go in the plan under "Decisions for <owner>",
+  one per line, so each can be answered as its own Plannotator note. A
+  session clears a flag only when the owner tells it to, and quotes the
+  owner's words in the note; being told to start work does not approve a
+  plan.
 - Every write passes --actor agent:<tool> and runs with
   LATTICE_NO_UPDATE_CHECK=1. Sessions use lattice show to resume the task
   they were given; agents never use lattice next or lattice complete.
@@ -150,7 +154,18 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   with "Plannotator: review the plan" in the task's review section. Notes
   become threads that the session answers like code review threads,
   revising the plan file and setting the flag again. Approve records the
-  approval and clears the flag. The session never clears that flag itself.
+  approval for the plan as it was opened and clears the flag; if the file
+  changed during the session, the owner reviews it once more. Otherwise
+  the flag rule above applies.
+- One task, one branch, one worktree. Before its first edit a task gets
+  branch feature/<CODE>-<n>-<slug> from <branch> in its own worktree at
+  <worktree root>/<CODE>-<n>, linked with lattice branch-link. All edits,
+  tests and dev servers for it run there, on its own ports. The main
+  checkout stays on <branch> for the owner's merges and board writes; no
+  session edits files there. At most three sessions or workers at once.
+- The comment roles review and plan-review are written by the review
+  server for the owner's Plannotator decisions. Agents use validation for
+  evidence and no role otherwise.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
   review section can find them. Branch work is linked with lattice
   branch-link. The integration branch is <branch>.
@@ -205,6 +220,30 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - The board is not committed until asked.
 ```
 
+### 3a. Agent instructions
+
+Sessions read the project's AGENTS.md (or CLAUDE.md) at start and
+`context.md` only when they follow a pointer to it. Put the rules that
+must hold from the first edit in AGENTS.md as well:
+
+```
+## Working a task (every agent)
+
+- Never edit files in this checkout for task work. It stays on <branch>
+  for the owner's merges and for board writes.
+- Before the first edit for <CODE>-<n>:
+    git worktree add <worktree root>/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
+    LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n> feature/<CODE>-<n>-<slug> --actor agent:<tool>
+  Then edit, test and run servers only there, with
+  LATTICE_ROOT=<board directory>.
+- One question per needs_human flag, starting "Need:"; other decisions
+  go in the plan, one per line. Clear a flag only when the owner says so,
+  quoting the owner's words in the note.
+- The comment roles review and plan-review are only for the owner's
+  Plannotator results. Agents use validation, or no role.
+- At most three workers at once, each in its own task's worktree.
+```
+
 ### 4. Backlog
 
 Capture only items the owner explicitly authorizes. Findings and earlier
@@ -249,9 +288,12 @@ task records remain private unless the owner asks to share them.
    in_progress --no-auto-review`.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
-3. Branch work: `lattice branch-link <ID> <branch>`. Lattice finds the
-   board by walking up from the working directory, so a session in a
-   separate worktree sets `LATTICE_ROOT=<board directory>`.
+3. Before the first edit, the task's worktree and branch:
+   `git worktree add <worktree root>/<ID> -b feature/<ID>-<slug> <branch>`
+   and `lattice branch-link <ID> feature/<ID>-<slug>`. Edit, test and run
+   dev servers only there. Lattice finds the board by walking up from the
+   working directory, so the session sets `LATTICE_ROOT=<board
+   directory>`.
 4. Before handing over: the round summary, a top-level comment with each
    thread answered and its Status, the checks run, their results, what
    was mocked, what never ran, and what remains for the owner.
