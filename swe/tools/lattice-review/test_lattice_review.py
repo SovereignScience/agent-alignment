@@ -260,6 +260,12 @@ class PureTests(RepoFixture):
         self.assertTrue(job.what.startswith("uncommitted changes in "), job.what)
         self.assertIn("wt-ab-4", job.what)
 
+    def test_commits_that_mention_a_task_are_referenced_except_its_own(self):
+        mention = commit(self.repo, "m", "docs: follow-up for AB-2 in the runbook")
+        refs = lr.commit_mentions(self.repo, "AB-2", {self.c})
+        self.assertEqual([x["text"] for x in refs], ["mentioned this task in commit %s docs: follow-up for AB-2 in the runbook" % mention[:12]])
+        self.assertEqual(lr.commit_mentions(self.repo, "AB-1", {self.b, self.d}), [])
+
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
@@ -411,6 +417,7 @@ class PureTests(RepoFixture):
         texts = [x["text"] for x in entries]
         self.assertEqual(texts, ["committed cccccccccccc fix: x", "added AC-1: it works", "approved the code review of patch a..b",
                                  "resolved the thread on README.md, line 3 at abc", "opened a thread on README.md, line 3 at abc",
+                                 "commented: just a note",
                                  "marked this as blocking (it must finish first) T-2", "edited the description", "cleared the owner question: approved in chat",
                                  "asked the owner: Need: approve plan", "moved it from in progress to in review", "created the task"])
         by_text = {x["text"]: x for x in entries}
@@ -420,6 +427,40 @@ class PureTests(RepoFixture):
         self.assertEqual(by_text["marked this as blocking (it must finish first) T-2"]["link"], ("task", "T-2"))
         self.assertEqual(by_text["resolved the thread on README.md, line 3 at abc"]["link"], ("thread", "ev_9"))
         self.assertEqual(by_text["committed cccccccccccc fix: x"]["link"], ("commit", "c" * 40))
+        self.assertEqual(by_text["commented: just a note"]["link"], ("comment", ("human:t", "2026-11-03T22:08:00Z")))
+        self.assertEqual(by_text["commented: just a note"]["cat"], "comment")
+        self.assertEqual(by_text["added AC-1: it works"]["link"], ("criterion", "AC-1"))
+        self.assertEqual(by_text["moved it from in progress to in review"]["cat"], "change")
+
+    def test_bursts_fold_but_decisions_stay_and_other_tasks_cross_reference(self):
+        def item(minute, kind, actor="agent:x", behalf=None):
+            ts = "2026-11-03T22:%02d:00Z" % minute
+            return {"ts": lr.when(ts), "raw_ts": ts, "actor": actor, "kind": kind, "cat": "change", "text": kind,
+                    "why": None, "behalf": behalf, "link": None, "details": None}
+        newest_first = [item(30, "acceptance_criterion_edited"), item(29, "acceptance_criterion_edited"),
+                        item(28, "status_changed"), item(27, "acceptance_criterion_added"), item(26, "acceptance_criterion_added"),
+                        item(25, "acceptance_criterion_added"), item(24, "field_updated"), item(1, "field_updated"),
+                        item(0, "relationship_added", behalf="human:t")]
+        folded = lr.fold_bursts(newest_first)
+        self.assertEqual([x["kind"] for x in folded], ["acceptance_criterion_edited", "acceptance_criterion_edited", "status_changed",
+                                                       "group", "field_updated", "relationship_added"])
+        self.assertEqual(folded[3]["text"], "made 4 changes: added 3 criteria, changed 1 field")
+        self.assertEqual(len(folded[3]["group"]), 4)
+        me = {"id": "a", "short_id": "T-4"}
+        other = {"id": "b", "short_id": "T-12"}
+        logs = {"b": [{"id": "e1", "type": "relationship_added", "actor": "agent:x", "ts": "2026-11-03T22:00:00Z",
+                       "data": {"type": "depends_on", "target_task_id": "a"}},
+                      {"id": "e2", "type": "comment_added", "actor": "human:t", "ts": "2026-11-03T22:01:00Z",
+                       "data": {"body": "wait for T-4 first, not T-40"}},
+                      {"id": "e3", "type": "comment_added", "actor": "human:t", "ts": "2026-11-03T22:02:00Z",
+                       "data": {"body": "about T-40 only"}}]}
+        refs = lr.cross_references(me, [me, other], lambda task_id: logs.get(task_id, []))
+        self.assertEqual([(x["text"], x["link"], x["cat"]) for x in refs], [
+            ("T-12 now waits on this task", ("task", "T-12"), "change"),
+            ("mentioned this task in a comment on T-12: wait for T-4 first, not T-40", ("task", "T-12"), "comment")])
+        now = lr.when("2026-11-03T22:00:00Z")
+        self.assertEqual([lr.ago(lr.when(t), now) for t in ("2026-11-03T21:59:30Z", "2026-11-03T21:15:00Z", "2026-11-03T19:00:00Z",
+                                                            "2026-11-02T20:00:00Z")], ["just now", "45m ago", "3h ago", "yesterday"])
 
     def test_dependencies_read_both_ends_and_warn_when_started_work_still_waits(self):
         a = {"id": "a", "short_id": "T-1", "status": "in_progress", "title": "work",
@@ -755,8 +796,11 @@ class SectionTests(RepoFixture):
         self.assertIn("moved it from in progress to in review", history)
         self.assertIn("<span class='warn'>on behalf of human:t</span>", history)
         self.assertIn("committed %s fix: c" % self.c[:12], history)
-        self.assertIn("lrJump('commit-%s')" % self.c[:12], history)
-        self.assertIn("lrJump('thread-ev_3')", history)
+        self.assertIn("lrJump(&quot;commit-%s&quot;)" % self.c[:12], history)
+        self.assertIn("lrJump(&quot;thread-ev_3&quot;)", history)
+        self.assertIn("data-f='comment'", history)
+        self.assertIn("class='event comment'", history)
+        self.assertIn("class='event change'", history)
         self.assertIn("iframe.review-frame:not(.history-frame)", history)
         self.assertIn("history-frame", lr.PANEL)
         self.assertIn("Nothing has happened", call(self.base + "/review/t/AB-9/history")[1])
