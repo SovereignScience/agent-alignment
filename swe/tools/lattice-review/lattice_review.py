@@ -876,7 +876,6 @@ class Context:
         self.repo = Path(args.repo or args.board).resolve()
         self.config = board_config(self.board)
         self.main = args.main
-        self.remote = args.remote
         self.actor = args.actor
         code = self.config.get("project_code", "board")
         self.state = Path(args.state or Path.home() / ".local" / "state" / "lattice-review" / code)
@@ -1821,7 +1820,6 @@ def main(argv=None):
     parser.add_argument("--repo", help="git repository to read commits from (default: the board directory)")
     parser.add_argument("--port", type=int, help="the one port to open in the browser (default: the board's dashboard_port)")
     parser.add_argument("--main", default="main", help="integration branch name")
-    parser.add_argument("--remote", default="origin")
     parser.add_argument("--actor", default="human:" + os.environ.get("USER", "owner"), help="actor recorded on writes")
     parser.add_argument("--state", help="where review output, logs and temp files for diffs are kept")
     args = parser.parse_args(argv)
