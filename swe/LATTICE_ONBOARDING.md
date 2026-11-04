@@ -146,8 +146,11 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   they were given; agents never use lattice next or lattice complete.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan to the file `lattice plan <ID>` names, sets
-  `needs-human <ID> "Need: approve plan"` and stops. The owner annotates it
-  with `plannotator annotate <plan file>` and clears the flag to approve.
+  `needs-human <ID> "Need: approve plan"` and stops. The owner reviews it
+  with "Plannotator: review the plan" in the task's review section. Notes
+  become threads that the session answers like code review threads,
+  revising the plan file and setting the flag again. Approve records the
+  approval and clears the flag. The session never clears that flag itself.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
   review section can find them. Branch work is linked with lattice
   branch-link. The integration branch is <branch>.
@@ -268,7 +271,9 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 `--main` defaults to `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
 http://127.0.0.1:<port> and click a task. Its detail view has a
-Review section that says where the task's work is (branch, trailer
+Review section. A task with a plan file shows the plan's state and
+"Plannotator: review the plan" (see the plan rule in `context.md`). The
+section also says where the task's work is (branch, trailer
 commits, or nothing yet) and offers: Plannotator on the whole range,
 Plannotator per commit, and for every file of the range `open` in VS
 Code or `diff` in VS Code's two-file view. Plannotator opens as a new
