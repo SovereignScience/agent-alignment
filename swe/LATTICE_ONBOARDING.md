@@ -136,9 +136,11 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 ## Conventions
 
 - Tags name the area: <tag list, lowercase, one word each>.
-- backlog is captured. todo is selected by the owner. in_progress is being
-  worked. in_review means prepared locally and waiting to be read, pushed
-  and deployed by the owner. Nothing leaves the machine from a session.
+- backlog is captured. todo is selected by the owner; selected work that
+  waits for plan approval stays todo with needs_human set. in_progress is
+  active implementation, or a research deliverable the owner authorized.
+  in_review means prepared locally and waiting to be read, pushed and
+  deployed by the owner. Nothing leaves the machine from a session.
 - needs_human holds one question for the board owner, starting with
   "Need:". Other decisions go in the plan under "Decisions for <owner>",
   one per line, so each can be answered as its own Plannotator note. A
@@ -172,8 +174,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   words approve and plan in that flag: the server clears only such a
   flag, and only if it did not change during the session. Otherwise the
   flag rule above applies.
-- in_progress only while implementation is active; in_review while the
-  prepared result waits for the owner. Record assignment and status before
+- in_progress only while implementation, or an authorized research
+  deliverable, is active; in_review while the prepared result waits for
+  the owner. Record assignment and status before
   dispatching a subagent; the coordinating session owns the board writes
   and records the result when delegated work ends.
 - One task, one branch, one worktree. Before its first edit a task gets
