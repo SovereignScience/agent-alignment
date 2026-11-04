@@ -27,24 +27,27 @@ starts Plannotator with its AI and sharing features disabled and with
 
 ## How a task's work is found
 
-1. A linked branch (`lattice branch-link <ID> <branch>`): the diff is the
-   merge-base with the integration branch to the branch tip.
+1. A linked branch (`lattice branch-link <ID> <branch>`) with commits of
+   its own: the diff is the merge-base with the integration branch to the
+   branch tip. A linked branch with no commits of its own is no work yet,
+   and the section says so.
 2. Otherwise, commits whose message ends with a trailer line
    `Task: <ID>` (several IDs may be listed, comma separated). If they are
    consecutive they form one range; if not, each commit opens on its own
    and the task cannot be approved as a whole.
-3. Otherwise the task has no work yet. With uncommitted changes in the
-   tree, the section still offers a Plannotator review of them, for
-   feedback only.
+3. Otherwise the task has no work yet, and an empty range is refused
+   before Plannotator starts.
 
 Plannotator gets the task's range as a static patch (`git diff base
 head` on stdin) of the commit IDs resolved at the moment the button is
 pressed, and the recorded review names those same IDs. The per-commit
-buttons do the same for one commit. When the range ends at the
-checked-out HEAD and the tree has uncommitted changes, a second button
-reviews the live tree from the task's base, which allows staging from
-the review; live reviews are recorded as feedback and never complete a
-task. Every file of the range has `open` (the file in VS Code, when it
+buttons do the same for one commit. Uncommitted work is reviewed where
+it is: in the checkout that has the task's linked branch checked out
+(the repository itself or a `git worktree`), or, for a task without a
+branch, in this checkout when its commits end at HEAD or it has none.
+When that checkout has uncommitted changes, a second button names it and
+reviews them from the task's base; such reviews are recorded as feedback
+and never complete a task. Every file of the range has `open` (the file in VS Code, when it
 exists in the tree) and `diff` (VS Code's two-file diff through `code
 --diff`, with the old path on the base side for renames).
 
@@ -138,8 +141,10 @@ when the page is served by this server. That needs
 `lattice-dashboard-review.patch` applied once to the Lattice checkout
 the `lattice` command runs from (two files: an iframe section in the
 task views, comments rendered from the materialized thread so replies
-nest and deleted or edited ones show as such, and URL artifacts rendered
-as links):
+nest and deleted or edited ones show as such, URL artifacts rendered as
+links, and a background refresh that keeps the task panel open, redraws
+it only when its own task changed and nothing in it has focus, and keeps
+its scroll position):
 
 ```
 cd <lattice checkout>
@@ -167,7 +172,7 @@ notes and plans handlers), written against Lattice 0.2.
 |---|---|
 | `/`, `/api/...`, `/static/...` | the Lattice dashboard; `/` carries the hook that renders the review section |
 | `/review/t/<ID>` | the review section for one task (what the iframe shows) |
-| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` for the live tree; redirects to the session; the JSON decision becomes a review comment |
+| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` in the checkout that holds the task's uncommitted work; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
 | `POST /review/t/<ID>/complete` | `lattice status <ID> done` when the latest review approves the current work and no thread is open |
