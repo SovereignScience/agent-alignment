@@ -676,7 +676,7 @@ FALLBACK = re.compile(
 
 # Irreversible commands the retired shell guard blocked outright; still denied here.
 IRREVERSIBLE = re.compile(
-    r"\brm\s+-(rf|fr)\s+\*|\b(curl|wget)\b[^|\n]*\|\s*(sudo\b|(ba|z|da)?sh(\s|$))|"
+    r"\brm\s+-(rf|fr)\s+\*|\b(curl|wget)\b[^|\n]*\|\s*(sudo\b|(ba|z|da)?sh(\s|$|[)`;&|]))|"
     r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"
 )
 
@@ -711,9 +711,15 @@ def off_machine(value):
 
 def code_view(text):
     """The command without heredoc bodies, comments and quoted text: what the
-    shell would run, for pattern checks that must not fire on data."""
+    shell would run, for pattern checks that must not fire on data. Command
+    substitutions inside double quotes still run, so they stay."""
     text = strip_comments(strip_heredocs(text)[0])
-    return re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", text)
+
+    def inert(m):
+        if m.group(0).startswith("'"):
+            return "''"
+        return " ".join(re.findall(r"\$\([^)]*\)|`[^`]*`", m.group(0))) or "''"
+    return re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", inert, text)
 
 
 def decide(cmd):
