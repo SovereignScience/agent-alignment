@@ -1,13 +1,13 @@
-# .claude/ — repo-root configuration
+# .claude/: repo-root configuration
 
 This is a **router**. Real `.claude/` infrastructure (settings,
 agents, commands, hooks, status line) lives inside the two
 track subtrees:
 
-- [`../swe/.claude/`](../swe/.claude/) — SWE-track configuration
+- [`../swe/.claude/`](../swe/.claude/): SWE-track configuration
   (12 SWE subagents, 14 SWE slash commands, language-aware hooks,
   pytest/ruff/mypy/npm/eslint/tsc/cargo/go permissions)
-- [`../flourishing/.claude/`](../flourishing/.claude/) —
+- [`../flourishing/.claude/`](../flourishing/.claude/):
   alignment-track configuration (10 alignment subagents,
   8 align-* commands, drift-check hooks)
 
@@ -16,7 +16,7 @@ track subtrees:
 | Path | Purpose |
 |---|---|
 | [settings.json](settings.json) | Minimal allowlist for read-only navigation; SessionStart + statusLine hooks only. No agents, no commands, no language hooks. |
-| [scripts/session_start.sh](scripts/session_start.sh) | Prints a "you're at the router — `cd swe/` or `cd flourishing/`" message at session start. |
+| [scripts/session_start.sh](scripts/session_start.sh) | Prints a "you're at the router, `cd swe/` or `cd flourishing/`" message at session start. |
 | [scripts/statusline.sh](scripts/statusline.sh) | Status line that shows `(router)` to remind that real work happens in a subtree. |
 
 ## Why this exists
@@ -30,12 +30,12 @@ status line, and roster.
 
 ## Adding agents / commands / hooks
 
-**Don't.** Agent infrastructure for a track lives in that track's
+Don't. Agent infrastructure for a track lives in that track's
 `.claude/`. The right move is:
 
-- A new SWE subagent / command / hook → `../swe/.claude/`
-- A new alignment subagent / command / hook → `../flourishing/.claude/`
+- A new SWE subagent, command or hook goes in `../swe/.claude/`
+- A new alignment subagent, command or hook goes in `../flourishing/.claude/`
 
-If you have a genuinely cross-cutting need (rare), open an issue
-or extend [`docs/ADR-0001-dual-track.md`](../docs/ADR-0001-dual-track.md)
+If you have a genuinely cross-cutting need (rare), raise it with
+the owner or extend [`docs/ADR-0001-dual-track.md`](../docs/ADR-0001-dual-track.md)
 to capture the rationale before adding back to the root.

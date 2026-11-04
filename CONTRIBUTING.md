@@ -3,22 +3,23 @@
 This repo serves two tracks. Pick the one your change belongs to;
 the rubric below has a section for each.
 
-- **Track A — agentic software engineering** lives under `swe/`.
+- Track A, agentic software engineering, lives under `swe/`.
   Files: the five SWE canonical protocols, the 12 SWE subagents
   (in `swe/.claude/agents/`), the 14 SWE slash commands.
-- **Track B — Inner Commons + Flourishing alignment** lives under
+- Track B, Inner Commons + Flourishing alignment, lives under
   `flourishing/`. Files: the four alignment canonical modules,
   the four derived files, the 10 alignment subagents (in
   `flourishing/.claude/agents/`), the 8 align-* slash commands.
 
 Cross-track changes (this `CONTRIBUTING.md`, the root `README.md`,
-the root `CLAUDE.md`, the root `.claude/`, `docs/`) follow whichever
-track's rubric is more relevant — usually Track A for
-infrastructure changes, Track B for content changes.
+the root `CLAUDE.md`, the root `.claude/` with its SessionStart hook
+and status line, `docs/`) follow whichever track's rubric is more
+relevant: usually Track A for infrastructure changes, Track B for
+content changes.
 
 ---
 
-## Track A — SWE PR rubric
+## Track A: SWE PR rubric
 
 ### What good Track A changes look like
 - They target a concrete failure mode in agentic coding work
@@ -47,12 +48,12 @@ infrastructure changes, Track B for content changes.
   radius, clearer rollback)?
 - Does this improve **legibility** for the next reader?
 - Does this preserve **velocity** (no preventable interruption)?
-- Is the change scoped — one concern, no surprise spillover?
+- Is the change scoped: one concern, no surprise spillover?
 - Are the canonical protocols still tight? (No bloat, no sermon.)
 
 ---
 
-## Track B — alignment PR rubric
+## Track B: alignment PR rubric
 
 ### What good Track B changes look like
 - They target a concrete failure mode (sycophancy spiral, hollow
@@ -106,7 +107,9 @@ Test new prompt revisions against at least a few of these
 - Use examples to carry nuance that would otherwise bloat the main
   prompt.
 - Default to no comments in code we ship.
-- Never add `Co-Authored-By` trailers on commits.
+- No AI attribution anywhere: no AI co-author trailers, no
+  "generated with" footers, badges or emoji. Keep human co-author
+  trailers.
 
 ---
 
@@ -119,5 +122,5 @@ requires it (XML for Claude, plain for ChatGPT, compact for API).
 A change must live entirely inside one track's subtree (`swe/` or
 `flourishing/`). Cross-track work must be split into two PRs
 unless the change is a shared root file (`README.md`, `CLAUDE.md`,
-`CONTRIBUTING.md`, `docs/`) — and even then, prefer two focused
+`CONTRIBUTING.md`, `docs/`), and even then, prefer two focused
 commits over one wide one.
