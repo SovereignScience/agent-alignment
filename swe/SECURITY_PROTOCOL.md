@@ -162,7 +162,7 @@ Secrets surface:
 Destructive actions:
 
 - Every state-mutating action (POST/PUT/DELETE, terraform apply,
-  ansible-playbook against prod, droplet delete, volume delete, OS
+  ansible-playbook against prod, server delete, volume delete, OS
   reinstall) is gated by TWO-STAGE confirmation:
   1. A summary panel naming exactly the action and the target hosts.
   2. The operator must retype the target hostname. No "yes to all".
