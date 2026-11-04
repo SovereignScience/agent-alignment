@@ -642,6 +642,10 @@ def check_argv(argv):
 
 
 def check_command(cmd):
+    text, shell_bodies = strip_heredocs(cmd)
+    for part in [text] + shell_bodies:
+        if IRREVERSIBLE.search(code_view(part)):
+            deny("irreversible command")
     for seg in segments(cmd):
         check_argv(seg)
 
@@ -705,12 +709,17 @@ def off_machine(value):
     return None
 
 
+def code_view(text):
+    """The command without heredoc bodies, comments and quoted text: what the
+    shell would run, for pattern checks that must not fire on data."""
+    text = strip_comments(strip_heredocs(text)[0])
+    return re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", text)
+
+
 def decide(cmd):
     """Check one shell command. Raises Blocked or Rewrite."""
     ASSIGN.clear()
     DEPTH[0] = 0
-    if IRREVERSIBLE.search(cmd):
-        deny("irreversible command")
     for m in ASSIGN_RX.finditer(strip_heredocs(cmd)[0]):
         val = next(v for v in m.groups()[1:] if v is not None)
         ASSIGN.setdefault(m.group(1), []).append(val)
