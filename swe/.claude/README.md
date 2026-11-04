@@ -61,7 +61,7 @@ the user pushes, posts or applies it in their own terminal.
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
 | PreToolUse on Bash and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
-| PostToolUse on Write and Edit | post_edit_verify.sh | Runs file-level checks when present, leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
+| PostToolUse on Write and Edit | post_edit_verify.sh | Names the file-level check for the session to run (hooks run outside the sandbox, so it runs no project tool), leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
 pre-push is a git hook for the user, not a Claude hook. It shows what is
 about to leave the machine and asks for a y when a push has more than 3
@@ -95,9 +95,13 @@ managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
 unavailable, allows only its own domain list, hides credential files and
 token variables, denies the outward commands, runs only managed hooks and
-disables bypass mode. To use it, copy guard_outward.py, tells_check.py and
-after_summary.sh to /etc/claude-code/hooks/, replace ~/projects with your
-workspace root, and install the file as /etc/claude-code/managed-settings.json.
+disables bypass mode. Sandboxed commands write only to the working
+directory, which the sandbox allows on its own, plus ~/.cache for package
+and browser caches and /tmp for scratch files; a parent directory of
+checkouts is not writable, so one session cannot edit another project.
+To use it, copy guard_outward.py, tells_check.py and after_summary.sh to
+/etc/claude-code/hooks/, replace ~/projects with your workspace root, and
+install the file as /etc/claude-code/managed-settings.json.
 
 ## Codex
 

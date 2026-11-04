@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # PostToolUse hook for Edit and Write, SWE track.
-# Runs the formatter or type checker that fits the edited file, and reminds
-# the session when a protocol or a dependency manifest was touched. Never
-# blocks. Output goes back to the model as additionalContext; PostToolUse
-# stdout alone is only shown in the transcript.
+# Names the check that fits the edited file, and reminds the session when a
+# protocol or a dependency manifest was touched. It runs no project tool:
+# hooks run outside the sandbox, and a project's tools and their
+# configuration are editable, so the session runs the named check itself as
+# an ordinary sandboxed command. Never blocks. Output goes back to the model
+# as additionalContext; PostToolUse stdout alone is only shown in the
+# transcript.
 set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
@@ -34,16 +37,6 @@ trap emit EXIT
 exec 3>&1
 exec >"$buf"
 
-run_and_label() {
-  local label="$1"; shift
-  if "$@" >"$out" 2>&1; then
-    echo "post-edit-verify ok: $label"
-  else
-    echo "post-edit-verify FAIL: $label"
-    head -n 30 "$out"
-  fi
-}
-
 # Protocols
 case "$rel" in
   SWE_CORE.md|TESTING_PROTOCOL.md|PERFORMANCE_PROTOCOL.md|SECURITY_PROTOCOL.md|SKEPTIC_ARBITER.md)
@@ -52,57 +45,25 @@ case "$rel" in
     ;;
 esac
 
-# Formatters and type checkers; each runs only when installed
+# The file-level check to run from the session
 case "$rel" in
   *.py)
-    if command -v ruff >/dev/null 2>&1; then
-      run_and_label "ruff $rel" ruff check -- "$rel"
-    elif [[ -x ./.venv/bin/ruff ]]; then
-      run_and_label "ruff $rel" ./.venv/bin/ruff check -- "$rel"
-    fi
-    if command -v mypy >/dev/null 2>&1 && [[ -f mypy.ini || -f pyproject.toml ]]; then
-      run_and_label "mypy $rel" mypy "$rel"
-    fi
+    echo "post-edit-verify: Python changed ($rel); run ruff check on it, and mypy where the project configures it, then the affected tests."
     ;;
   *.ts|*.tsx)
-    if command -v eslint >/dev/null 2>&1; then
-      run_and_label "eslint $rel" eslint "$rel"
-    elif [[ -x ./node_modules/.bin/eslint ]]; then
-      run_and_label "eslint $rel" ./node_modules/.bin/eslint "$rel"
-    fi
-    if [[ -f tsconfig.json ]]; then
-      echo "post-edit-verify: TypeScript changed; select affected checks at the task checkpoint."
-    fi
+    echo "post-edit-verify: TypeScript changed ($rel); run eslint on it and select the affected checks at the task checkpoint."
     ;;
   *.js|*.jsx|*.mjs|*.cjs)
-    if command -v eslint >/dev/null 2>&1; then
-      run_and_label "eslint $rel" eslint "$rel"
-    elif [[ -x ./node_modules/.bin/eslint ]]; then
-      run_and_label "eslint $rel" ./node_modules/.bin/eslint "$rel"
-    fi
+    echo "post-edit-verify: JavaScript changed ($rel); run eslint on it."
     ;;
   *.rs)
     echo "post-edit-verify: Rust changed; select the affected package's checks at the task checkpoint."
     ;;
   *.go)
-    if command -v gofmt >/dev/null 2>&1; then
-      if gofmt -l "$rel" >"$out" 2>&1; then
-        if [[ -s "$out" ]]; then
-          echo "post-edit-verify FAIL: gofmt needs formatting: $rel"
-        else
-          echo "post-edit-verify ok: gofmt $rel"
-        fi
-      else
-        echo "post-edit-verify FAIL: gofmt $rel"
-        head -n 30 "$out"
-      fi
-    fi
-    echo "post-edit-verify: Go changed; select affected package checks at the task checkpoint."
+    echo "post-edit-verify: Go changed ($rel); run gofmt -l on it and select affected package checks at the task checkpoint."
     ;;
   *.c|*.cpp|*.h|*.hpp)
-    if command -v clang-format >/dev/null 2>&1; then
-      run_and_label "clang-format check $rel" clang-format --dry-run --Werror "$rel"
-    fi
+    echo "post-edit-verify: C or C++ changed ($rel); run clang-format --dry-run --Werror on it where the project uses it."
     ;;
 esac
 

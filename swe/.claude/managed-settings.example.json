@@ -177,7 +177,6 @@
     },
     "filesystem": {
       "allowWrite": [
-        "~/projects",
         "~/.cache",
         "/tmp"
       ],
