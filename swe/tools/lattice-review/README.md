@@ -15,7 +15,10 @@ plans opened from the dashboard open in VS Code.
 (it re-executes itself with the Python the `lattice` command uses) and
 adds the review routes on top, so there is one port and one process.
 Writes made through the dashboard carry the actor given with `--actor`,
-whether the page sends `dashboard:web` or no actor at all. The page it serves also opens the task side
+whether the page sends `dashboard:web` or no actor at all. Only a review
+recorded for a `human:` actor counts, for code as for plans. Actor labels
+and the board files are workflow records: anyone who can write the
+repository's files can write them, so they are not authentication. The page it serves also opens the task side
 panel at 60% of the window on an opaque background; drag the panel's
 left edge to resize it (the width is remembered in the browser) and
 double-click the edge to reset it. Each panel section is drawn as a card

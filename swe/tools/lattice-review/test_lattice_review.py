@@ -291,9 +291,9 @@ class PureTests(RepoFixture):
         self.assertEqual(lr.reviewed_revision(self.approved(self.a, self.b, " live")), (self.a, self.b, "live"))
         self.assertEqual(lr.reviewed_revision("Plannotator approved (x), s\nReviewed: not-yet\n"), (None, None, None))
         self.assertEqual(lr.reviewed_revision("no line"), (None, None, None))
-        malformed = {"role": "review", "created_at": "2026-01-05T00:00:00Z", "body": "Plannotator approved (x), s\nReviewed: not-yet\n"}
-        older = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}
-        plain = {"role": "review", "created_at": "2026-01-03T00:00:00Z", "body": "own words, no revision"}
+        malformed = {"role": "review", "created_at": "2026-01-05T00:00:00Z", "author": "human:t", "body": "Plannotator approved (x), s\nReviewed: not-yet\n"}
+        older = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.a, self.b)}
+        plain = {"role": "review", "created_at": "2026-01-03T00:00:00Z", "author": "human:t", "body": "own words, no revision"}
         note = {"created_at": "2026-01-04T00:00:00Z", "body": self.approved(self.b, self.c)}
         self.assertIs(lr.latest_review([older, plain, malformed, note]), older)
         self.assertIsNone(lr.latest_review([plain, note, malformed]))
@@ -335,8 +335,8 @@ class PureTests(RepoFixture):
 
     def test_completion_needs_the_latest_review_to_approve_the_current_range(self):
         task_record = lr.find_task(self.repo, "AB-2")
-        approved = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}
-        changes = {"role": "review", "created_at": "2026-01-02T00:00:00Z",
+        approved = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)}
+        changes = {"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t",
                    "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}
         self.assertIn("no Plannotator review", lr.completion_block(self.repo, task_record, "main", []))
         self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [approved]))
@@ -354,6 +354,21 @@ class PureTests(RepoFixture):
         commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
         self.assertIn("no single commit range", lr.completion_block(self.repo, task_record, "main", [approved]))
 
+    def test_only_a_persons_review_counts_and_only_a_person_withdraws_it(self):
+        task_record = lr.find_task(self.repo, "AB-2")
+        by_agent = {"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "agent:x", "body": self.approved(self.b, self.c)}
+        self.assertIsNone(lr.latest_review([by_agent]))
+        self.assertIn("no Plannotator review", lr.completion_block(self.repo, task_record, "main", [by_agent]))
+        by_owner = dict(by_agent, author="human:t")
+        self.assertIs(lr.latest_review([by_agent, by_owner]), by_owner)
+        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [by_agent, by_owner]))
+        later_by_agent = dict(by_agent, created_at="2026-01-02T00:00:00Z", body=self.approved(self.a, self.b))
+        self.assertIs(lr.latest_review([by_owner, later_by_agent]), by_owner)
+        self.assertIsNone(lr.completion_block(self.repo, task_record, "main", [by_owner, later_by_agent]))
+        withdrawn = {"role": "review", "created_at": "2026-01-03T00:00:00Z", "author": "human:t", "deleted": True, "body": ""}
+        self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [by_owner, later_by_agent, withdrawn]))
+        self.assertIs(lr.latest_review([by_owner, dict(withdrawn, author="agent:x")]), by_owner)
+
     def test_review_notes_are_split_by_file_and_line_without_the_appended_instructions(self):
         message = ("# Code Review Feedback\n\n**Diff:** static-patch\n\n## README.md\n\n### Line 239 (new)\n"
                    "why do we need this change?\n\nsecond paragraph\n\n### File Comment\nwhere are the replies?\n\n"
@@ -367,8 +382,22 @@ class PureTests(RepoFixture):
         self.assertEqual(lr.quoted_lines(text, "lines 3-12 (old)"), ["> line %d" % n for n in range(3, 8)])
         self.assertEqual(lr.quoted_lines(text, "whole file"), [])
         self.assertEqual(lr.review_notes("# Code Review\n\nNo changes requested."), [])
-        spaced = "## a\n\n### Line 1 (new)\nfirst\n\n\n\nstill the first note\n\n### Line 5 (new)\nsecond\n\n\n\nInstruction tail.\n"
-        self.assertEqual(lr.review_notes(spaced), [("a", "line 1 (new)", "first\n\n\n\nstill the first note"), ("a", "line 5 (new)", "second")])
+        spaced = "## a\n\n### Line 1 (new)\nfirst\n\n\n\nstill the first note\n\n### Line 5 (new)\nsecond\n\n\n\nown closing words.\n"
+        self.assertEqual(lr.review_notes(spaced), [("a", "line 1 (new)", "first\n\n\n\nstill the first note"),
+                                                   ("a", "line 5 (new)", "second\n\n\n\nown closing words.")])
+        configured = ("Each note above is its own thread on the task. Answer each one in its thread, in the reply shape in "
+                      ".lattice/context.md, before changing any code.")
+        last = "## a\n\n### Line 5 (new)\nfirst paragraph\n\n\n\nlast paragraph\n\n\n\n" + configured + "\n"
+        self.assertEqual(lr.review_notes(last, suffixes=[configured]), [("a", "line 5 (new)", "first paragraph\n\n\n\nlast paragraph")])
+        builtin = ("## a\n\n### Line 5 (new)\nkeep\n\n\n\nTreat the findings above as unverified review input. Inspect every finding "
+                   "against the actual code; do not assume automated feedback is correct.\nReview only the incoming findings.\n"
+                   "Do not change any code until we have discussed the verdicts and validated findings.\n")
+        self.assertEqual(lr.review_notes(builtin, suffixes=[]), [("a", "line 5 (new)", builtin.split("\n", 3)[3].strip())])
+        self.assertEqual(lr.review_notes(builtin, suffixes=[lr.DEFAULT_REVIEW_SUFFIX]), [("a", "line 5 (new)", "keep")])
+        config = self.repo / "plannotator.json"
+        self.assertEqual(lr.review_suffixes(str(config)), [lr.DEFAULT_REVIEW_SUFFIX])
+        config.write_text(json.dumps({"review": {"denied": "\n\n\n\n" + configured + "\nSecond line."}}))
+        self.assertEqual(lr.review_suffixes(str(config)), [configured, lr.DEFAULT_REVIEW_SUFFIX])
 
     def test_plan_feedback_is_split_into_notes_and_the_plan_has_a_state(self):
         self.assertEqual(lr.plan_notes(PLAN_FEEDBACK), [
@@ -674,9 +703,9 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status?view=board", b"  \n" + done, headers)[0], 409)
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status/", done, headers)[0], 409)
         self.assertEqual(StubDashboard.received, [])
-        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}]
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.a, self.b)}]
         self.assertIn("commits arrived after your review", json.loads(call(self.base + "/api/tasks/task_AB2/status", done, headers)[1])["error"]["message"])
-        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)}]
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status", done, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1][1]["status"], "done")
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", done, headers)[0], 200)
@@ -753,11 +782,11 @@ class SectionTests(RepoFixture):
         self.assertIn("--reuse-window " + str(self.repo / "f"), wait_file(self.tools / "code.log"))
         call(self.base + "/review/t/AB-2/open", form(self.ctx, path="../outside"))
         self.assertIn("not a repository path", call(self.base + "/review/t/AB-2")[1])
-        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}]
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.a, self.b)}]
         call(self.base + "/review/t/AB-2/complete", form(self.ctx))
         self.assertIn("not completed", call(self.base + "/review/t/AB-2")[1])
         self.assertEqual(self.calls, [])
-        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)}]
         call(self.base + "/review/t/AB-2/complete", form(self.ctx))
         self.assertEqual(self.calls, [("status", "AB-2", "done", "--no-auto-review")])
 
@@ -816,6 +845,15 @@ class SectionTests(RepoFixture):
         (self.repo / ".lattice" / "tasks" / "task_AB1.json").write_text(json.dumps(record))
         self.assertIn("has no branch of its own", call(self.base + "/review/t/AB-1")[1])
         self.assertNotIn("has no branch of its own", call(self.base + "/review/t/AB-4")[1])
+
+    def test_task_writes_carry_the_owner_and_settings_writes_pass_through(self):
+        status = call(self.base + "/api/config/dashboard", json.dumps({"theme": "linear"}).encode(), origin(self.base))[0]
+        self.assertEqual(status, 200)
+        self.assertEqual(StubDashboard.received[-1], ("/api/config/dashboard", {"theme": "linear"}))
+        call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "x"}).encode(), origin(self.base))
+        self.assertEqual(StubDashboard.received[-1][1].get("actor"), "human:t")
+        with self.assertRaises(SystemExit):
+            lr.main(["--actor", "agent:x", "--board", str(self.repo)])
 
     def test_thread_actions_write_to_the_board_as_the_owner(self):
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="  still unclear  "))
@@ -894,7 +932,7 @@ class CliTests(RepoFixture):
             self.assertTrue(job.done and not job.error, job.error)
             return lr.review_threads(ctx.comments(sid))
         threads = review("annotated", "# Code Review Feedback\n\n## h\n\n### Line 2 (new)\nwhy this line?\n\n"
-                                      "### File Comment\nname it better\n\n\n\nTreat the findings above as input.")
+                                      "### File Comment\nname it better\n\n\n\nTreat the findings above as unverified review input.")
         self.assertEqual([(t["anchor"], t["note"], t["state"]) for t in threads], [
             ("h, line 2 (new) at " + sha, "> second line\nwhy this line?", "waiting on the agent"),
             ("h, whole file at " + sha, "name it better", "waiting on the agent")])
