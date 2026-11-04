@@ -683,6 +683,27 @@ MCP_WRITE = re.compile(
     re.IGNORECASE,
 )
 
+# MCP servers run outside the Bash sandbox, so a browser one of them drives has
+# the user's network. Browser tools may only be pointed at this machine.
+BROWSER_SERVER = re.compile(r"playwright|puppeteer|chrom|browser|devtools|selenium|webdriver", re.IGNORECASE)
+URL_RX = re.compile(r"\b(?:https?|wss?|ftp|file)://[^\s'\"`<>()]+", re.IGNORECASE)
+
+
+def off_machine(value):
+    """The first URL in a browser tool's input that does not point at this machine, or None."""
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            hit = off_machine(item)
+            if hit:
+                return hit
+    elif isinstance(value, str):
+        for m in URL_RX.finditer(value):
+            if not LOCAL_HOSTS.match(re.sub(r"^wss?://", "http://", m.group(0), flags=re.IGNORECASE)):
+                return m.group(0)
+    return None
+
 
 def decide(cmd):
     """Check one shell command. Raises Blocked or Rewrite."""
@@ -722,6 +743,10 @@ def main():
             decide(tin.get("command", ""))
         elif MCP_WRITE.match(tool):
             deny(tool)
+        elif tool.count("__") >= 2 and BROWSER_SERVER.search(tool.split("__")[1]):
+            hit = off_machine(tin)
+            if hit:
+                deny("%s: browser tools stay on this machine, not %s" % (tool, hit))
     except Rewrite as r:
         print(json.dumps({
             "hookSpecificOutput": {
