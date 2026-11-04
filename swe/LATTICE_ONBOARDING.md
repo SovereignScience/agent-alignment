@@ -240,6 +240,24 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
+- Writing on the board: every comment, flag, description and plan is
+  written for the owner, who did not watch the work. Use plain words and full
+  sentences.
+  - Start with one or two sentences that say what happened and what you
+    need from the owner, if anything. Someone who reads only that much should
+    know where things stand.
+  - Then explain why: what was wrong or missing, what you changed, and
+    what it means for the product or for the owner.
+  - Say what a thing is before its name or path: "the PDF form editor
+    (frontend/src/pages/FormBuilder.jsx:460)", not the path alone. Spell
+    out a code or abbreviation the first time, such as "acceptance
+    criterion 4 (each change refreshes only that organization's data)".
+  - One idea per paragraph or list item. No walls of text and no chains of
+    jargon.
+  - Evidence in plain sentences: what you ran and what it showed. Raw
+    output, long file lists and hashes go in an attachment
+    (lattice attach), not in the comment.
+  - A question gives the options and your recommendation.
 - The board is not committed until asked.
 ```
 
@@ -265,6 +283,10 @@ must hold from the first edit in AGENTS.md as well:
 - The comment roles review and plan-review are only for the owner's
   Plannotator results. Agents use validation, or no role.
 - At most three workers at once, each in its own task's worktree.
+- Write board comments for the owner in plain language: the point first, then
+  why, what a thing is before its path, one idea per paragraph, raw output
+  attached rather than pasted. The full rule is "Writing on the board" in
+  .lattice/context.md.
 - Never run lattice status <ID> done, lattice complete or lattice next;
   completion is the owner's, through the review section.
 ```
