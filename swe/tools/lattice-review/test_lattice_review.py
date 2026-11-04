@@ -1,3 +1,4 @@
+import http.client
 import json
 import os
 import shutil
@@ -370,13 +371,16 @@ class PureTests(RepoFixture):
         removal = '# File Feedback\n\n## 1. (lines 4-5) Remove: "old step"\n> drop it\n\n---\n'
         self.assertEqual(lr.plan_notes(removal), [("plan", "lines 4-5", 'Remove: "old step"\ndrop it', [])])
         digest = __import__("hashlib").sha256(b"the plan").hexdigest()
-        approved = {"role": "plan-review", "created_at": "2", "body": "Plannotator plan approved (plan of T-1), s\n%s%s\n\n" % (lr.PLAN, digest)}
-        changes = {"role": "plan-review", "created_at": "1", "body": "Plannotator plan annotated (plan of T-1), s\n%s%s\n\nx" % (lr.PLAN, digest)}
+        approved = {"role": "plan-review", "created_at": "2", "author": "human:t", "body": "Plannotator plan approved (plan of T-1), s\n%s%s\n\n" % (lr.PLAN, digest)}
+        changes = {"role": "plan-review", "created_at": "1", "author": "human:t", "body": "Plannotator plan annotated (plan of T-1), s\n%s%s\n\nx" % (lr.PLAN, digest)}
         self.assertEqual(lr.plan_status([], "the plan"), "not reviewed yet")
         self.assertEqual(lr.plan_status([changes], "the plan"), "changes requested")
         self.assertEqual(lr.plan_status([changes, approved], "the plan"), "approved")
         self.assertIn("changed since it was approved", lr.plan_status([changes, approved], "the plan, edited"))
-        deleted = {"role": "plan-review", "created_at": "3", "deleted": True, "body": ""}
+        agent_note = {"role": "plan-review", "created_at": "3", "author": "agent:x", "body": "Decisions updated for the owner"}
+        self.assertEqual(lr.plan_status([changes, approved, agent_note], "the plan"), "approved")
+        self.assertEqual(lr.plan_status([agent_note], "the plan"), "not reviewed yet")
+        deleted = {"role": "plan-review", "created_at": "3", "author": "human:t", "deleted": True, "body": ""}
         self.assertEqual(lr.plan_status([changes, approved, deleted], "the plan"), "the latest plan review was deleted; review it again")
         self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: approve plan"}}))
         self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Approve or revise the decisions in the LILY-10 plan"}}))
@@ -407,15 +411,32 @@ class PureTests(RepoFixture):
         texts = [x["text"] for x in entries]
         self.assertEqual(texts, ["committed cccccccccccc fix: x", "added AC-1: it works", "approved the code review of patch a..b",
                                  "resolved the thread on README.md, line 3 at abc", "opened a thread on README.md, line 3 at abc",
-                                 "made it block T-2", "edited the description", "cleared the owner question: approved in chat",
+                                 "marked this as blocking (it must finish first) T-2", "edited the description", "cleared the owner question: approved in chat",
                                  "asked the owner: Need: approve plan", "moved it from in progress to in review", "created the task"])
         by_text = {x["text"]: x for x in entries}
         self.assertEqual(by_text["moved it from in progress to in review"]["why"], "work complete")
         self.assertEqual(by_text["cleared the owner question: approved in chat"]["behalf"], "human:t")
         self.assertEqual(by_text["edited the description"]["details"], "-b\n+c")
-        self.assertEqual(by_text["made it block T-2"]["link"], ("task", "T-2"))
+        self.assertEqual(by_text["marked this as blocking (it must finish first) T-2"]["link"], ("task", "T-2"))
         self.assertEqual(by_text["resolved the thread on README.md, line 3 at abc"]["link"], ("thread", "ev_9"))
         self.assertEqual(by_text["committed cccccccccccc fix: x"]["link"], ("commit", "c" * 40))
+
+    def test_dependencies_read_both_ends_and_warn_when_started_work_still_waits(self):
+        a = {"id": "a", "short_id": "T-1", "status": "in_progress", "title": "work",
+             "relationships_out": [{"type": "subtask_of", "target_task_id": "p"}, {"type": "depends_on", "target_task_id": "d"}]}
+        p = {"id": "p", "short_id": "T-2", "status": "backlog", "title": "parent"}
+        d = {"id": "d", "short_id": "T-3", "status": "in_review", "title": "first"}
+        b = {"id": "b", "short_id": "T-4", "status": "todo", "title": "blocker", "relationships_out": [{"type": "blocks", "target_task_id": "a"}]}
+        c = {"id": "c", "short_id": "T-5", "status": "todo", "title": "child", "relationships_out": [{"type": "subtask_of", "target_task_id": "a"}]}
+        w = {"id": "w", "short_id": "T-6", "status": "todo", "title": "waiter", "relationships_out": [{"type": "depends_on", "target_task_id": "a"}]}
+        links = lr.dependencies(a, [a, p, d, b, c, w])
+        self.assertEqual(sorted((k, o["short_id"]) for k, o, _ in links),
+                         [("child", "T-5"), ("holds", "T-6"), ("parent", "T-2"), ("waits", "T-3"), ("waits", "T-4")])
+        html = "".join(lr.render_dependencies(a, links))
+        self.assertIn("This task is in progress but still waits on T-3 (in review), T-4 (todo).", html)
+        self.assertLess(html.index("Waits on"), html.index("Holds up"))
+        self.assertIn("<a href='/t/T-2' target='_top'>T-2</a> parent", html)
+        self.assertEqual(lr.render_dependencies(a, []), [])
 
     def test_threads_follow_the_last_speaker_and_only_the_owner_resolves(self):
         body = "Plannotator annotated (patch x), s\n%sa..b\n\n## f\n\n### Line 1 (new)\nwhy?\n" % lr.REVIEWED
@@ -578,7 +599,14 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, {"Content-Type": "application/json"})[0], 403)
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"not json", headers)[0], 400)
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"[1]", headers)[0], 400)
-        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"{" + b" " * lr.MAX_BODY + b"}", headers)[0], 413)
+        big = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        big.putrequest("POST", "/api/tasks/task_AB9/status")
+        for name, value in headers.items():
+            big.putheader(name, value)
+        big.putheader("Content-Length", str(lr.MAX_BODY + 2))
+        big.endheaders()
+        self.assertEqual(big.getresponse().status, 413)
+        big.close()
         self.assertEqual(StubDashboard.received, [])
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1], ("/api/tasks/task_AB9/status", {"status": "todo", "actor": "human:t"}))
@@ -706,26 +734,39 @@ class SectionTests(RepoFixture):
         call(self.base + "/review/t/AB-2/openplan", form(self.ctx))
         self.assertIn(str(plan), wait_file(self.tools / "code.log"))
 
-    def test_history_block_lists_events_and_commits_with_jump_targets(self):
+    def test_history_is_its_own_frame_with_events_commits_and_jumps_into_the_review(self):
         events = self.repo / ".lattice" / "events"
         events.mkdir(exist_ok=True)
         (events / "task_AB2.jsonl").write_text("\n".join(json.dumps(x) for x in [
             {"id": "ev_1", "type": "status_changed", "actor": "agent:x", "ts": "2026-11-03T22:00:00Z",
              "data": {"from": "in_progress", "to": "in_review"}},
             {"id": "ev_2", "type": "needs_human_cleared", "actor": "agent:x", "ts": "2026-11-03T22:01:00Z",
-             "data": {"note": "approved"}, "provenance": {"on_behalf_of": "human:t"}}]) + "\n")
+             "data": {"note": "approved"}, "provenance": {"on_behalf_of": "human:t"}},
+            {"id": "ev_3", "type": "comment_added", "actor": "human:t", "ts": "2026-11-03T22:02:00Z",
+             "data": {"body": "%sc, whole file at abc\n%sev_r\nwhy?" % (lr.THREAD, lr.REVIEW_OF)}}]) + "\n")
         self.reviews["AB-2"] = [{"id": "ev_3", "created_at": "2026-11-03T22:02:00Z", "author": "human:t",
                                  "body": "%sc, whole file at abc\n%sev_r\nwhy?" % (lr.THREAD, lr.REVIEW_OF)}]
-        page = call(self.base + "/review/t/AB-2")[1]
-        self.assertIn("<h4>History</h4>", page)
-        self.assertIn("moved it from in progress to in review", page)
-        self.assertIn("<span class='warn'>on behalf of human:t</span>", page)
-        self.assertIn("committed %s fix: c" % self.c[:12], page)
-        self.assertIn("href='#commit-%s'" % self.c[:12], page)
-        self.assertIn("<tr id='commit-%s'>" % self.c[:12], page)
-        self.assertIn("id='thread-ev_3'", page)
-        self.assertIn("id='code'", page)
-        self.assertIn('if(k==="history"', lr.PANEL)
+        review = call(self.base + "/review/t/AB-2")[1]
+        self.assertNotIn("<h4>History</h4>", review)
+        self.assertIn("id='thread-ev_3'", review)
+        self.assertIn("<tr id='commit-%s'>" % self.c[:12], review)
+        status, history, _ = call(self.base + "/review/t/AB-2/history")
+        self.assertEqual(status, 200)
+        self.assertIn("moved it from in progress to in review", history)
+        self.assertIn("<span class='warn'>on behalf of human:t</span>", history)
+        self.assertIn("committed %s fix: c" % self.c[:12], history)
+        self.assertIn("lrJump('commit-%s')" % self.c[:12], history)
+        self.assertIn("lrJump('thread-ev_3')", history)
+        self.assertIn("iframe.review-frame:not(.history-frame)", history)
+        self.assertIn("history-frame", lr.PANEL)
+        self.assertIn("Nothing has happened", call(self.base + "/review/t/AB-9/history")[1])
+
+    def test_in_progress_work_without_its_own_branch_is_flagged(self):
+        record = json.loads((self.repo / ".lattice" / "tasks" / "task_AB1.json").read_text())
+        record["status"] = "in_progress"
+        (self.repo / ".lattice" / "tasks" / "task_AB1.json").write_text(json.dumps(record))
+        self.assertIn("has no branch of its own", call(self.base + "/review/t/AB-1")[1])
+        self.assertNotIn("has no branch of its own", call(self.base + "/review/t/AB-4")[1])
 
     def test_thread_actions_write_to_the_board_as_the_owner(self):
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="  still unclear  "))
