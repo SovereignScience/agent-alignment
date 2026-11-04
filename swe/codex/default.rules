@@ -1,0 +1,151 @@
+# Global Codex exec policy.
+#
+# These rules apply in every mode, Full Access included. The sandbox is the
+# safety boundary; this file forbids irreversible and outward commands that no
+# agent should run on its own.
+#
+# This example uses approval_policy="never". A prompt rule cannot be
+# approved under that setting; choose the approval policy deliberately when
+# adapting it. Do not broadly allow bash/sh -c: a shell wrapper can run
+# arbitrary commands, including loops, variable expansions and globs.
+#
+# Prefix rules see only simple commands, so they are a seatbelt, not a
+# guarantee: the same command inside a loop or after `$VAR` expansion is not
+# matched.
+#
+# Broad allow rules can authorize arbitrary project code. Do not add them
+# for interpreters, test runners or build tools without reviewing the actual
+# execution and sandbox boundary.
+
+prefix_rule(
+    pattern = ["rm", ["-r", "-R", "-rf", "-fr", "-Rf", "-fR", "-rfv", "-frv", "--recursive"]],
+    decision = "forbidden",
+    justification = "Recursive delete is irreversible. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["rm", "-f", ["-r", "-R"]],
+    decision = "forbidden",
+    justification = "Recursive delete is irreversible. Stop and explain the blocked action; do not retry or delegate it.",
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Discards uncommitted work, possibly another session's. Ask the user.",
+)
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "forbidden",
+    justification = "Deletes untracked files, possibly another session's. Ask the user.",
+)
+prefix_rule(
+    pattern = ["git", "checkout", ["--", "."]],
+    decision = "forbidden",
+    justification = "Discards uncommitted changes. Ask the user.",
+)
+prefix_rule(
+    pattern = ["git", "restore"],
+    decision = "forbidden",
+    justification = "Discards uncommitted changes. To unstage, use `git reset -q -- <path>`.",
+)
+prefix_rule(
+    pattern = ["git", "stash", ["drop", "clear"]],
+    decision = "forbidden",
+    justification = "Deletes stashed work. Ask the user.",
+)
+prefix_rule(
+    pattern = ["git", "push", ["--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror"]],
+    decision = "forbidden",
+    justification = "Rewrites remote history. Stop and explain the blocked action; do not retry or delegate it.",
+)
+
+prefix_rule(
+    pattern = [["sudo", "su", "doas", "pkexec"]],
+    decision = "forbidden",
+    justification = "Needs the user's password. Stop and explain the blocked action; do not retry or delegate it.",
+)
+# WSL only; harmless elsewhere.
+prefix_rule(
+    pattern = ["wsl.exe", ["--unregister", "--shutdown", "--terminate", "-t", "--uninstall"]],
+    decision = "forbidden",
+    justification = "Stops or deletes the WSL distribution this session runs in.",
+)
+
+prefix_rule(
+    pattern = ["terraform", "destroy"],
+    decision = "forbidden",
+    justification = "Deletes cloud infrastructure. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["terraform", "apply", "-destroy"],
+    decision = "forbidden",
+    justification = "Deletes cloud infrastructure. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["doctl", "compute", ["droplet", "volume", "snapshot"], ["delete", "rm", "d"]],
+    decision = "forbidden",
+    justification = "Deletes a server, disk or snapshot. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["gh", "repo", "delete"],
+    decision = "forbidden",
+    justification = "Deletes a repository. Stop and explain the blocked action; do not retry or delegate it.",
+)
+
+
+# Nothing leaves this machine from an agent. The user runs these in their own terminal.
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "forbidden",
+    justification = "Agents never push. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["gh", "pr", ["create", "merge", "review", "comment", "close", "edit", "ready", "reopen"]],
+    decision = "forbidden",
+    justification = "Agents never create, merge, review or comment on PRs. Give the user the text.",
+)
+prefix_rule(
+    pattern = ["gh", "issue", ["create", "comment", "close", "edit", "reopen"]],
+    decision = "forbidden",
+    justification = "Agents never write to issues. Give the user the text.",
+)
+prefix_rule(
+    pattern = ["gh", "api", ["-X", "--method", "-f", "-F", "--field", "--raw-field", "--input"]],
+    decision = "forbidden",
+    justification = "Agents never write through the GitHub API.",
+)
+prefix_rule(
+    pattern = ["gh", "release"],
+    decision = "forbidden",
+    justification = "Agents never publish releases.",
+)
+prefix_rule(
+    pattern = ["kubectl", ["apply", "create", "delete", "patch", "edit", "replace", "scale", "rollout", "annotate", "label", "cordon", "drain", "uncordon", "taint", "exec", "cp"]],
+    decision = "forbidden",
+    justification = "Agents never change the cluster. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["helm", ["install", "upgrade", "uninstall", "rollback"]],
+    decision = "forbidden",
+    justification = "Agents never change the cluster.",
+)
+prefix_rule(
+    pattern = ["argocd", "app", ["sync", "set", "delete", "create", "rollback"]],
+    decision = "forbidden",
+    justification = "Agents never change the cluster.",
+)
+prefix_rule(
+    pattern = [["ansible-playbook", "ssh", "scp", "sftp"]],
+    decision = "forbidden",
+    justification = "Agents never touch hosts. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = [["terraform", "tofu"], ["apply", "import", "taint", "state"]],
+    decision = "forbidden",
+    justification = "Agents never change infrastructure.",
+)
+prefix_rule(
+    pattern = ["vault", ["write", "kv", "read", "operator", "delete"]],
+    decision = "forbidden",
+    justification = "Agents never read or change Vault.",
+)

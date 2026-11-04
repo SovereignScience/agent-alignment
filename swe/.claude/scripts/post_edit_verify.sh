@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit / Write — SWE track.
-# Language-aware lint/typecheck on edited file, plus reminders when
-# canonical SWE protocols or dependency manifests are touched.
-# Never blocks (PostToolUse is advisory).
-set -euo pipefail
+# PostToolUse hook for Edit and Write, SWE track.
+# Runs the formatter or type checker that fits the edited file, and reminds
+# the session when a protocol or a dependency manifest was touched. Never
+# blocks. Output goes back to the model as additionalContext; PostToolUse
+# stdout alone is only shown in the transcript.
+set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
 input="$(cat)"
@@ -19,50 +20,60 @@ except Exception:
 [[ -z "$file_path" ]] && exit 0
 rel="${file_path#$PWD/}"
 
+buf="$(mktemp)"
+out="$(mktemp)"
+emit() {
+  if [[ -s "$buf" ]]; then
+    python3 -c 'import json,sys
+text=open(sys.argv[1]).read().strip()
+print(json.dumps({"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":text}}))' "$buf" >&3
+  fi
+  rm -f "$buf" "$out"
+}
+trap emit EXIT
+exec 3>&1
+exec >"$buf"
+
 run_and_label() {
   local label="$1"; shift
-  if "$@" >/tmp/swe-hook.out 2>&1; then
-    echo "post-edit-verify ✓ $label"
+  if "$@" >"$out" 2>&1; then
+    echo "post-edit-verify ok: $label"
   else
-    echo "post-edit-verify ✗ $label"
-    head -n 30 /tmp/swe-hook.out
+    echo "post-edit-verify FAIL: $label"
+    head -n 30 "$out"
   fi
 }
 
-# ─── Canonical SWE protocols ───────────────────────────────────────
+# Protocols
 case "$rel" in
   SWE_CORE.md|TESTING_PROTOCOL.md|PERFORMANCE_PROTOCOL.md|SECURITY_PROTOCOL.md|SKEPTIC_ARBITER.md)
-    echo "post-edit-verify: SWE canonical protocol touched ($rel)."
-    echo "  → Confirm the change names a concrete failure mode (CONTRIBUTING.md)."
-    echo "  → Consider running /swe-swarm-review before opening a PR."
+    echo "post-edit-verify: protocol touched ($rel). Confirm the change names a concrete failure mode (CONTRIBUTING.md)."
     exit 0
     ;;
 esac
 
-# ─── Language-aware lint / typecheck ───────────────────────────────
+# Formatters and type checkers; each runs only when installed
 case "$rel" in
   *.py)
     if command -v ruff >/dev/null 2>&1; then
-      run_and_label "ruff $rel" ruff check "$rel" --select E,W,F --ignore E501
+      run_and_label "ruff $rel" ruff check -- "$rel"
     elif [[ -x ./.venv/bin/ruff ]]; then
-      run_and_label "ruff $rel" ./.venv/bin/ruff check "$rel" --select E,W,F --ignore E501
+      run_and_label "ruff $rel" ./.venv/bin/ruff check -- "$rel"
     fi
     if command -v mypy >/dev/null 2>&1 && [[ -f mypy.ini || -f pyproject.toml ]]; then
       run_and_label "mypy $rel" mypy "$rel"
     fi
     ;;
-
   *.ts|*.tsx)
     if command -v eslint >/dev/null 2>&1; then
       run_and_label "eslint $rel" eslint "$rel"
     elif [[ -x ./node_modules/.bin/eslint ]]; then
       run_and_label "eslint $rel" ./node_modules/.bin/eslint "$rel"
     fi
-    if [[ -f tsconfig.json && -x ./node_modules/.bin/tsc ]]; then
-      run_and_label "tsc --noEmit" ./node_modules/.bin/tsc --noEmit
+    if [[ -f tsconfig.json ]]; then
+      echo "post-edit-verify: TypeScript changed; select affected checks at the task checkpoint."
     fi
     ;;
-
   *.js|*.jsx|*.mjs|*.cjs)
     if command -v eslint >/dev/null 2>&1; then
       run_and_label "eslint $rel" eslint "$rel"
@@ -70,22 +81,24 @@ case "$rel" in
       run_and_label "eslint $rel" ./node_modules/.bin/eslint "$rel"
     fi
     ;;
-
   *.rs)
-    if command -v cargo >/dev/null 2>&1; then
-      run_and_label "cargo check (workspace)" cargo check --quiet
-    fi
+    echo "post-edit-verify: Rust changed; select the affected package's checks at the task checkpoint."
     ;;
-
   *.go)
     if command -v gofmt >/dev/null 2>&1; then
-      run_and_label "gofmt -d $rel" gofmt -d "$rel"
+      if gofmt -l "$rel" >"$out" 2>&1; then
+        if [[ -s "$out" ]]; then
+          echo "post-edit-verify FAIL: gofmt needs formatting: $rel"
+        else
+          echo "post-edit-verify ok: gofmt $rel"
+        fi
+      else
+        echo "post-edit-verify FAIL: gofmt $rel"
+        head -n 30 "$out"
+      fi
     fi
-    if command -v go >/dev/null 2>&1; then
-      run_and_label "go vet ./..." go vet ./...
-    fi
+    echo "post-edit-verify: Go changed; select affected package checks at the task checkpoint."
     ;;
-
   *.c|*.cpp|*.h|*.hpp)
     if command -v clang-format >/dev/null 2>&1; then
       run_and_label "clang-format check $rel" clang-format --dry-run --Werror "$rel"
@@ -93,44 +106,35 @@ case "$rel" in
     ;;
 esac
 
-# ─── Dependency manifests — flag for /swe-deps ─────────────────────
+# Dependency manifests
 case "$rel" in
-  package.json|package-lock.json|yarn.lock|pnpm-lock.yaml)
-    echo "post-edit-verify: dependency manifest touched ($rel)."
-    echo "  → Run /swe-deps to audit CVEs, license drift, maintenance signal."
-    ;;
-  pyproject.toml|requirements.txt|requirements*.txt|poetry.lock|uv.lock|Pipfile|Pipfile.lock)
-    echo "post-edit-verify: dependency manifest touched ($rel)."
-    echo "  → Run /swe-deps to audit CVEs, license drift, maintenance signal."
-    ;;
-  Cargo.toml|Cargo.lock|go.mod|go.sum)
-    echo "post-edit-verify: dependency manifest touched ($rel)."
-    echo "  → Run /swe-deps to audit CVEs, license drift, maintenance signal."
+  package.json|package-lock.json|yarn.lock|pnpm-lock.yaml|pyproject.toml|requirements.txt|requirements*.txt|poetry.lock|uv.lock|Pipfile|Pipfile.lock|Cargo.toml|Cargo.lock|go.mod|go.sum)
+    echo "post-edit-verify: dependency manifest touched ($rel). Review affected dependencies within the task scope; do not start another agent automatically."
     ;;
 esac
 
-# ─── .claude/ infrastructure ───────────────────────────────────────
+# .claude files
 case "$rel" in
   .claude/settings.json)
-    if python3 -c "import json,sys;json.load(open('.claude/settings.json'))" 2>/dev/null; then
-      echo "post-edit-verify ✓ settings.json is valid JSON"
+    if python3 -c "import json;json.load(open('.claude/settings.json'))" 2>/dev/null; then
+      echo "post-edit-verify ok: settings.json is valid JSON"
     else
-      echo "post-edit-verify ✗ settings.json is INVALID JSON — fix before continuing"
+      echo "post-edit-verify FAIL: settings.json is not valid JSON; fix before continuing"
     fi
     ;;
   .claude/agents/*.md|.claude/commands/*.md)
     if head -n 1 "$rel" 2>/dev/null | grep -q '^---$'; then
-      echo "post-edit-verify ✓ frontmatter present in $rel"
+      echo "post-edit-verify ok: frontmatter present in $rel"
     else
-      echo "post-edit-verify ✗ $rel missing YAML frontmatter (must start with ---)"
+      echo "post-edit-verify FAIL: $rel has no YAML frontmatter (must start with ---)"
     fi
     ;;
   .claude/scripts/*.sh|scripts/*.sh)
-    if bash -n "$rel" 2>/tmp/swe-hook.err; then
-      echo "post-edit-verify ✓ bash -n $rel"
+    if bash -n "$rel" 2>"$out"; then
+      echo "post-edit-verify ok: bash -n $rel"
     else
-      echo "post-edit-verify ✗ $rel has shell syntax errors:"
-      head -n 10 /tmp/swe-hook.err
+      echo "post-edit-verify FAIL: $rel has shell syntax errors:"
+      head -n 10 "$out"
     fi
     ;;
 esac

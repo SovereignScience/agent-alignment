@@ -1,5 +1,5 @@
 ---
-description: Performance audit of a hot path or a diff. Hands off to perf-auditor; returns a numbered list of issues with measurement and fix direction. Read-only — no edits.
+description: Performance audit of a hot path or a diff. Hands off to perf-auditor; returns a numbered list of issues with measurement and fix direction. Read-only, no edits.
 argument-hint: <path-or-diff-description>
 allowed-tools: Bash, Read, Agent
 model: inherit

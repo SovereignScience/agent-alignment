@@ -5,8 +5,9 @@
 set -euo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
-branch="$(git branch --show-current 2>/dev/null || echo '∅')"
-ahead="$(git rev-list --count main..HEAD 2>/dev/null || echo 0)"
+branch="$(git branch --show-current 2>/dev/null || echo 'none')"
+base="$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+ahead="$(git rev-list --count "$base"..HEAD 2>/dev/null || echo 0)"
 dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
 
 swe_short=""
@@ -24,10 +25,10 @@ dirty_colored="${c_dim}${dirty}${c_off}"
 [[ "$dirty" -gt 0 ]] && dirty_colored="${c_yellow}${dirty}${c_off}"
 
 ahead_segment=""
-[[ "$ahead" -gt 0 ]] && ahead_segment=" ${c_dim}↑${ahead}${c_off}"
+[[ "$ahead" -gt 0 ]] && ahead_segment=" ${c_dim}+${ahead}${c_off}"
 
 swe_segment=""
 [[ -n "$swe_short" ]] && swe_segment=" ${c_dim}swe:${c_off}${c_cyan}${swe_short}${c_off}"
 
-printf "swe ${c_dim}|${c_off} %s%s ${c_dim}|${c_off} ✎%s%s\n" \
+printf "swe ${c_dim}|${c_off} %s%s ${c_dim}|${c_off} dirty:%s%s\n" \
   "$branch" "$ahead_segment" "$dirty_colored" "$swe_segment"

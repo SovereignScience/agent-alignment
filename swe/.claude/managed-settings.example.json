@@ -1,0 +1,369 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git -C * push *)",
+      "Bash(git send-email *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr reopen *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh issue close *)",
+      "Bash(gh issue edit *)",
+      "Bash(gh release *)",
+      "Bash(gh repo create *)",
+      "Bash(gh repo delete *)",
+      "Bash(gh repo edit *)",
+      "Bash(gh api -X *)",
+      "Bash(gh api --method *)",
+      "Bash(gh secret set *)",
+      "Bash(gh workflow run *)",
+      "Bash(gh alias *)",
+      "Bash(kubectl apply *)",
+      "Bash(kubectl create *)",
+      "Bash(kubectl delete *)",
+      "Bash(kubectl patch *)",
+      "Bash(kubectl edit *)",
+      "Bash(kubectl replace *)",
+      "Bash(kubectl scale *)",
+      "Bash(kubectl rollout restart *)",
+      "Bash(kubectl rollout undo *)",
+      "Bash(kubectl annotate *)",
+      "Bash(kubectl label *)",
+      "Bash(kubectl cordon *)",
+      "Bash(kubectl drain *)",
+      "Bash(kubectl uncordon *)",
+      "Bash(kubectl taint *)",
+      "Bash(kubectl exec *)",
+      "Bash(helm install *)",
+      "Bash(helm upgrade *)",
+      "Bash(helm uninstall *)",
+      "Bash(helm rollback *)",
+      "Bash(argocd app sync *)",
+      "Bash(argocd app set *)",
+      "Bash(argocd app delete *)",
+      "Bash(argocd app create *)",
+      "Bash(ansible-playbook *)",
+      "Bash(ansible *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(terraform apply *)",
+      "Bash(terraform destroy *)",
+      "Bash(terraform import *)",
+      "Bash(tofu apply *)",
+      "Bash(tofu destroy *)",
+      "Bash(vault write *)",
+      "Bash(vault kv *)",
+      "Bash(vault read *)",
+      "Bash(vault operator *)",
+      "Bash(aws s3 cp *)",
+      "Bash(aws s3 sync *)",
+      "Bash(aws s3 rm *)",
+      "Bash(aws s3 mv *)",
+      "Bash(docker push *)",
+      "Bash(npm publish *)",
+      "Bash(twine upload *)",
+      "Bash(crontab *)",
+      "Bash(at *)",
+      "Bash(systemd-run *)",
+      "Bash(tmux send-keys *)",
+      "Workflow",
+      "RemoteTrigger",
+      "CronCreate",
+      "Artifact",
+      "Edit(~/.claude/CLAUDE.md)",
+      "Edit(~/projects/CLAUDE.md)",
+      "Edit(~/.claude/projects/**/memory/**)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.git-credentials)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/settings.local.json)",
+      "Edit(~/.claude/hooks/**)",
+      "Edit(~/.claude/agents/**)",
+      "Edit(~/projects/**/.claude/settings*.json)",
+      "Edit(~/.codex/**)",
+      "Edit(//etc/claude-code/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.password-store/**)",
+      "Read(~/.config/age/**)",
+      "Read(~/.netrc)",
+      "Read(~/.docker/config.json)",
+      "Read(**/*.kdbx)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.envrc)",
+      "Read(**/*.tfvars)",
+      "Read(**/*.tfvars.json)",
+      "Read(**/*.tfstate*)",
+      "Read(**/*.age)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/id_ecdsa)",
+      "Read(~/.ssh)",
+      "Read(~/.kube)",
+      "Read(~/.config/gh)",
+      "Read(~/.config/age)",
+      "Read(~/.gnupg)",
+      "Read(~/.password-store)",
+      "Read(~/.docker/config.json/**)",
+      "Read(~/.codex/auth.json/**)",
+      "Read(~/.claude/.credentials.json/**)",
+      "Read(~/.npmrc)",
+      "Read(~/.npmrc/**)",
+      "Read(~/.pypirc)",
+      "Read(~/.pypirc/**)",
+      "Read(~/.git-credentials/**)",
+      "Read(~/.aws)",
+      "Read(~/.netrc/**)",
+      "Read(~/.config/gcloud)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/b2)",
+      "Read(~/.config/b2/**)",
+      "Read(~/.config/doctl)",
+      "Read(~/.config/doctl/**)"
+    ],
+    "disableBypassPermissionsMode": "disable"
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "registry.npmjs.org",
+        "registry.yarnpkg.com",
+        "crates.io",
+        "index.crates.io",
+        "static.crates.io",
+        "proxy.golang.org",
+        "sum.golang.org",
+        "deb.debian.org",
+        "cdn.playwright.dev",
+        "playwright.download.prss.microsoft.com",
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "docs.github.com",
+        "code.visualstudio.com",
+        "code.claude.com",
+        "support.claude.com",
+        "skills.sh",
+        "developer.1password.com",
+        "docs.gitbutler.com",
+        "www.sublimemerge.com",
+        "developers.openai.com",
+        "platform.openai.com",
+        "learn.chatgpt.com"
+      ],
+      "strictAllowlist": true,
+      "allowManagedDomainsOnly": true
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/projects",
+        "~/.cache",
+        "/tmp"
+      ],
+      "denyWrite": [
+        "~/.claude/settings.json",
+        "~/.claude/settings.local.json",
+        "~/.claude/hooks",
+        "~/.claude/agents",
+        "~/.codex",
+        "/etc/claude-code",
+        "~/projects/CLAUDE.md"
+      ]
+    },
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.ssh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.kube",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gh",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.git-credentials",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.aws",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.netrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.docker/config.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/age",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.password-store",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.gnupg",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.codex/auth.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.claude/.credentials.json",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.npmrc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.pypirc",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/gcloud",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/b2",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.config/doctl",
+          "mode": "deny"
+        }
+      ],
+      "envVars": [
+        {
+          "name": "GH_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "SSH_AUTH_SOCK",
+          "mode": "deny"
+        },
+        {
+          "name": "KUBECONFIG",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "AWS_SESSION_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "VAULT_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "CLOUDFLARE_API_TOKEN",
+          "mode": "deny"
+        }
+      ]
+    }
+  },
+  "allowManagedHooksOnly": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /etc/claude-code/hooks/guard_outward.py",
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "Checking outward-action guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /etc/claude-code/hooks/tells_check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh /etc/claude-code/hooks/after_summary.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "autoMode": {
+    "hard_deny": [
+      "$defaults",
+      "Pushing to any git remote, or any command or script that sends commits, branches or tags off this machine.",
+      "Creating, merging, approving, reviewing, commenting on, editing, closing or reopening GitHub pull requests, issues, releases or repositories, by gh, the GitHub API, curl or any script.",
+      "Any change to a Kubernetes cluster, remote host or cloud account: kubectl or helm writes, Argo CD sync or settings, ansible, ssh, scp, Vault writes, DNS, or any cloud or storage provider.",
+      "Sending messages or content to Slack, email, chat, shared documents or any third-party service.",
+      "Starting cloud or remote agents, sessions, triggers or routines.",
+      "Reading or printing secret values: Vault, Kubernetes secrets, tfvars, age files, kubeconfigs, KeePass databases, password managers, .env files.",
+      "Changing Claude Code or Codex settings, hooks, agent definitions or rules, or disabling hooks or the sandbox."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Launching more than three subagents at once, or a subagent that reviews another agent's review, when the user did not ask for it.",
+      "Creating report, audit, status, evidence, review-request or plan files the user did not ask for by name."
+    ],
+    "environment": [
+      "$defaults",
+      "This is a personal workstation. Repositories under ~/projects may belong to other teams or clients. Nothing leaves this machine from a session; the user pushes, posts and changes live systems in their own terminal."
+    ]
+  },
+  "isolatePeerMachines": true,
+  "disableClaudeAiConnectors": true
+}

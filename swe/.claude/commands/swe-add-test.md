@@ -21,7 +21,7 @@ Steps:
    output. Do not write the production fix."
 2. Surface the test, the failure output, and the suspected bug
    source (file:line) to the user.
-3. Recommend the next step — either the user implements the fix,
+3. Recommend the next step: either the user implements the fix,
    or the user names a specialist (`debugger` for diagnosis,
    `code-reviewer` for the fix review).
 
