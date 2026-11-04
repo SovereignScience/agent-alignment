@@ -282,9 +282,10 @@ in order, a Reply box, Reply and resolve, and Resolve. While a thread
 is open, a second note on the same lines adds to it instead of starting
 another. A line at the top of the section says what to do next. One
 session per task at a time: the button returns to the open one, and
-"Close session" ends one that was abandoned. When the range ends at
-the checked-out HEAD and the tree has uncommitted changes, a second
-button reviews the live tree, for feedback only. Status, comments,
+"Close session" ends one that was abandoned. When the checkout that
+has the task's branch checked out (often the task's worktree) has
+uncommitted changes, a second button names that checkout and reviews
+them, for feedback only: it never completes a task. Status, comments,
 notes and plans are the dashboard's own controls on the same page;
 writes made there carry the owner's actor. The review is bound to the
 commit IDs it covered: "Mark done" appears only while the latest review

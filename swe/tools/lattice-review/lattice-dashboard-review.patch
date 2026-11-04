@@ -11,7 +11,7 @@ index 67698f3..fd2ddec 100644
                  pass
          artifacts.append(info)
 diff --git a/src/lattice/dashboard/static/index.html b/src/lattice/dashboard/static/index.html
-index 6507697..678c3a3 100644
+index 6507697..2ff4847 100644
 --- a/src/lattice/dashboard/static/index.html
 +++ b/src/lattice/dashboard/static/index.html
 @@ -299,6 +299,7 @@ tr:hover td{background:var(--surface-hover)}
@@ -124,7 +124,25 @@ index 6507697..678c3a3 100644
        }
      }
    }
-@@ -5387,10 +5408,12 @@ async function renderDetail(taskId) {
+@@ -4353,13 +4374,14 @@ async function renderStructure() {
+ }
+ 
+ // --- Routing ---
+-async function route(hash) {
++async function route(hash, keepPanel) {
+   var h = (hash || "/board").replace(/^#?\/?/, "/");
+   var parts = h.split("/").filter(Boolean);
+   var view = parts[0] || "board";
+ 
+-  // Close floating detail panel on any hash navigation
+-  if (_detailPanelTaskId) closeDetailPanel();
++  // Close floating detail panel on any hash navigation; the background
++  // refresh re-renders the same view and keeps it open.
++  if (_detailPanelTaskId && !keepPanel) closeDetailPanel();
+ 
+   // Clean up cube when navigating to a different main view
+   if (currentView === "cube" && view !== "cube" && view !== "task") {
+@@ -5387,10 +5409,12 @@ async function renderDetail(taskId) {
    try {
      var results = await Promise.all([
        api("/api/tasks/" + taskId),
@@ -138,7 +156,7 @@ index 6507697..678c3a3 100644
      var isArchived = !!task.archived;
  
      var html = '<a href="#/' + esc(currentView) + '" class="back-link">' + t("btn.back") + '</a>';
-@@ -5502,6 +5525,7 @@ async function renderDetail(taskId) {
+@@ -5502,6 +5526,7 @@ async function renderDetail(taskId) {
      }
  
      html += renderAcceptanceCriteria(task, "detail-section");
@@ -146,7 +164,7 @@ index 6507697..678c3a3 100644
  
      // Relationships
      if (task.relationships_out && task.relationships_out.length) {
-@@ -5519,7 +5543,11 @@ async function renderDetail(taskId) {
+@@ -5519,7 +5544,11 @@ async function renderDetail(taskId) {
        html += '<div class="detail-section"><h3>' + esc(t("section.artifacts")) + '</h3><ul class="art-list">';
        task.artifacts.forEach(function(a) {
          html += '<li>' + esc(a.id);
@@ -159,7 +177,7 @@ index 6507697..678c3a3 100644
          if (a.type) html += ' (' + esc(a.type) + ')';
          html += evidenceLinkBadges(a);
          html += '</li>';
-@@ -5544,23 +5572,15 @@ async function renderDetail(taskId) {
+@@ -5544,23 +5573,15 @@ async function renderDetail(taskId) {
      }
  
      // --- Comments section ---
@@ -186,7 +204,36 @@ index 6507697..678c3a3 100644
      }
      html += '</div>';
  
-@@ -7387,9 +7407,10 @@ function startAutoRefresh() {
+@@ -7360,6 +7381,10 @@ function startAutoRefresh() {
+       // Only re-render if data actually changed
+       var tasksChanged = JSON.stringify(newTasks) !== JSON.stringify(tasks);
+       var configChanged = JSON.stringify(newConfig) !== JSON.stringify(config);
++      var panelTask = function(list) {
++        return JSON.stringify((list || []).filter(function(tk) { return tk.id === _detailPanelTaskId; })[0] || null);
++      };
++      var panelChanged = _detailPanelTaskId && panelTask(newTasks) !== panelTask(tasks);
+       if (tasksChanged || configChanged) {
+         tasks = newTasks;
+         config = newConfig;
+@@ -7379,17 +7404,25 @@ function startAutoRefresh() {
+     loadDoneDisplaySettings();
+     loadMaxItemsSetting();
+         }
+-        await route(location.hash.slice(1));
+-        // Silently refresh floating detail panel if open and no active edit
+-        if (_detailPanelTaskId && tasksChanged) {
++        await route(location.hash.slice(1), true);
++        // Silently refresh the floating detail panel when its own task changed
++        // and nothing in it, the review section's frame included, has focus;
++        // keep the reader's scroll position.
++        if (_detailPanelTaskId && panelChanged) {
+           var dpBody = document.getElementById("dp-body");
+-          if (dpBody && !dpBody.querySelector("input:focus, textarea:focus")) {
++          var dpFocus = document.activeElement;
++          var editing = dpBody && dpFocus && dpBody.contains(dpFocus) && /^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test(dpFocus.tagName);
++          if (dpBody && !editing) {
++            var dpPane = document.getElementById("detail-panel");
++            var dpScroll = dpPane.scrollTop;
              try {
                var dpResults = await Promise.all([
                  api("/api/tasks/" + _detailPanelTaskId),
@@ -196,6 +243,7 @@ index 6507697..678c3a3 100644
                ]);
 -              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1]);
 +              if (_detailPanelTaskId) _renderPanelContent(_detailPanelTaskId, dpResults[0], dpResults[1], dpResults[2]);
++              dpPane.scrollTop = dpScroll;
              } catch(ex) { /* panel data fetch failed, ignore */ }
            }
          }

@@ -147,17 +147,23 @@ def resolve_range(repo, task, main):
     """Where a task's work lives: its linked branch, or its trailer commits.
 
     base and head are refs for display; base_sha and head_sha are the
-    immutable commit IDs a review is bound to."""
+    immutable commit IDs a review is bound to. A linked branch with no
+    commits of its own is no work yet; empty_branch names it."""
     links = [link["branch"] for link in task.get("branch_links", [])]
+    empty_branch = None
     for branch in links:
         head_sha = rev(repo, branch)
         if head_sha:
             base = run_git(repo, "merge-base", main, branch).strip()
-            return {"mode": "branch", "branch": branch, "base": base, "head": branch, "base_sha": base,
-                    "head_sha": head_sha, "commits": log_commits(repo, base + ".." + branch), "contiguous": True}
+            commits = log_commits(repo, base + ".." + branch)
+            if commits:
+                return {"mode": "branch", "branch": branch, "base": base, "head": branch, "base_sha": base,
+                        "head_sha": head_sha, "commits": commits, "contiguous": True}
+            empty_branch = empty_branch or branch
     commits = task_commits(repo, task["short_id"], ["HEAD", main] + links)
     if not commits:
-        return {"mode": "none", "base": None, "head": None, "base_sha": None, "head_sha": None, "commits": [], "contiguous": False}
+        return {"mode": "none", "base": None, "head": None, "base_sha": None, "head_sha": None, "commits": [], "contiguous": False,
+                "empty_branch": empty_branch}
     oldest, newest = commits[0]["hash"], commits[-1]["hash"]
     between = run_git(repo, "rev-list", "--count", oldest + "^.." + newest, check=False).strip()
     contiguous = between.isdigit() and int(between) == len(commits)
@@ -192,6 +198,38 @@ def current_branch(repo):
 
 def worktree_dirty(repo):
     return bool(run_git(repo, "status", "--porcelain", check=False).strip())
+
+
+def branch_tree(repo, branch):
+    """The checkout of the repository that has branch checked out, or None."""
+    path = None
+    for line in run_git(repo, "worktree", "list", "--porcelain", check=False).splitlines():
+        if line.startswith("worktree "):
+            path = line[len("worktree "):]
+        elif line == "branch refs/heads/" + branch:
+            return Path(path)
+    return None
+
+
+def live_tree(repo, rng):
+    """(checkout, base) where the task's uncommitted work is: the checkout of
+    its linked branch, or this checkout when the task has no branch and its
+    commits end at HEAD or it has none yet. None when there is no such
+    checkout."""
+    branch = rng.get("branch") or rng.get("empty_branch")
+    if branch:
+        tree = branch_tree(repo, branch)
+        return (tree, rng["base"] or rev(repo, branch)) if tree else None
+    if rng["mode"] == "none":
+        return repo, "HEAD"
+    if rng["head_sha"] and rng["head_sha"] == rev(repo, "HEAD"):
+        return repo, rng["base"]
+    return None
+
+
+def home_short(path):
+    home = str(Path.home())
+    return "~" + str(path)[len(home):] if str(path).startswith(home + "/") else str(path)
 
 
 def plannotator_args(plannotator, base=None, head=None, live=False):
@@ -374,14 +412,15 @@ def stale_reason(repo, task, main, text):
     """Why a recorded review does not cover the task's work now, or None when it does."""
     base_sha, head_sha, qualifier = reviewed_revision(text)
     if not head_sha:
-        return "the recorded review names no revision"
+        return "the recorded review names no revision; review the whole range again"
     if qualifier:
-        return "the review was taken on the live working tree; review the committed range to complete"
+        return ("your latest review was of uncommitted changes, which gives feedback but cannot complete a task. "
+                "Once the work is committed with the trailer Task: %s, review the whole range" % task["short_id"])
     rng = resolve_range(repo, task, main)
     if not rng["head_sha"]:
-        return "the task has no single commit range now"
+        return "the task has no single commit range now (its commits are not consecutive); review them one by one"
     if (rng["base_sha"], rng["head_sha"]) != (base_sha, head_sha):
-        return "the review covered %s..%s but the task's work is now %s..%s; review again" % (
+        return "commits arrived after your review: it covered %s..%s and the work is now %s..%s. Review the whole range again" % (
             base_sha[:12], head_sha[:12], rng["base_sha"][:12], rng["head_sha"][:12])
     return None
 
@@ -392,11 +431,11 @@ def completion_block(repo, task, main, comments):
     be resolved."""
     review = latest_review(comments)
     if not review:
-        return "no Plannotator review is recorded for this task"
+        return "no Plannotator review is recorded for this task yet"
     if review.get("deleted"):
-        return "the latest review was deleted; review again"
+        return "the latest review was deleted; review the task again"
     if review_decision(review.get("body") or "") != "approved":
-        return "the latest review requested changes; approve the current revision first"
+        return "your latest review requested changes; when they are answered, review again and approve"
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
@@ -494,19 +533,23 @@ class Context:
         except json.JSONDecodeError:
             return []
 
-    def start_plannotator(self, key, record_on=None, base=None, head=None, live=False):
+    def start_plannotator(self, key, record_on=None, base=None, head=None, live=False, tree=None):
         """One Plannotator session. The range is resolved to commit IDs once, and
-        those IDs feed both the patch and the recorded Reviewed line."""
+        those IDs feed both the patch and the recorded Reviewed line. A live
+        session shows the uncommitted changes of tree (default: this checkout)."""
+        tree = Path(tree) if tree else self.repo
         if live:
-            base_sha = rev(self.repo, base) if base else None
-            head_sha = rev(self.repo, "HEAD")
-            what = "live tree" + (" from " + base_sha[:12] if base_sha else "")
+            base_sha = rev(tree, base) if base else None
+            head_sha = rev(tree, "HEAD")
+            what = "uncommitted changes in %s" % home_short(tree) + (" from " + base_sha[:12] if base_sha else "")
             revision = "%s..%s live" % (base_sha or "-", head_sha)
             args, patch_args = plannotator_args(self.plannotator, base_sha, live=True)
         else:
             base_sha, head_sha = rev(self.repo, base), rev(self.repo, head)
             if not (base_sha and head_sha):
                 raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
+            if base_sha == head_sha:
+                raise RuntimeError("the range %s..%s is empty: there are no commits to review" % (base, head))
             what = "patch %s..%s" % (base_sha[:12], head_sha[:12])
             revision = "%s..%s" % (base_sha, head_sha)
             args, patch_args = plannotator_args(self.plannotator, base_sha, head_sha)
@@ -523,7 +566,7 @@ class Context:
         out = open(job.out_path, "w")
         err = open(job.err_path, "w")
         try:
-            job.proc = subprocess.Popen(args, cwd=self.repo, env=env, stdout=out, stderr=err,
+            job.proc = subprocess.Popen(args, cwd=tree if live else self.repo, env=env, stdout=out, stderr=err,
                                         stdin=subprocess.PIPE if patch_args else None)
             if patch_args:
                 job.proc.stdin.write(run_git(self.repo, *patch_args).encode())
@@ -540,8 +583,8 @@ class Context:
             if side == "old":
                 return run_git(self.repo, "show", "%s:%s" % (base_sha, path), check=False) if base_sha else None
             if live:
-                full = self.repo_path(path)
-                return full.read_text(errors="replace") if full.is_file() else None
+                full = (tree / path).resolve()
+                return full.read_text(errors="replace") if tree.resolve() in full.parents and full.is_file() else None
             return run_git(self.repo, "show", "%s:%s" % (head_sha, path), check=False)
 
         def finish():
@@ -745,7 +788,7 @@ def render_threads(ctx, sid, threads):
     return "".join(out)
 
 
-def next_step(ctx, task, rng, review, threads, running, block):
+def next_step(ctx, task, rng, review, threads, running, block, live):
     """One line that says what the owner does now."""
     sid, status = task["short_id"], task.get("status")
     act = REVIEW_PATH + "/t/" + sid + "/"
@@ -754,8 +797,15 @@ def next_step(ctx, task, rng, review, threads, running, block):
     if running:
         text = ("Write your notes in the Plannotator tab, then Send Feedback or Approve. Plannotator then says the feedback "
                 "went back to the agent: close that tab and come back here. Each note becomes a thread below.")
-    elif status in ("done", "cancelled") or rng["mode"] == "none":
+    elif status in ("done", "cancelled"):
         return ""
+    elif rng["mode"] == "none":
+        if not (live or rng.get("empty_branch")):
+            return ""
+        text = "Nothing is committed for %s yet, so there is nothing to approve. " % sid
+        if live:
+            text += ("Its uncommitted work is in %s: the uncommitted-changes button below gives feedback only. " % home_short(live[0]))
+        text += "To complete the task, the agent commits the work with the trailer Task: %s." % sid
     elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"]) \
             and on_agent + on_you:
         text = ("Approved at %s. %d thread(s) still open: Resolve each one you are done with, or Reply and resolve to add a "
@@ -800,6 +850,9 @@ def range_summary(task, rng):
     if rng["mode"] == "commits":
         return "%d commit(s) with trailer <code>Task: %s</code>, not contiguous: review them one by one" % (
             len(rng["commits"]), e(task["short_id"]))
+    if rng.get("empty_branch"):
+        return ("branch <code>%s</code> has no commits of its own yet. Uncommitted work cannot be approved: "
+                "commit it with the trailer <code>Task: %s</code>" % (e(rng["empty_branch"]), e(task["short_id"])))
     return "no linked branch and no commit carries <code>Task: %s</code> yet" % e(task["short_id"])
 
 
@@ -808,7 +861,9 @@ def render_review(ctx, task):
     act = REVIEW_PATH + "/t/" + sid + "/"
     rng = resolve_range(ctx.repo, task, ctx.main)
     head_now = rev(ctx.repo, "HEAD")
-    dirty = worktree_dirty(ctx.repo)
+    live = live_tree(ctx.repo, rng)
+    if live and not worktree_dirty(live[0]):
+        live = None
     body = [tool_notes(ctx), notice(ctx, sid), "<p>Work: %s</p>" % range_summary(task, rng)]
     if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
         body.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
@@ -817,10 +872,9 @@ def render_review(ctx, task):
     if ctx.plannotator:
         if rng["base_sha"]:
             actions.append(button(ctx, act + "plannotator", "Plannotator: the whole range", {"base": rng["base"], "head": rng["head"]}, primary=True, tab=True))
-            if rng["head_sha"] == head_now and dirty:
-                actions.append(button(ctx, act + "plannotator", "Plannotator: live tree, feedback only", {"base": rng["base"], "live": "1"}, tab=True))
-        elif rng["mode"] == "none" and dirty:
-            actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes, feedback only", {"base": "HEAD", "live": "1"}, tab=True))
+        if live:
+            actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes in %s, feedback only" % home_short(live[0]),
+                                  {"live": "1"}, tab=True))
     if actions:
         body.append("<p>" + " ".join(actions) + "</p>")
     if rng["commits"]:
@@ -865,12 +919,13 @@ def render_review(ctx, task):
     review = latest_review(comments)
     threads = review_threads(comments)
     block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
-    body.insert(2, next_step(ctx, task, rng, review, threads, running, block))
+    body.insert(2, next_step(ctx, task, rng, review, threads, running, block, live))
     if review:
         text = review.get("body") or ""
         label = {"approved": "approved", "annotated": "changes requested"}.get(review_decision(text), "review")
-        body.append("<p>Latest review: <b>%s</b> <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
-            e(label), e(review.get("author")), e(review.get("created_at")), e(text)))
+        covered = re.match(r"^Plannotator \w+ \((.*)\), \S+$", text.splitlines()[0] if text else "")
+        body.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
+            e(label), ", of " + e(covered.group(1)) if covered else "", e(review.get("author")), e(review.get("created_at")), e(text)))
     if threads:
         body.append(render_threads(ctx, sid, threads))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
@@ -1029,8 +1084,13 @@ def make_handler(ctx, base=None, static_dir=None):
             """Start Plannotator and send this tab to its session; the task page
             reloads on its own. Runs in the browser the owner already uses."""
             try:
-                job = ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None,
-                                            live=form.get("live") == "1")
+                if form.get("live") == "1":
+                    live = live_tree(ctx.repo, resolve_range(ctx.repo, find_task(ctx.board, sid), ctx.main))
+                    if not live:
+                        raise RuntimeError("no checkout holds uncommitted work for %s" % sid)
+                    job = ctx.start_plannotator(sid, record_on=sid, base=live[1], live=True, tree=live[0])
+                else:
+                    job = ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None)
             except RuntimeError as exc:
                 job = ctx.jobs.get(sid)
                 url = session_url(job.err_path.read_text()) if job and not job.done and job.err_path.is_file() else None

@@ -219,6 +219,38 @@ class PureTests(RepoFixture):
         self.assertEqual((rng["mode"], rng["base"], rng["head"], rng["base_sha"], rng["head_sha"]), ("branch", self.b, "task/ab-4", self.b, self.e))
         self.assertEqual([c["hash"] for c in rng["commits"]], [self.e])
 
+    def test_linked_branch_without_commits_is_no_work_yet(self):
+        git(self.repo, "branch", "task/ab-9", "main")
+        task(self.repo, "AB-9", "in_review", "branch with no commits", branch="task/ab-9")
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
+        self.assertEqual((rng["mode"], rng["empty_branch"], rng["base_sha"], rng["commits"]), ("none", "task/ab-9", None, []))
+        self.assertIn("has no commits of its own yet", lr.range_summary(lr.find_task(self.repo, "AB-9"), rng))
+        ctx = self.context()
+        ctx.plannotator = fake_plannotator(self.tools)
+        with self.assertRaisesRegex(RuntimeError, "is empty"):
+            ctx.start_plannotator("AB-9", record_on="AB-9", base="main", head="main")
+
+    def test_uncommitted_work_is_reviewed_in_the_checkout_of_the_task_branch(self):
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-4"), "main")
+        self.assertIsNone(lr.live_tree(self.repo, rng))
+        wt = Path(self.tmp.name) / "wt-ab-4"
+        git(self.repo, "worktree", "add", "-q", str(wt), "task/ab-4")
+        (wt / "e").write_text("changed in the worktree\n")
+        tree, base = lr.live_tree(self.repo, rng)
+        self.assertEqual((tree.resolve(), base), (wt.resolve(), rng["base"]))
+        git(self.repo, "branch", "task/ab-9", "main")
+        task(self.repo, "AB-9", "in_review", "work only in a worktree", branch="task/ab-9")
+        wt9 = Path(self.tmp.name) / "wt-ab-9"
+        git(self.repo, "worktree", "add", "-q", str(wt9), "task/ab-9")
+        empty = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
+        self.assertEqual(lr.live_tree(self.repo, empty), (Path(str(wt9)), lr.rev(self.repo, "task/ab-9")))
+        ctx = self.context()
+        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
+        job = ctx.start_plannotator("AB-4", record_on=None, base=base, live=True, tree=tree)
+        wait_for(job)
+        self.assertTrue(job.what.startswith("uncommitted changes in "), job.what)
+        self.assertIn("wt-ab-4", job.what)
+
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
@@ -275,7 +307,7 @@ class PureTests(RepoFixture):
     def test_review_is_bound_to_the_reviewed_revision(self):
         task_record = lr.find_task(self.repo, "AB-2")
         self.assertIsNone(lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c)))
-        self.assertIn("live working tree", lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c, " live")))
+        self.assertIn("review was of uncommitted changes", lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c, " live")))
         self.assertIn("no revision", lr.stale_reason(self.repo, task_record, "main", "Plannotator approved (x), s\n\nfine\n"))
         commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
         self.assertIn("no single commit range", lr.stale_reason(self.repo, task_record, "main", self.approved(self.b, self.c)))
@@ -284,7 +316,7 @@ class PureTests(RepoFixture):
         git(self.repo, "checkout", "-q", "task/ab-4")
         commit(self.repo, "e2", "feat: more e\n\nTask: AB-4")
         git(self.repo, "checkout", "-q", "main")
-        self.assertIn("review again", lr.stale_reason(self.repo, branch_task, "main", self.approved(self.b, self.e)))
+        self.assertIn("commits arrived after your review", lr.stale_reason(self.repo, branch_task, "main", self.approved(self.b, self.e)))
 
     def test_completion_needs_the_latest_review_to_approve_the_current_range(self):
         task_record = lr.find_task(self.repo, "AB-2")
@@ -482,7 +514,7 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status/", done, headers)[0], 409)
         self.assertEqual(StubDashboard.received, [])
         self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.a, self.b)}]
-        self.assertIn("review again", json.loads(call(self.base + "/api/tasks/task_AB2/status", done, headers)[1])["error"]["message"])
+        self.assertIn("commits arrived after your review", json.loads(call(self.base + "/api/tasks/task_AB2/status", done, headers)[1])["error"]["message"])
         self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status", done, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1][1]["status"], "done")
@@ -505,9 +537,10 @@ class SectionTests(RepoFixture):
         self.assertNotIn("<button", none)
         self.assertNotIn("Completion", none)
         (self.repo / "scratch").write_text("x\n")
-        self.assertIn("uncommitted changes, feedback only", call(self.base + "/review/t/AB-9")[1])
-        self.assertIn("live tree, feedback only", call(self.base + "/review/t/AB-10")[1])
-        self.assertNotIn("live tree", call(self.base + "/review/t/AB-2")[1])
+        here = lr.home_short(self.repo)
+        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-9")[1])
+        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-10")[1])
+        self.assertNotIn("uncommitted changes in", call(self.base + "/review/t/AB-2")[1])
         self.reviews["AB-2"] = [{"id": "ev_r1", "role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
                                  "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}]
         page = call(self.base + "/review/t/AB-2")[1]
