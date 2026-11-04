@@ -6,7 +6,7 @@ model: inherit
 
 Run the drift-checker against the working tree.
 
-1. `bash scripts/check_drift.sh` — print per-file sha256 short hashes.
+1. `bash scripts/check_drift.sh`: print per-file sha256 short hashes.
 2. Spawn `drift-checker` with this brief: "audit canonical-vs-derived
    for substantive content drift. Report in the format defined in
    your agent definition. Do not edit. Verdict: IN-SYNC or

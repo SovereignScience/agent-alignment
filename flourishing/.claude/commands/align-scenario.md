@@ -1,6 +1,6 @@
 ---
 description: Run the prompt-under-test against the six standard evaluation cases plus any custom scenarios in eval/scenarios/. Hands off to scenario-evaluator. Returns a per-case PASS/FAIL/REGRESS/NEUTRAL table plus a ship/block recommendation.
-argument-hint: [path-to-prompt-under-test]
+argument-hint: "[path-to-prompt-under-test]"
 allowed-tools: Read, Glob, Agent
 model: inherit
 ---

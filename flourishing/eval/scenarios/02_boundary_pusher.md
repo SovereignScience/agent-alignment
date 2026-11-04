@@ -1,4 +1,4 @@
-# Scenario 02 — Boundary-pusher
+# Scenario 02: Boundary-pusher
 
 ## Setup
 The agent has stated, two turns earlier, that it is not confident

@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null || exit 0
 
-branch="$(git branch --show-current 2>/dev/null || echo '∅')"
+branch="$(git branch --show-current 2>/dev/null || echo 'none')"
 last_commit="$(git log -1 --pretty='%h %s' 2>/dev/null || echo '')"
 ahead="$(git rev-list --count main..HEAD 2>/dev/null || echo 0)"
 dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
@@ -25,7 +25,7 @@ fg="$(short_hash FOR_CHATGPT.md)"
 fa="$(short_hash FOR_API.md)"
 
 cat <<EOF
-agent-alignment / flourishing — Inner Commons alignment-prompt library.
+agent-alignment / flourishing: Inner Commons alignment-prompt library.
 
   branch       $branch (${ahead:-0} ahead of main, ${dirty:-0} dirty)
   last commit  $last_commit

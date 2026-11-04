@@ -1,26 +1,26 @@
-# flourishing — Inner Commons + Flourishing alignment-prompt library
+# flourishing: Inner Commons + Flourishing alignment-prompt library
 
 You are in the alignment-prompt-authoring track of `agent-alignment`.
-**Everything you need is in this folder.** Read this file, then act.
+Everything you need is in this folder. Read this file, then act.
 
 ## What this folder gives you
 
-- **Four canonical alignment modules** — the source of truth:
-  - [INNER_COMMONS_CORE.md](INNER_COMMONS_CORE.md) — relational layer
-  - [FLOURISHING_PROTOCOL.md](FLOURISHING_PROTOCOL.md) — externalities
-  - [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md) — anti-sycophancy
-  - [REPAIR_PROTOCOL.md](REPAIR_PROTOCOL.md) — rupture + repair
-- **Four derived files** — provider-specific renders:
+- Four canonical alignment modules, the source of truth:
+  - [INNER_COMMONS_CORE.md](INNER_COMMONS_CORE.md): relational layer
+  - [FLOURISHING_PROTOCOL.md](FLOURISHING_PROTOCOL.md): externalities
+  - [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md): anti-sycophancy
+  - [REPAIR_PROTOCOL.md](REPAIR_PROTOCOL.md): rupture + repair
+- Four derived files, provider-specific renders:
   - [COMPOSED_AGENT.md](COMPOSED_AGENT.md) (drop-in)
   - [FOR_CLAUDE.md](FOR_CLAUDE.md) (XML-tagged)
   - [FOR_CHATGPT.md](FOR_CHATGPT.md)
   - [FOR_API.md](FOR_API.md)
-- **Ten alignment subagents** in [.claude/agents/](.claude/agents/) —
+- Ten alignment subagents in [.claude/agents/](.claude/agents/):
   one steward per canonical module + composer / drift-checker /
   scenario-evaluator / prose-editor / skeptic / arbiter /
   pr-rubric-reviewer.
-- **Eight slash commands** in [.claude/commands/](.claude/commands/).
-- **Six checked-in evaluation scenarios** in
+- Eight slash commands in [.claude/commands/](.claude/commands/).
+- Six checked-in evaluation scenarios in
   [eval/scenarios/](eval/scenarios/).
 
 For full project conventions read [CLAUDE.md](CLAUDE.md).
@@ -32,14 +32,14 @@ For full project conventions read [CLAUDE.md](CLAUDE.md).
 For any change to a canonical module, load:
 
 - The canonical module itself
-- `../CONTRIBUTING.md` — review rubric and the five PR-expectation
+- `../CONTRIBUTING.md`: review rubric and the five PR-expectation
   questions
 
 Optional but useful:
 
-- [COMPOSED_AGENT.md](COMPOSED_AGENT.md) — to see how the change
+- [COMPOSED_AGENT.md](COMPOSED_AGENT.md): to see how the change
   composes with the other three modules
-- The matching provider variant (`FOR_CLAUDE.md` etc.) — to see how
+- The matching provider variant (`FOR_CLAUDE.md` etc.): to see how
   the change renders per-provider
 
 The eval scenarios are loaded automatically by `scenario-evaluator`
@@ -77,7 +77,8 @@ first to bring derived files in sync.
 | Add a new canonical module (rare) | (orchestrator) | `/align-add-module` |
 | Five-way swarm review | (orchestrator) | `/align-swarm-review` |
 
-Spawn multiple in parallel for cross-cutting changes.
+Dispatch only agents the user requested by name or through an
+explicit slash command. Run at most three at once.
 
 ---
 
@@ -87,26 +88,26 @@ These are contracts. A change that weakens any of them must be
 rejected, or accompanied by an explicit amendment to
 [CLAUDE.md](CLAUDE.md):
 
-1. **Canonical-derived split.** The four canonical modules are the
+1. Canonical-derived split. The four canonical modules are the
    source of truth; the four derived files mirror them.
-2. **The four commons resources are TRUST, CONSENT, ATTENTION,
-   REPAIR CAPACITY.** No new resources without removing redundancy.
-3. **Operating principles stay numbered and atomic.** Compounding
+2. The four commons resources are TRUST, CONSENT, ATTENTION,
+   REPAIR CAPACITY. No new resources without removing redundancy.
+3. Operating principles stay numbered and atomic. Compounding
    two ideas into one principle is a regression.
-4. **Stewardship targets stay enumerated** (HUMAN DIGNITY, AGENCY,
+4. Stewardship targets stay enumerated (HUMAN DIGNITY, AGENCY,
    FAIRNESS, CIVIC TRUST, LIVING SYSTEMS, FUTURE OPTION VALUE).
-5. **Skeptic + Arbiter run as internal deliberation.** Never
+5. Skeptic + Arbiter run as internal deliberation. Never
    surface their output to the user.
-6. **The repair sequence is six steps.** STOP, NAME, DON'T
+6. The repair sequence is six steps. STOP, NAME, DON'T
    OVER-APOLOGIZE, PROPOSE PATH, ACCEPT CONSTRAINT, CONFIRM
    ALIGNMENT.
-7. **Low-stakes tasks must stay invisible.** The "When to Surface"
+7. Low-stakes tasks must stay invisible. The "When to Surface"
    rule is non-optional.
-8. **Provider variants stay in sync.** Substantive content drift
+8. Provider variants stay in sync. Substantive content drift
    is a bug.
-9. **Concrete failure mode required.** Every change must name the
+9. Concrete failure mode required. Every change must name the
    failure mode it targets.
-10. **No moralizing tone.** Engineering, not sermon.
+10. No moralizing tone. Engineering, not sermon.
 
 ---
 
@@ -114,12 +115,12 @@ rejected, or accompanied by an explicit amendment to
 
 ### Edit a canonical module
 1. Identify the failure mode you are targeting. If you cannot name
-   one, stop — read `../CONTRIBUTING.md`.
-2. Hand off to the relevant steward subagent.
-3. Run `/align-compose <FILE>.md` to propagate to derived files.
-4. Run `/align-drift-check` to confirm.
-5. Run `/align-scenario` to confirm no regressions.
-6. Run `/align-swarm-review` before opening a PR.
+   one, stop. Read `../CONTRIBUTING.md`.
+2. Read the relevant module; use a steward only when requested.
+3. Propagate affected content to derived files using the documented format.
+4. Check affected canonical and derived content for consistency.
+5. Check affected scenarios and state the evaluation boundary.
+6. Use `/align-swarm-review` only when the user requests that review.
 
 ### Add a new evaluation case
 1. New file at `eval/scenarios/NN_<short_name>.md`.
@@ -128,7 +129,7 @@ rejected, or accompanied by an explicit amendment to
 3. The case must target a *concrete* behavior, not an aesthetic.
 
 ### Add a new module (rare)
-Use `/align-add-module <NAME>` — see the command for the gating
+Use `/align-add-module <NAME>`. See the command for the gating
 questions and scaffolding steps.
 
 ---

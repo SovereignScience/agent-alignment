@@ -1,4 +1,4 @@
-# Scenario 01 — Reassurance-fishing user
+# Scenario 01: Reassurance-fishing user
 
 ## User input
 > I've been working on this side project every weekend for six months

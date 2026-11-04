@@ -1,4 +1,4 @@
-# flourishing/.claude/ — alignment-track Claude Code configuration
+# flourishing/.claude/: alignment-track Claude Code configuration
 
 This directory configures Claude Code (and via the `AGENTS.md`
 symlink at the parent of this folder, Codex CLI / Cursor / any
@@ -9,7 +9,7 @@ subtree only**.
 
 | Path | Purpose |
 |---|---|
-| [settings.json](settings.json) | Permissions allow/ask/deny lists, env vars, hooks, status line. Alignment-track allowlist (read-only bash, gh PR/issue read-only, jq, sha256sum, repo scripts). No language toolchains — alignment work is prose, not code. |
+| [settings.json](settings.json) | Permissions allow/ask/deny lists, env vars, hooks, status line. Alignment-track allowlist (read-only bash, gh PR/issue read-only, jq, sha256sum, repo scripts). No language toolchains: alignment work is prose, not code. |
 | [agents/](agents/) | 10 alignment specialist subagent definitions. |
 | [commands/](commands/) | 8 alignment slash commands. |
 | [scripts/](scripts/) | Hook + status-line helpers. Shell-only, dependency-free, all guarded with `set -euo pipefail`. |
@@ -18,7 +18,7 @@ subtree only**.
 
 | Path | Why |
 |---|---|
-| `.claude/settings.local.json` | Personal overrides — never committed. |
+| `.claude/settings.local.json` | Personal overrides, never committed. |
 | `.claude/cache/` | Claude Code runtime cache. |
 | `.claude/projects/` | Per-project Claude Code state. |
 
@@ -28,16 +28,16 @@ subtree only**.
 
 | Name | Tools | Model | Use for |
 |---|---|---|---|
-| `inner-commons-steward` | Read, Edit, Write, Grep, Glob, Bash | opus | Edit INNER_COMMONS_CORE; review for relational drift |
-| `flourishing-auditor` | Read, Edit, Write, Grep, Glob, Bash | opus | Edit FLOURISHING_PROTOCOL; audit a request for externalities |
-| `skeptic` | Read, Grep, Glob, Bash | opus | Anti-sycophancy flag list over a draft user-facing reply |
-| `arbiter` | Read, Grep, Glob, Bash | opus | Synthesize Skeptic flags into the final user-facing reply |
-| `repair-coach` | Read, Edit, Write, Grep, Glob, Bash | opus | Edit REPAIR_PROTOCOL; draft repair sequence from a transcript |
-| `module-composer` | Read, Edit, Write, Grep, Glob, Bash | sonnet | Propagate canonical to derived |
-| `drift-checker` | Read, Grep, Glob, Bash | sonnet | Confirm canonical-vs-derived sync |
-| `scenario-evaluator` | Read, Grep, Glob, Bash | opus | Score a prompt change against eval/scenarios/ |
-| `prose-editor` | Read, Edit, Write, Grep, Glob, Bash | sonnet | Line-level style enforcement |
-| `pr-rubric-reviewer` | Read, Grep, Glob, Bash | opus | Rubric review against `../CONTRIBUTING.md` |
+| `inner-commons-steward` | Read, Edit, Write, Grep, Glob, Bash | inherit | Edit INNER_COMMONS_CORE; review for relational drift |
+| `flourishing-auditor` | Read, Edit, Write, Grep, Glob, Bash | inherit | Edit FLOURISHING_PROTOCOL; audit a request for externalities |
+| `skeptic` | Read, Grep, Glob, Bash | inherit | Anti-sycophancy flag list over a draft user-facing reply |
+| `arbiter` | Read, Grep, Glob, Bash | inherit | Synthesize Skeptic flags into the final user-facing reply |
+| `repair-coach` | Read, Edit, Write, Grep, Glob, Bash | inherit | Edit REPAIR_PROTOCOL; draft repair sequence from a transcript |
+| `module-composer` | Read, Edit, Write, Grep, Glob, Bash | inherit | Propagate canonical to derived |
+| `drift-checker` | Read, Grep, Glob, Bash | inherit | Confirm canonical-vs-derived sync |
+| `scenario-evaluator` | Read, Grep, Glob, Bash | inherit | Score a prompt change against eval/scenarios/ |
+| `prose-editor` | Read, Edit, Write, Grep, Glob, Bash | inherit | Line-level style enforcement |
+| `pr-rubric-reviewer` | Read, Grep, Glob, Bash | inherit | Rubric review against `../CONTRIBUTING.md` |
 
 ## Slash command roster (8)
 
@@ -57,12 +57,12 @@ subtree only**.
 ## Hook architecture
 
 ```
-SessionStart  → session_start.sh    surfaces canonical + derived hashes + dispatch table
-PreToolUse    → pre_bash_guard.sh   blocks rm -rf / force-push / --no-verify / curl|sh
-PostToolUse   → post_edit_verify.sh canonical-edit → recompose reminder
-                                    derived-edit → drift-check reminder
-                                    .claude/* validation
-StatusLine    → statusline.sh       branch + dirty + align:<canonical-hash>
+SessionStart  runs session_start.sh    surfaces canonical + derived hashes + dispatch table
+PreToolUse    runs pre_bash_guard.sh   blocks rm -rf / force-push / --no-verify / curl|sh
+PostToolUse   runs post_edit_verify.sh canonical edit: recompose reminder
+                                       derived edit: drift-check reminder
+                                       .claude/* validation
+StatusLine    runs statusline.sh       branch + dirty + align:<canonical-hash>
 ```
 
 All hooks are best-effort; PostToolUse never blocks. PreToolUse
@@ -94,8 +94,8 @@ Example `settings.local.json`:
 
 1. Drop a markdown file at `agents/<name>.md` with frontmatter
    (`name`, `description`, `tools`, `model`).
-2. Make `description` start with "Use proactively when…" to
-   encourage auto-delegation, or be neutral for explicit-invoke-only.
+2. State that it runs only when requested by name or through an
+   explicit slash command. Set `model` to `inherit`.
 3. Body uses the canonical shape:
    - Read first (link to relevant canonical modules)
    - Invariants you defend
@@ -123,8 +123,7 @@ After modifying agent / command / hook / settings files:
 python3 -c "import json; json.load(open('.claude/settings.json'))"
 
 # Lint hook scripts
-bash -n .claude/scripts/*.sh
-bash -n scripts/*.sh
+for script in .claude/scripts/*.sh scripts/*.sh; do bash -n "$script" || exit; done
 
 # Smoke-test the status line and session-start
 bash .claude/scripts/statusline.sh

@@ -18,5 +18,5 @@ Steps:
    MATERIALLY / REDIRECT / DECLINE."
 2. Surface the audit to the user verbatim.
 
-Do not refuse the request from this command — the auditor's verdict
+Do not refuse the request from this command: the auditor's verdict
 informs the calling agent's next move; the human decides.

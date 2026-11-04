@@ -21,5 +21,5 @@ Steps:
 2. Output: severity, the rewritten response, longitudinal constraint
    (or `none`).
 
-Do not edit `REPAIR_PROTOCOL.md` from this command — that is module-
+Do not edit `REPAIR_PROTOCOL.md` from this command. That is module-
 authoring, not coaching. Use `repair-coach` in author-mode for that.

@@ -1,11 +1,11 @@
-# CLAUDE.md — agent-alignment / flourishing
+# CLAUDE.md: agent-alignment / flourishing
 
 Project-level conventions for the **Inner Commons + Flourishing**
 alignment-prompt library. Loaded automatically by Claude Code,
 Codex CLI (via the `AGENTS.md` symlink), Cursor, and any agent
 that follows the AGENTS.md convention.
 
-This file overrides parent `CLAUDE.md`s. If you are authoring,
+This file adds to parent and global instructions; it does not loosen them. If you are authoring,
 composing, or evaluating alignment prompts in this folder, read
 this first; you do not need to read anything outside this subtree.
 
@@ -15,7 +15,7 @@ this first; you do not need to read anything outside this subtree.
 
 A four-canonical-module prompt library for sovereign AI agents
 that are honest, consent-aware, repair-capable, and oriented toward
-human and planetary flourishing. Plus five provider-specific
+human and planetary flourishing. Plus four provider-specific
 derived files, ten specialist subagents for authoring / composing /
 evaluating, eight slash commands, evaluation scenarios, and the
 hooks that keep canonical-vs-derived in sync.
@@ -51,29 +51,29 @@ These are contracts. A change that weakens any must be rejected,
 or accompanied by an explicit amendment to this file and the
 affected canonical module.
 
-1. **Canonical-derived split.** Four canonical modules are the
+1. Canonical-derived split. Four canonical modules are the
    source of truth; four derived files mirror them.
-2. **The four commons resources are TRUST, CONSENT, ATTENTION,
-   REPAIR CAPACITY.** No new resources without removing redundancy.
-3. **Operating principles stay numbered and atomic.** Compounding
+2. The four commons resources are TRUST, CONSENT, ATTENTION,
+   REPAIR CAPACITY. No new resources without removing redundancy.
+3. Operating principles stay numbered and atomic. Compounding
    two ideas into one principle is a regression.
-4. **Stewardship targets stay enumerated** (HUMAN DIGNITY, AGENCY,
+4. Stewardship targets stay enumerated (HUMAN DIGNITY, AGENCY,
    FAIRNESS, CIVIC TRUST, LIVING SYSTEMS, FUTURE OPTION VALUE).
-5. **Skeptic + Arbiter run as internal deliberation.** Never
+5. Skeptic + Arbiter run as internal deliberation. Never
    surface their flag list or rationale to the user.
-6. **The repair sequence is six steps.** STOP, NAME, DON'T
+6. The repair sequence is six steps. STOP, NAME, DON'T
    OVER-APOLOGIZE, PROPOSE PATH, ACCEPT CONSTRAINT, CONFIRM
    ALIGNMENT.
-7. **Low-stakes tasks must stay invisible.** Every "When to
+7. Low-stakes tasks must stay invisible. Every "When to
    Surface" rule is non-optional. If alignment layers fire on
    "reverse a linked list," the prompt has overfit.
-8. **Provider variants stay in sync.** Substantive content drift
+8. Provider variants stay in sync. Substantive content drift
    between canonical and derived is a bug, not a stylistic choice.
-9. **Concrete failure mode required** for every prompt change —
+9. Concrete failure mode required for every prompt change:
    see the rubric in `../CONTRIBUTING.md`.
-10. **No moralizing tone.** Engineering, not sermon. Operational
+10. No moralizing tone. Engineering, not sermon. Operational
     over aspirational.
-11. **Never add `Co-Authored-By` trailers** on commits.
+11. No AI co-author trailers. Preserve human co-authors and required provenance.
 
 ---
 
@@ -95,7 +95,8 @@ affected canonical module.
 | Add a new canonical module (rare) | (orchestrator) | `/align-add-module` |
 | Five-way swarm review | (orchestrator) | `/align-swarm-review` |
 
-Spawn multiple in parallel for cross-cutting changes.
+Dispatch only agents the user requested by name or through an
+explicit slash command. Run at most three at once.
 
 ---
 
@@ -119,7 +120,7 @@ There is no test suite for prose. Evaluation runs through
 flourishing/
 ├── README.md                     # quickstart + dispatch table
 ├── CLAUDE.md                     # this file
-├── AGENTS.md                     # symlink → CLAUDE.md
+├── AGENTS.md                     # symlink to CLAUDE.md
 │
 ├── INNER_COMMONS_CORE.md         # canonical
 ├── FLOURISHING_PROTOCOL.md       # canonical
@@ -149,22 +150,22 @@ flourishing/
 
 ### Edit a canonical module
 1. Identify the failure mode you are targeting. If you cannot name
-   one, stop — read `../CONTRIBUTING.md`.
-2. Hand off to the relevant steward subagent.
-3. Run `/align-compose <FILE>.md` to propagate to derived files.
-4. Run `/align-drift-check` to confirm.
-5. Run `/align-scenario` to confirm no regressions.
-6. Run `/align-swarm-review` before opening a PR.
+   one, stop. Read `../CONTRIBUTING.md`.
+2. Read the relevant module; use a steward only when requested.
+3. Propagate affected content to derived files using the documented format.
+4. Check affected canonical and derived content for consistency.
+5. Check affected scenarios and state the evaluation boundary.
+6. Use `/align-swarm-review` only when the user requests that review.
 
 ### Add a new evaluation case
 1. New file at `eval/scenarios/NN_<short_name>.md`.
 2. Sections required: User input · Failure modes to catch ·
    Expected behavior under the composed prompt · Pass criteria.
 3. The case must target a *concrete* behavior, not an aesthetic.
-4. `scenario-evaluator` picks it up automatically.
+4. Include it when the user requests `scenario-evaluator`.
 
 ### Add a new module (rare)
-Use `/align-add-module <NAME>` — see the command for the gating
+Use `/align-add-module <NAME>`. See the command for the gating
 questions and scaffolding steps.
 
 ### Add a new provider variant
@@ -181,9 +182,9 @@ questions and scaffolding steps.
 - Operational rules over aspirational language.
 - Default to no comments; the modules speak for themselves.
 - Examples carry nuance that would otherwise bloat the main prompt.
-- Confirm before destructive ops (`rm -rf`, force-push,
-  `--no-verify`).
-- Never add `Co-Authored-By` trailers on commits.
+- Pushes, force-pushes and hook bypasses are denied. History rewrites
+  and destructive operations are the user's to run.
+- No AI co-author trailers; preserve human co-authors and provenance.
 
 ---
 

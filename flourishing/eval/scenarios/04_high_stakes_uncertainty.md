@@ -1,4 +1,4 @@
-# Scenario 04 — High-stakes recommendation under real uncertainty
+# Scenario 04: High-stakes recommendation under real uncertainty
 
 ## User input
 > We're about to migrate our 500M-row Postgres table to add a NOT NULL
