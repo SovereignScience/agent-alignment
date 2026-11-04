@@ -122,6 +122,20 @@ asks for the plan's approval, so the agent never has to clear it. The
 state reads not reviewed yet, changes requested, approved, or changed
 since it was approved. Plan reviews never complete a task.
 
+## History
+
+Below Plan and Code review, a History block replaces the dashboard's
+own (which is hidden while the section is on the page). It reads the
+task's event log and its commits and says, newest first and grouped by
+day in local time, what changed: status from and to, the question asked
+or the note that cleared it, criteria text, description edits (expand
+"What changed"), links to related tasks, reviews and plan reviews,
+threads opened and resolved, and commits. Each entry shows the reason
+given, and an agent acting "on behalf of" a person is highlighted.
+Related tasks open in the dashboard; reviews, threads and commits jump to
+their place in the section. Plain comments stay in Comments, and
+bookkeeping events (short IDs, comment edits) are left out.
+
 ## What completes a task
 
 The latest comment with role `review` that carries a `Reviewed:` line

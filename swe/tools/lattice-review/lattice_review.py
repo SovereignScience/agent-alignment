@@ -17,6 +17,8 @@ in VS Code.
 from __future__ import annotations
 
 import argparse
+import datetime
+import difflib
 import hashlib
 import html
 import io
@@ -86,13 +88,14 @@ function refit(){document.querySelectorAll("iframe.review-frame").forEach(functi
 f.style.height="1px";f.style.height=(f.contentDocument.documentElement.scrollHeight+4)+"px"})}
 apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
-var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments"};
+var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments",history:"history"};
 function tag(){document.querySelectorAll(".dp-section,.detail-section").forEach(function(s){
 var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
 KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k;
 if(k==="plans"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame")){
 s.querySelectorAll("button[onclick*='openPlans(']").forEach(function(b){b.hidden=true});
-s.hidden=!s.querySelector("button:not([hidden])")}})}
+s.hidden=!s.querySelector("button:not([hidden])")}
+if(k==="history"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame"))s.hidden=true})}
 document.addEventListener("DOMContentLoaded",function(){
 tag();new MutationObserver(tag).observe(document.body,{childList:true,subtree:true});
 var panel=document.getElementById("detail-panel");if(!panel)return;
@@ -306,24 +309,17 @@ def review_notes(message):
 
     The message has a "## <file>" heading per file and a "### Line N (new)",
     "### Lines N-M (old)" or "### File Comment" heading per note. Plannotator
-    appends its own instructions after three or more blank lines; they belong
-    to no note. where is "line 239 (new)", "lines 3-5 (old)", "whole file", or
-    empty for text directly under a "##" heading."""
-    notes, path, where, anchor, text, blanks = [], None, "", None, [], 0
+    appends its own instructions after the last note, behind three or more
+    blank lines; only that tail is cut, so blank lines inside an earlier note
+    never hide the notes after it. where is "line 239 (new)", "lines 3-5
+    (old)", "whole file", or empty for text directly under a "##" heading."""
+    notes, path, where, anchor, text = [], None, "", None, []
 
     def flush():
-        note = "\n".join(text).strip()
-        if anchor and note:
-            notes.append((path, where, note))
+        if anchor:
+            notes.append((path, where, text))
 
     for line in message.splitlines():
-        if not line.strip():
-            blanks += 1
-            if anchor and blanks >= 3:
-                break
-            text.append(line)
-            continue
-        blanks = 0
         if line.startswith("## "):
             flush()
             path = anchor = line[3:].strip()
@@ -336,7 +332,13 @@ def review_notes(message):
         elif anchor:
             text.append(line)
     flush()
-    return notes
+    if notes:
+        path, where, tail = notes[-1]
+        for i in range(len(tail) - 2):
+            if not any(line.strip() for line in tail[i:i + 3]):
+                notes[-1] = (path, where, tail[:i])
+                break
+    return [(path, where, "\n".join(text).strip()) for path, where, text in notes if "\n".join(text).strip()]
 
 
 def plan_notes(feedback):
@@ -381,12 +383,14 @@ def plan_notes(feedback):
 
 def plan_status(comments, plan_text):
     """The state of a task's plan: not reviewed, changes requested, approved,
-    or changed since it was approved (the approval names the plan's sha256)."""
-    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
-               if c.get("role") == "plan-review" and not c.get("deleted")]
+    or changed since it was approved (the approval names the plan's sha256).
+    A deleted latest review withdraws what came before it."""
+    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments) if c.get("role") == "plan-review"]
     if not reviews:
         return "not reviewed yet"
     latest = max(reviews)[2]
+    if latest.get("deleted"):
+        return "the latest plan review was deleted; review it again"
     body = latest.get("body") or ""
     match = PLAN_DECISION.match(body)
     if not match or match.group(1) != "approved":
@@ -400,6 +404,107 @@ def waits_for_plan_approval(task):
     """True when the task's needs_human flag asks the owner to approve its plan."""
     reason = ((task.get("needs_human") or {}).get("reason") or "").lower()
     return "approv" in reason and "plan" in reason
+
+
+RELATIONS = {"subtask_of": "made it part of", "blocks": "made it block", "blocked_by": "marked it blocked by",
+             "depends_on": "made it depend on", "related_to": "related it to", "duplicate_of": "marked it a duplicate of",
+             "spawned_by": "noted it was spawned by", "supersedes": "made it supersede"}
+
+
+def when(ts):
+    """A timestamp from an event (UTC, Z) or git (with offset) as an aware datetime."""
+    return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def history(events, comments, commits, short_ids):
+    """What happened to a task, newest first, one entry per event that says
+    what changed, with the reason given and any on-behalf-of actor. Plain
+    comments live in their own section; here only the ones that carry a
+    decision (a code or plan review, a new thread) and resolved threads, plus
+    the task's commits. Entries: ts, actor, text, why, behalf, link, details;
+    link is (kind, target) with kind task, thread, plan, code or commit."""
+    by_id = {}
+    for c in comments:
+        by_id[c.get("id")] = c
+        for r in c.get("replies") or []:
+            by_id[r.get("id")] = r
+    anchors = {t["root"].get("id"): t["anchor"] for t in review_threads(comments)}
+    out = []
+    for ev in events:
+        d, kind = ev.get("data") or {}, ev.get("type")
+        text, link, details = None, None, None
+        if kind == "task_created":
+            text = "created the task"
+        elif kind == "status_changed":
+            text = "moved it from %s to %s" % ((d.get("from") or "?").replace("_", " "), (d.get("to") or "?").replace("_", " "))
+        elif kind == "assignment_changed":
+            text = "assigned it to %s" % d["to"] if d.get("to") else "unassigned it"
+        elif kind == "needs_human_flagged":
+            text = "asked the owner: %s" % (d.get("reason") or "")
+        elif kind == "needs_human_cleared":
+            text = "cleared the owner question" + (": " + d["note"] if d.get("note") else "")
+        elif kind == "field_updated" and d.get("field") == "description":
+            text = "edited the description"
+            details = "\n".join(line for line in difflib.unified_diff(
+                (d.get("from") or "").splitlines(), (d.get("to") or "").splitlines(), lineterm="", n=0) if line[:3] not in ("---", "+++", "@@ "))
+        elif kind == "field_updated":
+            text = "changed %s from %s to %s" % (d.get("field"), d.get("from") or "nothing", d.get("to") or "nothing")
+        elif kind == "acceptance_criterion_added":
+            text = "added %s: %s" % (d.get("criterion_id"), d.get("outcome") or "")
+        elif kind == "acceptance_criterion_edited":
+            text = "revised %s%s" % (d.get("criterion_id"), ": " + d["outcome"] if d.get("outcome") else "")
+        elif kind == "acceptance_criterion_retired":
+            text = "retired %s" % d.get("criterion_id")
+        elif kind in ("relationship_added", "relationship_removed"):
+            target = short_ids.get(d.get("target_task_id"), (d.get("target_task_id") or "")[:12])
+            verb = RELATIONS.get(d.get("type"), "linked it (%s) to" % d.get("type"))
+            text = ("%s %s" % (verb, target)) if kind == "relationship_added" else "removed the %s link to %s" % ((d.get("type") or "").replace("_", " "), target)
+            link = ("task", target)
+        elif kind in ("branch_linked", "branch_unlinked"):
+            text = "%s branch %s" % ("linked" if kind == "branch_linked" else "unlinked", d.get("branch") or d.get("branch_name"))
+        elif kind == "artifact_attached":
+            text = "attached %s" % (d.get("title") or d.get("artifact_id") or "a file")
+        elif kind in ("reaction_added", "reaction_removed") and d.get("emoji") == RESOLVED and d.get("comment_id") in anchors:
+            text = "%s the thread on %s" % ("resolved" if kind == "reaction_added" else "reopened", anchors[d["comment_id"]])
+            link = ("thread", d["comment_id"])
+        elif kind == "comment_added":
+            body, role = d.get("body") or "", d.get("role")
+            first = body.splitlines()[0] if body else ""
+            covered = re.match(r"^Plannotator (?:plan )?\w+ \((.*)\), \S+$", first)
+            if role == "review" and review_decision(body):
+                text = "%s the code review%s" % ("approved" if review_decision(body) == "approved" else "requested changes in",
+                                                 " of " + covered.group(1) if covered else "")
+                link = ("code", None)
+            elif role == "plan-review" and PLAN_DECISION.match(body):
+                text = "%s the plan" % ("approved" if PLAN_DECISION.match(body).group(1) == "approved" else "requested changes on")
+                link = ("plan", None)
+            elif body.startswith(THREAD):
+                text = "opened a thread on %s" % first[len(THREAD):].strip()
+                link = ("thread", ev.get("id"))
+        elif kind == "comment_deleted" and (by_id.get(d.get("comment_id")) or {}).get("role") in ("review", "plan-review"):
+            text = "deleted a %s" % ("plan review" if by_id[d["comment_id"]].get("role") == "plan-review" else "code review")
+        elif kind in ("task_archived", "task_unarchived"):
+            text = "archived the task" if kind == "task_archived" else "restored the task from the archive"
+        if text:
+            prov = ev.get("provenance") or {}
+            out.append({"ts": when(ev["ts"]), "actor": ev.get("actor") or "", "text": text, "why": prov.get("reason"),
+                        "behalf": prov.get("on_behalf_of"), "link": link, "details": details})
+    for c in commits:
+        out.append({"ts": when(c["when"]), "actor": c["author"], "text": "committed %s %s" % (c["hash"][:12], c["subject"]),
+                    "why": None, "behalf": None, "link": ("commit", c["hash"]), "details": None})
+    return sorted(out, key=lambda entry: entry["ts"], reverse=True)
+
+
+def commit_details(repo, hashes):
+    """Author and commit time for each commit, for the history."""
+    if not hashes:
+        return []
+    out = []
+    for line in run_git(repo, "show", "-s", "--format=%H%x1f%cI%x1f%an%x1f%s", *hashes, check=False).splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 4:
+            out.append({"hash": parts[0], "when": parts[1], "author": parts[2], "subject": parts[3]})
+    return out
 
 
 def note_anchor(path, where):
@@ -466,26 +571,63 @@ def review_threads(comments):
             if not line.startswith("> "):
                 break
             quote.append(line)
-        items.append((c, anchor, note.strip(), thread_key(path, where, quote)))
+        items.append((c, anchor, note.strip(), thread_key(path, where, quote), path, where, quote))
     for c in live:
         if c.get("role") == "review" and c.get("id") not in split and review_decision(c.get("body") or "") == "annotated":
             notes = review_notes(c.get("body") or "")
             if len(notes) == 1:
                 path, where, note = notes[0]
-                items.append((c, note_anchor(path, where), note, thread_key(path, where, [])))
+                items.append((c, note_anchor(path, where), note, thread_key(path, where, []), path, where, []))
             else:
                 items.append((c, "; ".join(note_anchor(p, w) for p, w, _ in notes) or "whole review",
-                              "\n\n".join("%s: %s" % (note_anchor(p, w), t) for p, w, t in notes), None))
+                              "\n\n".join("%s: %s" % (note_anchor(p, w), t) for p, w, t in notes), None, None, None, []))
     threads = []
-    for root, anchor, note, key in sorted(items, key=lambda item: item[0].get("created_at") or ""):
+    for root, anchor, note, key, path, where, quote in sorted(items, key=lambda item: item[0].get("created_at") or ""):
         messages = thread_messages(root)
         resolved = any(a.startswith("human:") for a in (root.get("reactions") or {}).get(RESOLVED, []))
         last = (messages[-1].get("author") or "") if messages else ""
         status = next((line[len("Status:"):].strip() for m in reversed(messages) if (m.get("author") or "").startswith("agent:")
                        for line in (m.get("body") or "").splitlines() if line.startswith("Status:")), None)
         state = "resolved" if resolved else "waiting on you" if last.startswith("agent:") else "waiting on the agent"
-        threads.append({"root": root, "anchor": anchor, "note": note, "key": key, "messages": messages, "state": state, "status": status})
+        threads.append({"root": root, "anchor": anchor, "note": note, "key": key, "path": path, "where": where, "quote": quote,
+                        "messages": messages, "state": state, "status": status})
     return threads
+
+
+def recorded_notes(comments):
+    """How many notes of each review were recorded, by review id: threads
+    opened from it plus follow-ups filed into older threads. Deleted ones
+    count; what matters is that the recording finished."""
+    counts = {}
+    for c in comments:
+        lines = (c.get("body") or "").split("\n")
+        if lines[0].startswith(THREAD) and len(lines) > 1 and lines[1].startswith(REVIEW_OF):
+            rid = lines[1][len(REVIEW_OF):].strip()
+            counts[rid] = counts.get(rid, 0) + 1
+        for reply in c.get("replies") or []:
+            body = reply.get("body") or ""
+            if body.startswith(FOLLOW_UP):
+                rid = body[len(FOLLOW_UP):].split(",", 1)[0].strip()
+                counts[rid] = counts.get(rid, 0) + 1
+    return counts
+
+
+def thread_for(threads, path, where, quote):
+    """The open thread a note continues, or None: the one at the same place
+    with the same quoted lines; else the only one with those quoted lines
+    (the lines moved); else the only one at that place when the note or the
+    thread has no quote. Anything ambiguous starts a new thread."""
+    quoted = "\n".join(quote)
+    same_place = [t for t in threads if t["path"] == path and t["where"] == where]
+    if quote:
+        candidates = [t for t in same_place if "\n".join(t["quote"]) == quoted]
+        if not candidates:
+            candidates = [t for t in threads if t["path"] == path and "\n".join(t["quote"]) == quoted]
+        if not candidates:
+            candidates = [t for t in same_place if not t["quote"]]
+    else:
+        candidates = same_place
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def latest_review(comments):
@@ -525,6 +667,10 @@ def completion_block(repo, task, main, comments):
         return "the latest review was deleted; review the task again"
     if review_decision(review.get("body") or "") != "approved":
         return "your latest review requested changes; when they are answered, review again and approve"
+    expected = len(review_notes(review.get("body") or ""))
+    recorded = recorded_notes(comments).get(review.get("id"), 0)
+    if recorded < expected:
+        return "only %d of the %d notes in your latest review were recorded as threads; review again so every note is on the task" % (recorded, expected)
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
@@ -596,6 +742,7 @@ class Context:
         self.token = secrets.token_hex(16)
         self.jobs = {}
         self.notices = {}
+        self.drafts = {}
         self.runs = 0
         self.plannotator = shutil.which("plannotator")
         self.code = shutil.which("code")
@@ -613,6 +760,11 @@ class Context:
         rc, msg = self.lattice_cmd(*args)
         self.notices[key] = ("ok", args[0] + " " + " ".join(args[1:3])) if rc == 0 else ("err", "lattice %s failed: %s" % (args[0], msg))
         return rc == 0
+
+    def events(self, task_id):
+        """The task's event log lines, oldest first."""
+        path = self.board / ".lattice" / "events" / (task_id + ".jsonl")
+        return [line for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
 
     def comments(self, short_id):
         env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
@@ -666,27 +818,40 @@ class Context:
 
     def start_plan_review(self, task):
         """A Plannotator annotate session on the task's plan file. The decision
-        is recorded with the plan's sha256 as it stands when the session ends,
-        edits made in Plannotator included; an approval also clears a
-        needs_human flag that asks for the plan's approval."""
+        is bound to the plan as it was opened (its sha256). When the file is
+        different by the end of the session, edits saved from Plannotator
+        included, the approval names the opened version and the plan reads as
+        changed since, so the owner reviews it once more. An approval clears
+        the needs_human flag that asked for it, if that same flag is still set."""
         sid = task["short_id"]
         plan = self.board / ".lattice" / "plans" / (task["id"] + ".md")
         if not plan.is_file():
             raise RuntimeError("%s has no plan file yet" % sid)
         what = "plan of %s" % sid
         args = [self.plannotator, "--browser", "none", "annotate", str(plan), "--gate", "--json"]
+        opened = hashlib.sha256(plan.read_bytes()).hexdigest()
+        flag = task.get("needs_human")
 
         def record(job, decision, message, stamp):
-            digest = hashlib.sha256(plan.read_bytes()).hexdigest()
-            body = "Plannotator plan %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, PLAN, digest, message)
+            body = "Plannotator plan %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, PLAN, opened, message)
             if not self.post_review(job, sid, body, "plan-review"):
                 return
-            self.record_threads(sid, body, plan_notes(message), "plan " + digest[:12], job)
+            self.record_threads(sid, body, plan_notes(message), "plan " + opened[:12], job)
+            if decision != "approved" or job.error:
+                return
+            if hashlib.sha256(plan.read_bytes()).hexdigest() != opened:
+                job.error = ("approved as opened (plan %s), but the plan file changed during the session; "
+                             "review the plan again to approve what it says now" % opened[:12])
+                return
             current = find_task(self.board, sid)
-            if decision == "approved" and current and waits_for_plan_approval(current) and not job.error:
-                rc, msg = self.lattice_cmd("needs-human", sid, "--clear", "--note", "Plan approved in Plannotator (plan %s)" % digest[:12])
-                if rc != 0:
-                    job.error = "the plan approval was recorded but the needs_human flag was not cleared: " + msg
+            if not (flag and current and waits_for_plan_approval(current)):
+                return
+            if current.get("needs_human") != flag:
+                job.error = "the approval flag changed during the session, so it was left set"
+                return
+            rc, msg = self.lattice_cmd("needs-human", sid, "--clear", "--note", "Plan approved in Plannotator (plan %s)" % opened[:12])
+            if rc != 0:
+                job.error = "the plan approval was recorded but the needs_human flag was not cleared: " + msg
 
         return self.session(sid, what, args, self.board, None, record)
 
@@ -773,7 +938,8 @@ class Context:
         review and the quoted lines. A note on lines that already have an open
         thread (same file and quoted lines, or same file and place for a
         thread without a quote) is a follow-up reply in that thread, so a line
-        keeps one history. notes are (path, where, text, quote)."""
+        keeps one history; when several open threads could take it, it starts
+        its own. notes are (path, where, text, quote)."""
         if not notes:
             return
         comments = self.comments(sid)
@@ -782,11 +948,11 @@ class Context:
         if not review:
             job.error = "the review was recorded but its notes could not be split into threads"
             return
-        open_threads = {t["key"]: t for t in review_threads(comments)
-                        if t["state"] != "resolved" and t["key"] and t["root"].get("id") != review["id"]}
+        open_threads = [t for t in review_threads(comments)
+                        if t["state"] != "resolved" and t["key"] and t["root"].get("id") != review["id"]]
         for i, (path, where, text, quote) in enumerate(notes, 1):
             anchor = note_anchor(path, where)
-            existing = open_threads.get(thread_key(path, where, quote)) or open_threads.get((path, where))
+            existing = thread_for(open_threads, path, where, quote)
             if existing:
                 content = "%s%s, %s at %s:\n%s\n" % (FOLLOW_UP, review["id"], anchor, at, text)
                 args = ("comment", sid, "--reply-to", existing["root"]["id"])
@@ -803,17 +969,23 @@ class Context:
                 return
 
     def post_reply(self, sid, parent, text):
-        """The owner's reply in one thread, from the review section."""
+        """The owner's reply in one thread, from the review section. False when
+        it was not posted; the text then comes back in the reply box."""
         if not text.strip():
             raise RuntimeError("the reply is empty")
         (self.state / "tmp").mkdir(exist_ok=True)
         path = self.state / "tmp" / ("reply-%s.md" % secrets.token_hex(6))
         path.write_text(text.strip() + "\n")
         try:
-            if self.board_write(sid, "comment", sid, "--reply-to", parent, "--file", str(path)):
-                self.notices[sid] = ("ok", "reply posted")
+            posted = self.board_write(sid, "comment", sid, "--reply-to", parent, "--file", str(path))
         finally:
             path.unlink(missing_ok=True)
+        if posted:
+            self.notices[sid] = ("ok", "reply posted")
+            self.drafts.pop((sid, parent), None)
+        else:
+            self.drafts[(sid, parent)] = text
+        return posted
 
     def close_session(self, key):
         """End an abandoned Plannotator session; nothing is recorded."""
@@ -876,6 +1048,10 @@ p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-
 .block,.thread{--hue:#94a3b8;margin:.6rem 0;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--text-primary,#e4e7eb) 14%,transparent);border-left:3px solid color-mix(in srgb,var(--hue) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--hue) 6%,color-mix(in srgb,var(--text-primary,#e4e7eb) 5%,transparent))}
 .block h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--hue) 60%,var(--text-primary,#e4e7eb))}
 .block.plan{--hue:#c084fc}.block.changes{--hue:#7aa2f7}.block.verdict{--hue:var(--accent-primary,#2b6cb0)}
+.day{margin:.6rem 0 .2rem;font-size:.72rem;font-weight:700;letter-spacing:.04em;color:var(--text-muted,#9aa4b2)}
+.event{margin:.15rem 0;padding:.3rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 4%,transparent)}
+.event .who{font-weight:600}.event .who.owner{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 70%,var(--text-primary,#e4e7eb))}
+a{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 75%,var(--text-primary,#e4e7eb))}
 .next{margin:.2rem 0 .6rem;padding:.55rem .75rem;border:1px solid var(--accent-primary,#2b6cb0);border-left-width:4px;border-radius:8px;background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 12%,transparent)}
 .thread{--hue:var(--color-warning,#f6c343);border-left-width:4px}.thread.resolved{--hue:var(--color-success,#7ee787)}
 .msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 6%,transparent)}.msg .text{white-space:pre-wrap}
@@ -910,10 +1086,10 @@ def button(ctx, action, label, fields=None, primary=False, tab=False, small=Fals
             % (e(action), target, ctx.token, hidden, cls, e(label)))
 
 
-def reply_form(ctx, action, parent):
+def reply_form(ctx, action, parent, draft=""):
     return ("<form method='post' action='%s' class='reply'><input type='hidden' name='token' value='%s'>"
-            "<input type='hidden' name='parent' value='%s'><textarea name='body' placeholder='Reply in this thread'></textarea>"
-            "<button>Reply</button><button name='resolve' value='1'>Reply and resolve</button></form>" % (e(action), ctx.token, e(parent)))
+            "<input type='hidden' name='parent' value='%s'><textarea name='body' placeholder='Reply in this thread'>%s</textarea>"
+            "<button>Reply</button><button name='resolve' value='1'>Reply and resolve</button></form>" % (e(action), ctx.token, e(parent), e(draft)))
 
 
 def is_plan_thread(thread):
@@ -931,8 +1107,8 @@ def render_threads(ctx, sid, threads, title):
     for t in threads:
         resolved = t["state"] == "resolved"
         status = " <span class='muted'>agent: %s</span>" % e(t["status"]) if t["status"] and not resolved else ""
-        out.append("<div class='thread%s'><p><b>%s</b> <span class='%s'>%s</span>%s</p>"
-                   % (" resolved" if resolved else "", e(t["anchor"]), "ok" if resolved else "warn", e(t["state"]), status))
+        out.append("<div class='thread%s' id='thread-%s'><p><b>%s</b> <span class='%s'>%s</span>%s</p>"
+                   % (" resolved" if resolved else "", e(t["root"].get("id")), e(t["anchor"]), "ok" if resolved else "warn", e(t["state"]), status))
         for m in t["messages"]:
             text = t["note"] if m is t["root"] else m.get("body") or ""
             owner = (m.get("author") or "").startswith("human:")
@@ -941,9 +1117,42 @@ def render_threads(ctx, sid, threads, title):
         if resolved:
             out.append(button(ctx, act + "reopen", "Reopen", {"comment": t["root"]["id"]}))
         else:
-            out.append(reply_form(ctx, act + "reply", t["root"]["id"]))
+            out.append(reply_form(ctx, act + "reply", t["root"]["id"], ctx.drafts.get((sid, t["root"]["id"]), "")))
             out.append(button(ctx, act + "resolve", "Resolve", {"comment": t["root"]["id"]}))
         out.append("</div>")
+    return "".join(out)
+
+
+def render_history(ctx, sid, entries):
+    """The history, grouped by day in local time, newest first."""
+    jump = "onclick=\"var t=document.getElementById('%s');if(t){t.scrollIntoView({behavior:'smooth',block:'start'})}return false\""
+    out, day = [], None
+    for entry in entries:
+        local = entry["ts"].astimezone()
+        if local.date() != day:
+            day = local.date()
+            out.append("<p class='day'>%s</p>" % e(local.strftime("%a %b %d").replace(" 0", " ")))
+        who = entry["actor"]
+        kind, target = entry["link"] or (None, None)
+        if kind == "task":
+            more = " <a href='/t/%s' target='_top'>open %s</a>" % (e(target), e(target))
+        elif kind == "thread":
+            more = " <a href='#thread-%s' %s>show</a>" % (e(target), jump % ("thread-" + e(target)))
+        elif kind in ("plan", "code"):
+            more = " <a href='#%s' %s>show</a>" % (kind, jump % kind)
+        elif kind == "commit":
+            more = " <a href='#commit-%s' %s>show</a>" % (e(target[:12]), jump % ("commit-" + e(target[:12])))
+        else:
+            more = ""
+        line = "<span class='muted'>%s</span> <span class='who%s'>%s</span> %s%s" % (
+            e(local.strftime("%H:%M")), " owner" if who.startswith("human:") else "", e(who), e(entry["text"]), more)
+        if entry["behalf"]:
+            line += " <span class='%s'>on behalf of %s</span>" % ("warn" if not who.startswith("human:") else "muted", e(entry["behalf"]))
+        if entry["why"]:
+            line += "<br><span class='muted'>Why: %s</span>" % e(entry["why"])
+        if entry["details"]:
+            line += "<details><summary>What changed</summary><pre>%s</pre></details>" % e(entry["details"])
+        out.append("<div class='event'>%s</div>" % line)
     return "".join(out)
 
 
@@ -1076,8 +1285,8 @@ def render_review(ctx, task):
     if rng["commits"]:
         code.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
         for c in rng["commits"]:
-            code.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
-                e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
+            code.append("<tr id='commit-%s'><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+                e(c["hash"][:12]), e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
                 button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True, small=True) if ctx.plannotator else ""))
         code.append("</table>")
     if rng["base_sha"]:
@@ -1103,6 +1312,10 @@ def render_review(ctx, task):
         covered = re.match(r"^Plannotator \w+ \((.*)\), \S+$", text.splitlines()[0] if text else "")
         code.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
             e(label), ", of " + e(covered.group(1)) if covered else "", e(review.get("author")), e(review.get("created_at")), e(text)))
+        expected, recorded = len(review_notes(text)), recorded_notes(comments).get(review.get("id"), 0)
+        if recorded < expected:
+            code.append("<p class='err'>Only %d of its %d notes were recorded as threads; the full text above has them all. Review again to record the rest.</p>"
+                        % (recorded, expected))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
         if block:
             code.append("<p class='muted'>Completion: %s.</p>" % e(block))
@@ -1110,10 +1323,14 @@ def render_review(ctx, task):
             code.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
     code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads"))
 
-    def section(kind, title, parts):
-        return "<section class='block %s'><h4>%s</h4>%s</section>" % (kind, title, "".join(parts))
+    def section(kind, anchor, title, parts):
+        return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
+    events = [json.loads(line) for line in ctx.events(task["id"])]
+    short_ids = {t["id"]: t.get("short_id") for t in load_tasks(ctx.board)}
+    entries = history(events, comments, commit_details(ctx.repo, [c["hash"] for c in rng["commits"]]), short_ids)
     body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, live, plan_state),
-            section("plan", "Plan", plan_part), section("verdict", "Code review", code)]
+            section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code),
+            section("history", "history", "History", [render_history(ctx, sid, entries)]) if entries else ""]
     return page(sid + " review", "".join(body), refresh=running)
 
 
@@ -1210,9 +1427,10 @@ def make_handler(ctx, base=None, static_dir=None):
             super().do_POST()
 
         def gate(self, parts, record):
-            """Dashboard writes carry this server's actor; done needs an approved
-            review of the task's current work. False means a reply was sent."""
-            if record.get("actor") == "dashboard:web":
+            """Dashboard writes carry this server's actor (the page sends none or
+            dashboard:web); done needs an approved review of the task's current
+            work. False means a reply was sent."""
+            if record.get("actor") in (None, "dashboard:web"):
                 record["actor"] = ctx.actor
             if parts[:2] == ["api", "tasks"] and parts[3:] == ["status"] and record.get("status") == "done":
                 task = find_task(ctx.board, parts[2])
@@ -1253,9 +1471,10 @@ def make_handler(ctx, base=None, static_dir=None):
                     else:
                         ctx.board_write(sid, "status", sid, "done", "--no-auto-review")
                 elif action == "reply":
+                    posted = True
                     if form.get("body", "").strip() or form.get("resolve") != "1":
-                        ctx.post_reply(sid, form["parent"], form.get("body", ""))
-                    if form.get("resolve") == "1":
+                        posted = ctx.post_reply(sid, form["parent"], form.get("body", ""))
+                    if posted and form.get("resolve") == "1":
                         ctx.board_write(sid, "react", sid, form["parent"], RESOLVED)
                 elif action in ("resolve", "reopen"):
                     ctx.board_write(sid, "react" if action == "resolve" else "unreact", sid, form["comment"], RESOLVED)
