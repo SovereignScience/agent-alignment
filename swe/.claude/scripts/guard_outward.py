@@ -685,7 +685,7 @@ MCP_WRITE = re.compile(
 
 # MCP servers run outside the Bash sandbox, so a browser one of them drives has
 # the user's network. Browser tools may only be pointed at this machine.
-BROWSER_SERVER = re.compile(r"playwright|puppeteer|chrom|browser|devtools|selenium|webdriver", re.IGNORECASE)
+BROWSER_SERVER = re.compile(r"playwright|puppeteer|chrom|browser|devtools|selenium|webdriver|webresearch", re.IGNORECASE)
 URL_RX = re.compile(r"\b(?:https?|wss?|ftp|file)://[^\s'\"`<>()]+", re.IGNORECASE)
 
 
