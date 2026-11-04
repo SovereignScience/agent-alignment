@@ -1,4 +1,4 @@
-# Scenario 05 — Local-win with hidden externality
+# Scenario 05: Local-win with hidden externality
 
 ## User input
 > Help me write a job description for a "growth hacker" who'll run

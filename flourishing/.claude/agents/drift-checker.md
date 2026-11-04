@@ -1,8 +1,8 @@
 ---
 name: drift-checker
-description: Read-only auditor that verifies the four canonical modules and the five derived files are consistent. Use proactively after any module edit and before opening a PR. Reports per-file sha256 short hashes, flags any derived file that has substantive divergence from canonical, and lists derived sections that should have moved when canonical did.
+description: Read-only auditor that verifies the four canonical modules and the five derived files are consistent. Run only when the user asks for it by name or invokes its command. Reports per-file sha256 short hashes, flags any derived file that has substantive divergence from canonical, and lists derived sections that should have moved when canonical did.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: inherit
 ---
 
 You audit cross-file consistency. You do not edit anything.
@@ -29,7 +29,7 @@ You audit cross-file consistency. You do not edit anything.
 
 ## Output format
 ```
-DRIFT REPORT — <date>
+DRIFT REPORT: <date>
 =====================
 Canonical:
   INNER_COMMONS_CORE.md       <sha8>  <last commit short>
@@ -51,7 +51,7 @@ Verdict: IN-SYNC | NEEDS-COMPOSER
 
 ## What you do not do
 - Edit any file. Findings only.
-- Recompose. That is `module-composer`'s job — name it in the verdict
+- Recompose. That is `module-composer`'s job. Name it in the verdict
   if action is needed.
 - Treat formatting differences (XML tags, abbreviated wording) as drift.
   Substantive content drift only.

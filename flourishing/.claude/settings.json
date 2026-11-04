@@ -7,8 +7,6 @@
   "permissions": {
     "allow": [
       "Read(./**)",
-      "Read(//home/code0x19/.claude/**)",
-
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",
@@ -27,7 +25,6 @@
       "Bash(git fetch*)",
       "Bash(git merge --ff-only*)",
       "Bash(git commit *)",
-
       "Bash(gh pr view *)",
       "Bash(gh pr list *)",
       "Bash(gh pr diff *)",
@@ -35,12 +32,10 @@
       "Bash(gh issue list *)",
       "Bash(gh issue view *)",
       "Bash(gh api repos/*)",
-
       "Bash(python3 *)",
       "Bash(python3 -m json.tool*)",
       "Bash(bash scripts/*)",
       "Bash(bash .claude/scripts/*)",
-
       "Bash(ls *)",
       "Bash(find . *)",
       "Bash(grep -r *)",
@@ -57,16 +52,7 @@
       "Bash(ln -sf *)",
       "Bash(chmod +x *)"
     ],
-    "ask": [
-      "Bash(git push *)",
-      "Bash(git push)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh pr close *)",
-      "Bash(gh pr comment *)",
-      "Bash(gh issue create *)",
-      "Bash(gh issue close *)"
-    ],
+    "ask": [],
     "deny": [
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~*)",
@@ -84,10 +70,15 @@
       "Read(./.env.*)",
       "Read(**/secrets/**)",
       "Read(**/*.key)",
-      "Read(**/*.pem)"
-    ],
-    "additionalDirectories": [
-      "/home/code0x19/SOFTWARE/agent-alignment/flourishing/.claude"
+      "Read(**/*.pem)",
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr comment *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue close *)"
     ]
   },
   "hooks": {
@@ -96,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/session_start.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/session_start.sh",
             "timeout": 15
           }
         ]
@@ -108,7 +99,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/pre_bash_guard.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/pre_bash_guard.sh",
             "timeout": 5
           }
         ]
@@ -120,7 +111,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/post_edit_verify.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/post_edit_verify.sh",
             "timeout": 30
           }
         ]
@@ -129,6 +120,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/statusline.sh"
+    "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/statusline.sh"
   }
 }

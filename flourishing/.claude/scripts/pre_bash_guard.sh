@@ -17,6 +17,7 @@ except Exception:
 fixed_patterns=(
   'rm -rf /'
   'rm -rf ~'
+  'git push'
   'git push --force'
   'git push -f '
   '--no-verify'
@@ -30,8 +31,7 @@ for pat in "${fixed_patterns[@]}"; do
   if printf '%s' "$cmd" | grep -Fq -- "$pat"; then
     {
       echo "pre-bash-guard: blocked literal pattern '$pat'"
-      echo "command: $cmd"
-      echo "If this is intentional, ask the user to confirm explicitly first."
+      echo "Stop and explain the blocked action. Do not retry or delegate it."
     } >&2
     exit 2
   fi
@@ -46,8 +46,7 @@ for pat in "${regex_patterns[@]}"; do
   if printf '%s' "$cmd" | grep -Eq -- "$pat"; then
     {
       echo "pre-bash-guard: blocked regex pattern '$pat'"
-      echo "command: $cmd"
-      echo "If this is intentional, ask the user to confirm explicitly first."
+      echo "Stop and explain the blocked action. Do not retry or delegate it."
     } >&2
     exit 2
   fi

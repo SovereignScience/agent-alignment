@@ -22,32 +22,32 @@ rel="${file_path#$PWD/}"
 case "$rel" in
   INNER_COMMONS_CORE.md|FLOURISHING_PROTOCOL.md|SKEPTIC_ARBITER.md|REPAIR_PROTOCOL.md)
     echo "post-edit-verify: canonical alignment module touched ($rel)."
-    echo "  → Run /align-compose $rel to propagate to derived files."
-    echo "  → Or: bash scripts/check_drift.sh"
+    echo "  - Run /align-compose $rel to propagate to derived files."
+    echo "  - Or: bash scripts/check_drift.sh"
     ;;
   COMPOSED_AGENT.md|FOR_CLAUDE.md|FOR_CHATGPT.md|FOR_API.md)
     echo "post-edit-verify: derived file touched ($rel)."
-    echo "  → Run /align-drift-check to confirm canonical-vs-derived consistency."
+    echo "  - Run /align-drift-check to confirm canonical-vs-derived consistency."
     ;;
   .claude/settings.json)
     if python3 -c "import json,sys;json.load(open('.claude/settings.json'))" 2>/dev/null; then
-      echo "post-edit-verify ✓ settings.json is valid JSON"
+      echo "post-edit-verify ok: settings.json is valid JSON"
     else
-      echo "post-edit-verify ✗ settings.json is INVALID JSON — fix before continuing"
+      echo "post-edit-verify FAIL: settings.json is INVALID JSON, fix before continuing"
     fi
     ;;
   .claude/agents/*.md|.claude/commands/*.md)
     if head -n 1 "$rel" 2>/dev/null | grep -q '^---$'; then
-      echo "post-edit-verify ✓ frontmatter present in $rel"
+      echo "post-edit-verify ok: frontmatter present in $rel"
     else
-      echo "post-edit-verify ✗ $rel missing YAML frontmatter (must start with ---)"
+      echo "post-edit-verify FAIL: $rel missing YAML frontmatter (must start with ---)"
     fi
     ;;
   .claude/scripts/*.sh|scripts/*.sh)
     if bash -n "$rel" 2>/tmp/align-hook.err; then
-      echo "post-edit-verify ✓ bash -n $rel"
+      echo "post-edit-verify ok: bash -n $rel"
     else
-      echo "post-edit-verify ✗ $rel has shell syntax errors:"
+      echo "post-edit-verify FAIL: $rel has shell syntax errors:"
       head -n 10 /tmp/align-hook.err
     fi
     ;;

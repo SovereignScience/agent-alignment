@@ -21,6 +21,6 @@ Steps:
    the flag list. Brief: "produce the final response, calibrated to
    flag severity. Do not over-correct. Do not lecture."
 3. Output to the user: the Skeptic flag list, then the Arbiter's
-   rewritten response (or "No rewrite — Skeptic was silent.").
+   rewritten response (or "No rewrite: Skeptic was silent.").
 
 Do not modify any file in the repo.

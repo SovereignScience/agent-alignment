@@ -1,5 +1,5 @@
 ---
-description: Scaffold a new alignment module — write a stub canonical .md, add a section to COMPOSED_AGENT.md, register it in README.md's Repository Map, and propagate to the three provider variants. Use sparingly — adding modules is a content decision, not a config one.
+description: "Scaffold a new alignment module: write a stub canonical .md, add a section to COMPOSED_AGENT.md, register it in README.md's Repository Map, and propagate to the three provider variants. Use sparingly. Adding modules is a content decision, not a config one."
 argument-hint: <module-name>
 allowed-tools: Read, Edit, Write, Bash, Agent
 model: inherit
@@ -12,11 +12,11 @@ Input: `$1` is the proposed module name in `SHOUTY_SNAKE` form, e.g.
 
 Before scaffolding, ask the user:
 
-1. **What concrete failure mode does this module target?** If they
-   cannot name one, do not create the module — point them at
+1. What concrete failure mode does this module target? If they
+   cannot name one, do not create the module. Point them at
    `CONTRIBUTING.md` instead.
-2. **Why is this not absorbable into an existing canonical module?**
-3. **What single example demonstrates the intended behavior change?**
+2. Why is this not absorbable into an existing canonical module?
+3. What single example demonstrates the intended behavior change?
 
 If the user clears all three, proceed:
 
