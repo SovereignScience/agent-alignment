@@ -29,6 +29,12 @@ chronicle = false
 extends = ":workspace"
 
 [permissions.workstation.filesystem]
+# Deny-read globs below are expanded to a list of matching files before each
+# sandboxed process starts, on platforms that snapshot matches, down to this
+# depth. A deeper file, or one created while a process runs, is not covered
+# until the next process starts. Raise the depth if your checkouts nest
+# deeper; check enforcement on your client with throwaway sentinel files.
+glob_scan_max_depth = 8
 "~/.ssh" = "deny"
 "~/.kube" = "deny"
 "~/.config/gh" = "deny"
