@@ -42,7 +42,10 @@ THREAD = "Thread: "
 REVIEW_OF = "From review "
 FOLLOW_UP = "Follow-up from review "
 LINES = re.compile(r"^lines? (\d+)(?:-(\d+))? \((new|old)\)$")
-ANCHOR = re.compile(r"^(.*), (lines? \d+(?:-\d+)? \((?:new|old)\)|whole file) at [0-9a-f]+$")
+ANCHOR = re.compile(r"^(.*), (lines? \d+(?:-\d+)?(?: \((?:new|old)\))?|whole file|whole document) at (?:plan )?[0-9a-f]+$")
+PLAN = "Plan: "
+PLAN_DECISION = re.compile(r"^Plannotator plan (approved|annotated) \(")
+PLAN_NOTE = re.compile(r"^## \d+\. (.*)$")
 RESOLVED = "resolved"
 REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
 DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
@@ -50,11 +53,24 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 1_048_576
 # The task side panel opens at 60% of the window instead of Lattice's 30rem,
 # on an opaque background (the themes' surface is translucent, so the board
-# showed through); its left edge drags to resize, the width is kept in
+# showed through). Each section is a card one step lighter than the panel,
+# with a quiet hue by kind (a data-lr attribute set from its heading or
+# content): blue description, green criteria, accent review, violet plans,
+# cyan comments, slate for the rest. State colours stay for state. Menus
+# follow the theme (Lattice sets no color-scheme, so native selects and their
+# option lists were drawn light on every theme); its left edge drags to resize, the width is kept in
 # localStorage, and a double-click on the edge resets it. The edge sits outside the panel, so its
 # clicks stop before the dashboard's click-outside-closes-the-panel listener.
 PANEL = """<style>
 .detail-panel{width:var(--lr-panel-w,60vw);max-width:96vw;background:linear-gradient(var(--surface),var(--surface)),var(--bg-base,#111)}
+.dp-section,.detail-section{--lr-hue:#94a3b8;margin-top:.75rem;padding:.7rem .9rem .8rem;border:1px solid color-mix(in srgb,var(--text-primary) 12%,transparent);border-left:3px solid color-mix(in srgb,var(--lr-hue) 75%,transparent);border-radius:10px;background:color-mix(in srgb,var(--lr-hue) 6%,color-mix(in srgb,var(--text-primary) 4%,transparent))}
+.dp-section h3,.detail-section h3{margin:0 0 .5rem;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--lr-hue) 60%,var(--text-primary))}
+[data-lr=description]{--lr-hue:#7aa2f7}[data-lr=criteria]{--lr-hue:#4ade80}[data-lr=review]{--lr-hue:var(--accent-primary,#2b6cb0)}
+[data-lr=plans]{--lr-hue:#c084fc}[data-lr=comments]{--lr-hue:#38bdf8}
+.dp-comment,.comment-item{background:color-mix(in srgb,var(--text-primary) 6%,transparent);border-color:color-mix(in srgb,var(--text-primary) 12%,transparent)}
+:root{color-scheme:dark}[data-theme="linear"]{color-scheme:light}
+select{background-color:color-mix(in srgb,var(--text-primary) 8%,var(--bg-base,#111));color:var(--text-primary);border:1px solid color-mix(in srgb,var(--text-primary) 24%,transparent);border-radius:var(--radius-sm,4px)}
+select option{background-color:var(--bg-base,#111);color:var(--text-primary)}
 .lr-resize{display:none;position:fixed;top:var(--nav-h,52px);bottom:0;right:calc(var(--lr-panel-w,60vw) - 4px);width:8px;cursor:col-resize;z-index:101}
 .detail-panel.open+.lr-resize{display:block}
 .lr-resize:hover,.lr-resize.dragging{background:var(--accent-primary,#2b6cb0);opacity:.5}
@@ -68,7 +84,12 @@ function refit(){document.querySelectorAll("iframe.review-frame").forEach(functi
 f.style.height="1px";f.style.height=(f.contentDocument.documentElement.scrollHeight+4)+"px"})}
 apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
+var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments"};
+function tag(){document.querySelectorAll(".dp-section,.detail-section").forEach(function(s){
+var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
+KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k})}
 document.addEventListener("DOMContentLoaded",function(){
+tag();new MutationObserver(tag).observe(document.body,{childList:true,subtree:true});
 var panel=document.getElementById("detail-panel");if(!panel)return;
 var edge=document.createElement("div");edge.className="lr-resize";edge.title="Drag to resize; double-click to reset";
 panel.insertAdjacentElement("afterend",edge);
@@ -250,7 +271,7 @@ def parse_review(stdout):
         except json.JSONDecodeError:
             continue
         if isinstance(record, dict) and "decision" in record:
-            decision, message = record["decision"], record.get("message")
+            decision, message = record["decision"], record.get("message", record.get("feedback"))
             if not isinstance(message, str):
                 message = "" if message is None else json.dumps(message)
             return (decision if isinstance(decision, str) else None), message.strip()
@@ -311,6 +332,69 @@ def review_notes(message):
             text.append(line)
     flush()
     return notes
+
+
+def plan_notes(feedback):
+    """The notes in Plannotator's annotate feedback on a plan, as (path,
+    where, text, quote). Each note is a "## N. <heading>" section: "General
+    feedback about the file", or "(line 10) Feedback on: "<selected text>"",
+    or another kind such as a removal, followed by the comment quoted with
+    ">". The feedback ends at a "---" line."""
+    notes, heading, body = [], None, []
+
+    def flush():
+        if heading is None:
+            return
+        text = "\n".join(line[2:] if line.startswith("> ") else line.lstrip(">") for line in body).strip()
+        place = re.match(r"^\((lines? [\d-]+)\) (.*)$", heading)
+        if place:
+            where, kind = place.group(1), place.group(2)
+            selected = re.match(r'^Feedback on: "(.*)"$', kind)
+            quote = ["> " + selected.group(1)] if selected else []
+            if not selected:
+                text = kind + ("\n" + text if text else "")
+        else:
+            where, quote = "whole document", []
+            if heading != "General feedback about the file":
+                text = heading + ("\n" + text if text else "")
+        if text:
+            notes.append(("plan", where, text, quote))
+
+    for line in feedback.splitlines():
+        match = PLAN_NOTE.match(line)
+        if match:
+            flush()
+            heading, body = match.group(1).strip(), []
+        elif line.strip() == "---":
+            flush()
+            heading, body = None, []
+        elif heading is not None:
+            body.append(line)
+    flush()
+    return notes
+
+
+def plan_status(comments, plan_text):
+    """The state of a task's plan: not reviewed, changes requested, approved,
+    or changed since it was approved (the approval names the plan's sha256)."""
+    reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
+               if c.get("role") == "plan-review" and not c.get("deleted")]
+    if not reviews:
+        return "not reviewed yet"
+    latest = max(reviews)[2]
+    body = latest.get("body") or ""
+    match = PLAN_DECISION.match(body)
+    if not match or match.group(1) != "approved":
+        return "changes requested"
+    recorded = next((line[len(PLAN):].strip() for line in body.splitlines() if line.startswith(PLAN)), None)
+    current = hashlib.sha256(plan_text.encode()).hexdigest()
+    return "approved" if recorded == current else "changed since it was approved; review it again"
+
+
+def waits_for_plan_approval(task):
+    """True when the task's needs_human flag asks the owner to approve its plan."""
+    reason = ((task.get("needs_human") or {}).get("reason") or "").lower()
+    return "approv" in reason and "plan" in reason
 
 
 def note_anchor(path, where):
@@ -534,8 +618,8 @@ class Context:
             return []
 
     def start_plannotator(self, key, record_on=None, base=None, head=None, live=False, tree=None):
-        """One Plannotator session. The range is resolved to commit IDs once, and
-        those IDs feed both the patch and the recorded Reviewed line. A live
+        """One Plannotator code review. The range is resolved to commit IDs once,
+        and those IDs feed both the patch and the recorded Reviewed line. A live
         session shows the uncommitted changes of tree (default: this checkout)."""
         tree = Path(tree) if tree else self.repo
         if live:
@@ -553,6 +637,67 @@ class Context:
             what = "patch %s..%s" % (base_sha[:12], head_sha[:12])
             revision = "%s..%s" % (base_sha, head_sha)
             args, patch_args = plannotator_args(self.plannotator, base_sha, head_sha)
+
+        def source(side, path):
+            """A file's text on the reviewed old or new side, or None."""
+            if side == "old":
+                return run_git(self.repo, "show", "%s:%s" % (base_sha, path), check=False) if base_sha else None
+            if live:
+                full = (tree / path).resolve()
+                return full.read_text(errors="replace") if tree.resolve() in full.parents and full.is_file() else None
+            return run_git(self.repo, "show", "%s:%s" % (head_sha, path), check=False)
+
+        def record(job, decision, message, stamp):
+            body = "Plannotator %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, REVIEWED, revision, message)
+            if self.post_review(job, record_on, body, "review"):
+                notes = []
+                for path, where, text in review_notes(message):
+                    side = LINES.match(where)
+                    notes.append((path, where, text, quoted_lines(source(side.group(3), path), where) if side else []))
+                self.record_threads(record_on, body, notes, head_sha[:12], job)
+
+        stdin = run_git(self.repo, *patch_args).encode() if patch_args else None
+        return self.session(key, what, args, tree if live else self.repo, stdin, record if record_on else None)
+
+    def start_plan_review(self, task):
+        """A Plannotator annotate session on the task's plan file. The decision
+        is recorded with the plan's sha256 as it stands when the session ends,
+        edits made in Plannotator included; an approval also clears a
+        needs_human flag that asks for the plan's approval."""
+        sid = task["short_id"]
+        plan = self.board / ".lattice" / "plans" / (task["id"] + ".md")
+        if not plan.is_file():
+            raise RuntimeError("%s has no plan file yet" % sid)
+        what = "plan of %s" % sid
+        args = [self.plannotator, "--browser", "none", "annotate", str(plan), "--gate", "--json"]
+
+        def record(job, decision, message, stamp):
+            digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+            body = "Plannotator plan %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, PLAN, digest, message)
+            if not self.post_review(job, sid, body, "plan-review"):
+                return
+            self.record_threads(sid, body, plan_notes(message), "plan " + digest[:12], job)
+            current = find_task(self.board, sid)
+            if decision == "approved" and current and waits_for_plan_approval(current) and not job.error:
+                rc, msg = self.lattice_cmd("needs-human", sid, "--clear", "--note", "Plan approved in Plannotator (plan %s)" % digest[:12])
+                if rc != 0:
+                    job.error = "the plan approval was recorded but the needs_human flag was not cleared: " + msg
+
+        return self.session(sid, what, args, self.board, None, record)
+
+    def post_review(self, job, sid, body, role):
+        job.out_path.write_text(body)
+        rc, msg = self.lattice_cmd("comment", sid, "--file", str(job.out_path), "--role", role)
+        if rc != 0:
+            job.error = "the review was not recorded on the task: " + msg
+            return False
+        job.result_path = job.out_path
+        return True
+
+    def session(self, key, what, args, cwd, stdin, record):
+        """Run one Plannotator session in the background; one per task at a
+        time. record(job, decision, message, stamp) is called for an approved or
+        annotated decision; None records nothing."""
         with self.lock:
             running = self.jobs.get(key)
             if running and not running.done:
@@ -566,26 +711,17 @@ class Context:
         out = open(job.out_path, "w")
         err = open(job.err_path, "w")
         try:
-            job.proc = subprocess.Popen(args, cwd=tree if live else self.repo, env=env, stdout=out, stderr=err,
-                                        stdin=subprocess.PIPE if patch_args else None)
-            if patch_args:
-                job.proc.stdin.write(run_git(self.repo, *patch_args).encode())
+            job.proc = subprocess.Popen(args, cwd=cwd, env=env, stdout=out, stderr=err,
+                                        stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL)
+            if stdin is not None:
+                job.proc.stdin.write(stdin)
                 job.proc.stdin.close()
-        except (OSError, RuntimeError) as exc:
+        except OSError as exc:
             job.error = str(exc)
             job.done = True
             out.close()
             err.close()
             return job
-
-        def source(side, path):
-            """A file's text on the reviewed old or new side, or None."""
-            if side == "old":
-                return run_git(self.repo, "show", "%s:%s" % (base_sha, path), check=False) if base_sha else None
-            if live:
-                full = (tree / path).resolve()
-                return full.read_text(errors="replace") if tree.resolve() in full.parents and full.is_file() else None
-            return run_git(self.repo, "show", "%s:%s" % (head_sha, path), check=False)
 
         def finish():
             job.rc = job.proc.wait()
@@ -599,17 +735,10 @@ class Context:
                 detail = (job.err_path.read_text(errors="replace").strip() or job.out_path.read_text(errors="replace").strip())[-400:]
                 job.error = "plannotator exited %s without a decision: %s" % (job.rc, detail or "no output")
                 job.out_path.unlink(missing_ok=True)
-            elif decision == "dismissed" or not record_on:
+            elif decision == "dismissed" or not record:
                 job.out_path.unlink(missing_ok=True)
             else:
-                body = "Plannotator %s (%s), %s\n%s%s\n\n%s\n" % (decision, what, stamp, REVIEWED, revision, message)
-                job.out_path.write_text(body)
-                rc, msg = self.lattice_cmd("comment", record_on, "--file", str(job.out_path), "--role", "review")
-                if rc != 0:
-                    job.error = "the review was not recorded on the task: " + msg
-                    return
-                job.result_path = job.out_path
-                self.record_threads(record_on, body, review_notes(message), source, head_sha, job)
+                record(job, decision, message, stamp)
 
         def wait():
             try:
@@ -622,33 +751,31 @@ class Context:
         threading.Thread(target=wait, daemon=True).start()
         return job
 
-    def record_threads(self, sid, body, notes, source, sha, job):
+    def record_threads(self, sid, body, notes, at, job):
         """Each note of a recorded review becomes a thread: a top-level comment
-        (Lattice nests one level only) naming the place, the review and the
-        quoted lines. A note on lines that already have an open thread (same
-        file and quoted lines, or same file and place for a thread without a
-        quote) is a follow-up reply in that thread, so a line keeps one
-        history."""
+        (Lattice nests one level only) naming the place, what was reviewed, the
+        review and the quoted lines. A note on lines that already have an open
+        thread (same file and quoted lines, or same file and place for a
+        thread without a quote) is a follow-up reply in that thread, so a line
+        keeps one history. notes are (path, where, text, quote)."""
         if not notes:
             return
         comments = self.comments(sid)
-        review = next((c for c in reversed(comments) if c.get("role") == "review"
+        review = next((c for c in reversed(comments) if c.get("role") in ("review", "plan-review")
                        and (c.get("body") or "").strip() == body.strip()), None)
         if not review:
             job.error = "the review was recorded but its notes could not be split into threads"
             return
         open_threads = {t["key"]: t for t in review_threads(comments)
                         if t["state"] != "resolved" and t["key"] and t["root"].get("id") != review["id"]}
-        for i, (path, where, text) in enumerate(notes, 1):
-            side = LINES.match(where)
-            quote = quoted_lines(source(side.group(3), path), where) if side else []
+        for i, (path, where, text, quote) in enumerate(notes, 1):
             anchor = note_anchor(path, where)
             existing = open_threads.get(thread_key(path, where, quote)) or open_threads.get((path, where))
             if existing:
-                content = "%s%s, %s at %s:\n%s\n" % (FOLLOW_UP, review["id"], anchor, sha[:12], text)
+                content = "%s%s, %s at %s:\n%s\n" % (FOLLOW_UP, review["id"], anchor, at, text)
                 args = ("comment", sid, "--reply-to", existing["root"]["id"])
             else:
-                content = "%s%s at %s\n%s%s\n%s%s\n" % (THREAD, anchor, sha[:12], REVIEW_OF, review["id"],
+                content = "%s%s at %s\n%s%s\n%s%s\n" % (THREAD, anchor, at, REVIEW_OF, review["id"],
                                                          "".join(q + "\n" for q in quote), text)
                 args = ("comment", sid)
             note = job.out_path.with_name(job.out_path.stem + ".note%d.md" % i)
@@ -723,17 +850,25 @@ body{margin:0;padding:0 0 .5rem;background:transparent;color:var(--text-primary,
 table{border-collapse:collapse;width:100%;margin:.3rem 0}td,th{text-align:left;padding:.15rem .4rem;border-bottom:1px solid var(--border,#2a2f37);vertical-align:top}
 th{color:var(--text-muted,#9aa4b2);font-weight:600}code{font-family:var(--font-mono,monospace);font-size:.8rem}
 pre{white-space:pre-wrap;font:.8rem/1.4 var(--font-mono,monospace);margin:.3rem 0;padding:.4rem;border:1px solid var(--border,#2a2f37);border-radius:var(--radius-sm,4px)}
-form{display:inline}button{padding:.125rem .5rem;margin:.1rem .2rem .1rem 0;border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);background:var(--surface,#2a2f37);color:var(--text-primary,#e4e7eb);font-size:.8rem;cursor:pointer}
-button:hover{background:var(--surface-hover,#3a4250)}button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}
+form{display:inline}
+button{padding:.3rem .8rem;margin:.15rem .3rem .15rem 0;line-height:1.3;border:1px solid color-mix(in srgb,var(--accent-primary,#2b6cb0) 60%,var(--border,#3a4250));border-radius:var(--radius-sm,4px);background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 16%,var(--surface-raised,#252a33));color:var(--text-primary,#e4e7eb);font:600 .85rem var(--font-body,system-ui,sans-serif);cursor:pointer}
+button:hover{background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 32%,var(--surface-raised,#252a33))}
+button:focus-visible{outline:2px solid var(--accent-primary,#2b6cb0);outline-offset:2px}
+button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}button.primary:hover{filter:brightness(1.15)}
+button.small{padding:.12rem .5rem;font-size:.78rem;font-weight:500}
 p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-warning,#f6c343)}.err{color:var(--color-danger,#ff7b72)}.ok{color:var(--color-success,#7ee787)}
-.next{padding:.4rem;border:1px solid var(--accent-primary,#2b6cb0);border-radius:var(--radius-sm,4px)}
-.thread{margin:.5rem 0;padding:.2rem 0 .2rem .6rem;border-left:3px solid var(--color-warning,#f6c343)}.thread.resolved{border-left-color:var(--color-success,#7ee787)}
-.msg{margin:.25rem 0}.msg .text{white-space:pre-wrap}form.reply{display:flex;gap:.3rem;align-items:flex-end;margin:.3rem 0}
+.block,.thread{--hue:#94a3b8;margin:.6rem 0;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--text-primary,#e4e7eb) 14%,transparent);border-left:3px solid color-mix(in srgb,var(--hue) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--hue) 6%,color-mix(in srgb,var(--text-primary,#e4e7eb) 5%,transparent))}
+.block h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--hue) 60%,var(--text-primary,#e4e7eb))}
+.block.plan{--hue:#c084fc}.block.changes{--hue:#7aa2f7}.block.verdict{--hue:var(--accent-primary,#2b6cb0)}
+.next{margin:.2rem 0 .6rem;padding:.55rem .75rem;border:1px solid var(--accent-primary,#2b6cb0);border-left-width:4px;border-radius:8px;background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 12%,transparent)}
+.thread{--hue:var(--color-warning,#f6c343);border-left-width:4px}.thread.resolved{--hue:var(--color-success,#7ee787)}
+.msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 6%,transparent)}.msg .text{white-space:pre-wrap}
+.msg.owner{background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 14%,transparent)}.msg .who{font-weight:600;color:var(--text-primary,#e4e7eb)}form.reply{display:flex;gap:.3rem;align-items:flex-end;margin:.3rem 0}
 textarea{flex:1;min-height:2.6rem;font:inherit;color:inherit;background:var(--surface,#2a2f37);border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);padding:.25rem}
 """
 
 INHERIT = """<script>try{var s=getComputedStyle(parent.document.documentElement);
-["--text-primary","--text-muted","--accent-primary","--text-on-accent","--surface","--surface-hover","--border","--radius-sm",
+["--text-primary","--text-muted","--accent-primary","--text-on-accent","--surface","--surface-hover","--surface-raised","--border","--radius-sm",
 "--font-body","--font-mono","--color-warning","--color-danger","--color-success"].forEach(function(v){
 document.documentElement.style.setProperty(v,s.getPropertyValue(v))})}catch(e){}</script>"""
 
@@ -748,11 +883,11 @@ def page(title, body, refresh=False):
             + "<style>" + STYLE + "</style></head><body>" + body + "</body></html>").encode()
 
 
-def button(ctx, action, label, fields=None, primary=False, tab=False):
+def button(ctx, action, label, fields=None, primary=False, tab=False, small=False):
     """A one-button form. tab=True submits into a new tab of the same browser
     and reloads this page shortly after, so the section shows the new state."""
     hidden = "".join("<input type='hidden' name='%s' value='%s'>" % (e(k), e(v)) for k, v in (fields or {}).items())
-    cls = " class='primary'" if primary else ""
+    cls = " class='%s'" % " ".join(c for c, on in (("primary", primary), ("small", small)) if on) if primary or small else ""
     target = " target='_blank' onsubmit=\"setTimeout(function(){location.reload()},1500)\"" if tab else ""
     return ("<form method='post' action='%s'%s><input type='hidden' name='token' value='%s'>%s<button%s>%s</button></form>"
             % (e(action), target, ctx.token, hidden, cls, e(label)))
@@ -777,8 +912,9 @@ def render_threads(ctx, sid, threads):
                    % (" resolved" if resolved else "", e(t["anchor"]), "ok" if resolved else "warn", e(t["state"]), status))
         for m in t["messages"]:
             text = t["note"] if m is t["root"] else m.get("body") or ""
-            out.append("<div class='msg'><span class='muted'>%s, %s%s</span><div class='text'>%s</div></div>"
-                       % (e(m.get("author")), e(m.get("created_at")), ", edited" if m.get("edited") else "", e(text)))
+            owner = (m.get("author") or "").startswith("human:")
+            out.append("<div class='msg%s'><span class='who'>%s</span> <span class='muted'>%s%s</span><div class='text'>%s</div></div>"
+                       % (" owner" if owner else "", e(m.get("author")), e(m.get("created_at")), ", edited" if m.get("edited") else "", e(text)))
         if resolved:
             out.append(button(ctx, act + "reopen", "Reopen", {"comment": t["root"]["id"]}))
         else:
@@ -788,7 +924,7 @@ def render_threads(ctx, sid, threads):
     return "".join(out)
 
 
-def next_step(ctx, task, rng, review, threads, running, block, live):
+def next_step(ctx, task, rng, review, threads, running, block, live, plan_state):
     """One line that says what the owner does now."""
     sid, status = task["short_id"], task.get("status")
     act = REVIEW_PATH + "/t/" + sid + "/"
@@ -799,6 +935,10 @@ def next_step(ctx, task, rng, review, threads, running, block, live):
                 "went back to the agent: close that tab and come back here. Each note becomes a thread below.")
     elif status in ("done", "cancelled"):
         return ""
+    elif plan_state and plan_state != "approved" and waits_for_plan_approval(task):
+        text = ("The agent is waiting for you to approve its plan. Use Plannotator: review the plan. Comment on lines or "
+                "edit it in place, then Send Feedback (each note becomes a thread the agent answers) or Approve, which "
+                "also clears the agent's approval flag.")
     elif rng["mode"] == "none":
         if not (live or rng.get("empty_branch")):
             return ""
@@ -864,9 +1004,17 @@ def render_review(ctx, task):
     live = live_tree(ctx.repo, rng)
     if live and not worktree_dirty(live[0]):
         live = None
-    body = [tool_notes(ctx), notice(ctx, sid), "<p>Work: %s</p>" % range_summary(task, rng)]
+    comments = ctx.comments(sid)
+    plan = ctx.board / ".lattice" / "plans" / (task["id"] + ".md")
+    plan_state = plan_status(comments, plan.read_text(errors="replace")) if plan.is_file() else None
+    work = []
+    if plan_state:
+        waiting = plan_state != "approved" and waits_for_plan_approval(task)
+        work.append("<p>Plan: <b>%s</b> %s</p>" % (e(plan_state), button(ctx, act + "plan", "Plannotator: review the plan", tab=True, primary=waiting)
+                                                   if ctx.plannotator else ""))
+    work.append("<p>Work: %s</p>" % range_summary(task, rng))
     if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
-        body.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
+        work.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
                     % (e(current_branch(ctx.repo)), e(rng["branch"])))
     actions = []
     if ctx.plannotator:
@@ -876,63 +1024,68 @@ def render_review(ctx, task):
             actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes in %s, feedback only" % home_short(live[0]),
                                   {"live": "1"}, tab=True))
     if actions:
-        body.append("<p>" + " ".join(actions) + "</p>")
+        work.append("<p>" + " ".join(actions) + "</p>")
+    job = ctx.jobs.get(sid)
+    running = bool(job and not job.done)
+    if job:
+        state = "Plannotator running since " + time.strftime("%H:%M:%S", time.localtime(job.started)) if running else "Plannotator finished"
+        work.append("<p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path)))
+        url = session_url(job.err_path.read_text()) if job.err_path.is_file() else None
+        if running:
+            link = "<a href='%s' target='_blank' rel='noopener'>Open the session</a>. " % e(url) if url else ""
+            work.append("<p>%sAnnotations stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
+                        % (link, button(ctx, act + "close", "Close session")))
+        if job.error:
+            work.append("<p class='err'>%s</p>" % e(job.error))
+        elif job.done and not job.result_path:
+            work.append("<p class='muted'>Plannotator closed without a review.</p>")
+    changes = []
     if rng["commits"]:
-        body.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
+        changes.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
         for c in rng["commits"]:
-            body.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            changes.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
                 e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
-                button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True) if ctx.plannotator else ""))
-        body.append("</table>")
+                button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True, small=True) if ctx.plannotator else ""))
+        changes.append("</table>")
     if rng["base_sha"]:
         try:
             files = changed_files(ctx.repo, rng["base"], rng["head"])
         except RuntimeError as exc:
             files = []
-            body.append("<p class='err'>%s</p>" % e(exc))
-        body.append("<table><tr><th></th><th>File (%d)</th><th></th></tr>" % len(files))
+            changes.append("<p class='err'>%s</p>" % e(exc))
+        changes.append("<table><tr><th></th><th>File (%d)</th><th></th></tr>" % len(files))
         for f in files:
             shown = f["path"] if f["old_path"] == f["path"] else f["old_path"] + " → " + f["path"]
             cells = ""
             if ctx.code:
                 if rng["head_sha"] == head_now and (ctx.repo / f["path"]).is_file():
-                    cells += button(ctx, act + "open", "open", {"path": f["path"]})
+                    cells += button(ctx, act + "open", "open", {"path": f["path"]}, small=True)
                 cells += button(ctx, act + "filediff", "diff", {"path": f["path"], "old_path": f["old_path"], "status": f["status"],
-                                                                "base": rng["base"], "head": rng["head"]})
-            body.append("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(f["status"]), e(shown), cells))
-        body.append("</table>")
-    job = ctx.jobs.get(sid)
-    running = bool(job and not job.done)
-    if job:
-        state = "Plannotator running since " + time.strftime("%H:%M:%S", time.localtime(job.started)) if running else "Plannotator finished"
-        body.append("<p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path)))
-        url = session_url(job.err_path.read_text()) if job.err_path.is_file() else None
-        if running:
-            link = "<a href='%s' target='_blank' rel='noopener'>Open the session</a>. " % e(url) if url else ""
-            body.append("<p>%sAnnotations stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
-                        % (link, button(ctx, act + "close", "Close session")))
-        if job.error:
-            body.append("<p class='err'>%s</p>" % e(job.error))
-        elif job.done and not job.result_path:
-            body.append("<p class='muted'>Plannotator closed without a review.</p>")
-    comments = ctx.comments(sid)
+                                                                "base": rng["base"], "head": rng["head"]}, small=True)
+            changes.append("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(f["status"]), e(shown), cells))
+        changes.append("</table>")
     review = latest_review(comments)
     threads = review_threads(comments)
     block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
-    body.insert(2, next_step(ctx, task, rng, review, threads, running, block, live))
+    verdict = []
     if review:
         text = review.get("body") or ""
         label = {"approved": "approved", "annotated": "changes requested"}.get(review_decision(text), "review")
         covered = re.match(r"^Plannotator \w+ \((.*)\), \S+$", text.splitlines()[0] if text else "")
-        body.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
+        verdict.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
             e(label), ", of " + e(covered.group(1)) if covered else "", e(review.get("author")), e(review.get("created_at")), e(text)))
-    if threads:
-        body.append(render_threads(ctx, sid, threads))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
         if block:
-            body.append("<p class='muted'>Completion: %s.</p>" % e(block))
+            verdict.append("<p class='muted'>Completion: %s.</p>" % e(block))
         else:
-            body.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+            verdict.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+
+    def section(kind, title, parts):
+        return "<section class='block %s'><h4>%s</h4>%s</section>" % (kind, title, "".join(parts)) if parts else ""
+    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, live, plan_state),
+            section("plan", "Plan and work", work), section("changes", "Commits and files", changes), section("verdict", "Latest review", verdict)]
+    if threads:
+        body.append(render_threads(ctx, sid, threads))
     return page(sid + " review", "".join(body), refresh=running)
 
 
@@ -1055,6 +1208,8 @@ def make_handler(ctx, base=None, static_dir=None):
             try:
                 if action == "plannotator":
                     return self.open_session(sid, form)
+                if action == "plan":
+                    return self.to_session(sid, lambda: ctx.start_plan_review(task))
                 elif action == "close":
                     ctx.close_session(sid)
                 elif action == "open":
@@ -1081,16 +1236,21 @@ def make_handler(ctx, base=None, static_dir=None):
             self.redirect(REVIEW_PATH + "/t/" + sid)
 
         def open_session(self, sid, form):
-            """Start Plannotator and send this tab to its session; the task page
-            reloads on its own. Runs in the browser the owner already uses."""
-            try:
+            """A code review of the task's range, or of its uncommitted work."""
+            def start():
                 if form.get("live") == "1":
                     live = live_tree(ctx.repo, resolve_range(ctx.repo, find_task(ctx.board, sid), ctx.main))
                     if not live:
                         raise RuntimeError("no checkout holds uncommitted work for %s" % sid)
-                    job = ctx.start_plannotator(sid, record_on=sid, base=live[1], live=True, tree=live[0])
-                else:
-                    job = ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None)
+                    return ctx.start_plannotator(sid, record_on=sid, base=live[1], live=True, tree=live[0])
+                return ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None)
+            return self.to_session(sid, start)
+
+        def to_session(self, sid, start):
+            """Start a Plannotator session and send this tab to it; the task page
+            reloads on its own. Runs in the browser the owner already uses."""
+            try:
+                job = start()
             except RuntimeError as exc:
                 job = ctx.jobs.get(sid)
                 url = session_url(job.err_path.read_text()) if job and not job.done and job.err_path.is_file() else None

@@ -42,10 +42,11 @@ def task(board, sid, status, title, branch=None):
     (board / ".lattice" / "tasks" / (record["id"] + ".json")).write_text(json.dumps(record))
 
 
-def fake_plannotator(where, decision="annotated", message="line 2: rename it", exit_code=0, delay=0):
-    """A stand-in that swallows the patch and answers like plannotator --json."""
+def fake_plannotator(where, decision="annotated", message="line 2: rename it", exit_code=0, delay=0, key="message"):
+    """A stand-in that swallows the patch and answers like plannotator --json
+    (annotate mode answers with the key "feedback")."""
     script = where / "plannotator"
-    record = json.dumps({"decision": decision, "message": message}) if decision else "usage error"
+    record = json.dumps({"decision": decision, key: message}) if decision else "usage error"
     record = record.replace("'", "")
     script.write_text("#!/bin/sh\ncat > /dev/null\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
                       % (delay, record, exit_code))
@@ -105,6 +106,13 @@ def form(ctx, **fields):
 def origin(base):
     """Headers of a dashboard write made by the page served at base."""
     return {"Origin": base, "Content-Type": "application/json"}
+
+
+# What plannotator annotate --gate --json printed for a real session on a
+# plan with one line comment and one global comment (v0.28.48).
+PLAN_FEEDBACK = ('# File Feedback\n\nI\'ve reviewed this file and have 2 pieces of feedback:\n\n'
+                 '## 1. General feedback about the file\n> overall: add a rollback step\n\n'
+                 '## 2. (line 10) Feedback on: "list"\n> why refresh instead of invalidating the query?\n\n---\n')
 
 
 class StubDashboard(BaseHTTPRequestHandler):
@@ -352,6 +360,24 @@ class PureTests(RepoFixture):
         self.assertEqual(lr.quoted_lines(text, "lines 3-12 (old)"), ["> line %d" % n for n in range(3, 8)])
         self.assertEqual(lr.quoted_lines(text, "whole file"), [])
         self.assertEqual(lr.review_notes("# Code Review\n\nNo changes requested."), [])
+
+    def test_plan_feedback_is_split_into_notes_and_the_plan_has_a_state(self):
+        self.assertEqual(lr.plan_notes(PLAN_FEEDBACK), [
+            ("plan", "whole document", "overall: add a rollback step", []),
+            ("plan", "line 10", "why refresh instead of invalidating the query?", ["> list"])])
+        removal = '# File Feedback\n\n## 1. (lines 4-5) Remove: "old step"\n> drop it\n\n---\n'
+        self.assertEqual(lr.plan_notes(removal), [("plan", "lines 4-5", 'Remove: "old step"\ndrop it', [])])
+        digest = __import__("hashlib").sha256(b"the plan").hexdigest()
+        approved = {"role": "plan-review", "created_at": "2", "body": "Plannotator plan approved (plan of T-1), s\n%s%s\n\n" % (lr.PLAN, digest)}
+        changes = {"role": "plan-review", "created_at": "1", "body": "Plannotator plan annotated (plan of T-1), s\n%s%s\n\nx" % (lr.PLAN, digest)}
+        self.assertEqual(lr.plan_status([], "the plan"), "not reviewed yet")
+        self.assertEqual(lr.plan_status([changes], "the plan"), "changes requested")
+        self.assertEqual(lr.plan_status([changes, approved], "the plan"), "approved")
+        self.assertIn("changed since it was approved", lr.plan_status([changes, approved], "the plan, edited"))
+        self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: approve plan"}}))
+        self.assertTrue(lr.waits_for_plan_approval({"needs_human": {"reason": "Approve or revise the decisions in the LILY-10 plan"}}))
+        self.assertFalse(lr.waits_for_plan_approval({"needs_human": {"reason": "Need: which OAuth provider?"}}))
+        self.assertFalse(lr.waits_for_plan_approval({"needs_human": None}))
 
     def test_threads_follow_the_last_speaker_and_only_the_owner_resolves(self):
         body = "Plannotator annotated (patch x), s\n%sa..b\n\n## f\n\n### Line 1 (new)\nwhy?\n" % lr.REVIEWED
@@ -713,6 +739,50 @@ class CliTests(RepoFixture):
         (thread,) = lr.review_threads(ctx.comments(sid))
         self.assertEqual(thread["anchor"], "k, whole file")
         self.assertTrue(thread["messages"][-1]["body"].strip().endswith("still looking"))
+
+    def test_plan_review_records_threads_and_approval_clears_the_plan_flag(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        record = lr.find_task(board, sid)
+        plan = board / ".lattice" / "plans" / (record["id"] + ".md")
+        plan.write_text("# Plan\n\n1. Add a failing test.\n2. Fix the list refresh.\n")
+        lattice(board, "needs-human", sid, "Need: approve plan", "--actor", "agent:test")
+        ctx = self.context(board=board, repo=self.repo)
+
+        def review(decision, feedback):
+            ctx.plannotator = fake_plannotator(self.tools, decision=decision, message=feedback, key="feedback")
+            job = ctx.start_plan_review(lr.find_task(board, sid))
+            wait_for(job)
+            self.assertTrue(job.done and not job.error, job.error)
+            return lr.review_threads(ctx.comments(sid))
+        threads = review("annotated", PLAN_FEEDBACK)
+        digest = __import__("hashlib").sha256(plan.read_bytes()).hexdigest()
+        self.assertEqual([(t["anchor"], t["note"], t["state"]) for t in threads], [
+            ("plan, whole document at plan " + digest[:12], "overall: add a rollback step", "waiting on the agent"),
+            ("plan, line 10 at plan " + digest[:12], "> list\nwhy refresh instead of invalidating the query?", "waiting on the agent")])
+        self.assertEqual(lr.plan_status(ctx.comments(sid), plan.read_text()), "changes requested")
+        self.assertTrue(lr.waits_for_plan_approval(lr.find_task(board, sid)))
+        lattice(board, "comment", sid, "--reply-to", threads[1]["root"]["id"], "Status: answered\nAnswer: invalidation it is", "--actor", "agent:test")
+        plan.write_text("# Plan\n\nContext line.\n\n1. Add a failing test.\n2. Fix the list refresh.\n")
+        threads = review("annotated", '# File Feedback\n\n## 1. (line 12) Feedback on: "list"\n> still unsure\n\n---\n')
+        self.assertEqual(len(threads), 2)
+        self.assertTrue(threads[1]["messages"][-1]["body"].strip().endswith("still unsure"))
+        self.assertEqual(threads[1]["state"], "waiting on the agent")
+        review("approved", "")
+        self.assertIsNone(lr.find_task(board, sid).get("needs_human"))
+        self.assertEqual(lr.plan_status(ctx.comments(sid), plan.read_text()), "approved")
+        StubDashboard.static_dir = self.repo / "static"
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        try:
+            page = call(base + "/review/t/" + sid)[1]
+            self.assertIn("Plan: <b>approved</b>", page)
+            self.assertIn(">Plannotator: review the plan</button>", page)
+            plan.write_text(plan.read_text() + "3. A late edit.\n")
+            self.assertIn("changed since it was approved", call(base + "/review/t/" + sid)[1])
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 @unittest.skipUnless(HAVE_CLI and HAVE_MODULE, "lattice not importable; run with the Python that has lattice installed")
