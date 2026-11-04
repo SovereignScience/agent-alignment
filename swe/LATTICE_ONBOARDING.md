@@ -270,25 +270,25 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 
 `--main` defaults to `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
-http://127.0.0.1:<port> and click a task. Its detail view has a
-Review section. A task with a plan file shows the plan's state and
-"Plannotator: review the plan" (see the plan rule in `context.md`). The
-section also says where the task's work is (branch, trailer
-commits, or nothing yet) and offers: Plannotator on the whole range,
-Plannotator per commit, and for every file of the range `open` in VS
-Code or `diff` in VS Code's two-file view. Plannotator opens as a new
+http://127.0.0.1:<port> and click a task. Its detail view has a Review
+section with two blocks. Plan shows the plan's state with "Plannotator:
+review the plan" and "Open the plan in VS Code" (see the plan rule in
+`context.md`). Code review says where the task's work is (branch,
+trailer commits, or nothing yet) and offers: Plannotator on the whole
+range, Plannotator per commit, and for every file of the range `open` in
+VS Code or `diff` in VS Code's two-file view. Plannotator opens as a new
 tab of the same browser; annotations stay there until Send Feedback
 (changes requested) or Approve, and only then do they land on the task
 as a comment with role `review`, visible to every browser and every
 agent. Plannotator then shows a page saying the feedback went back to
 the agent: close that tab and return to the board. Each note lands as
 its own thread in the Review section, with the quoted line, every reply
-in order, a Reply box, Reply and resolve, and Resolve. While a thread
-is open, a second note on the same lines adds to it instead of starting
+in order, a Reply box, Reply and resolve, and Resolve. While a thread is
+open, a second note on the same lines adds to it instead of starting
 another. A line at the top of the section says what to do next. One
 session per task at a time: the button returns to the open one, and
-"Close session" ends one that was abandoned. When the checkout that
-has the task's branch checked out (often the task's worktree) has
+"Close session" ends one that was abandoned. When the checkout that has
+the task's branch checked out (often the task's worktree) has
 uncommitted changes, a second button names that checkout and reviews
 them, for feedback only: it never completes a task. Status, comments,
 notes and plans are the dashboard's own controls on the same page;

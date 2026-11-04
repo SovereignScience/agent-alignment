@@ -560,7 +560,8 @@ class SectionTests(RepoFixture):
         self.assertIn("no Plannotator review", branch)
         none = call(self.base + "/review/t/AB-9")[1]
         self.assertIn("no linked branch", none)
-        self.assertNotIn("<button", none)
+        self.assertNotIn("Plannotator", none)
+        self.assertIn(">Write the plan in VS Code</button>", none)
         self.assertNotIn("Completion", none)
         (self.repo / "scratch").write_text("x\n")
         here = lr.home_short(self.repo)
@@ -624,6 +625,25 @@ class SectionTests(RepoFixture):
         self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "body": self.approved(self.b, self.c)}]
         call(self.base + "/review/t/AB-2/complete", form(self.ctx))
         self.assertEqual(self.calls, [("status", "AB-2", "done", "--no-auto-review")])
+
+    def test_plan_and_code_review_are_separate_blocks_and_the_frame_follows_the_page_scheme(self):
+        plan = self.repo / ".lattice" / "plans" / "task_AB2.md"
+        plan.parent.mkdir(exist_ok=True)
+        plan.write_text("# Plan\n")
+        thread = lambda cid, anchor: {"id": cid, "created_at": "2026-01-01T00:00:0%s" % cid[-1], "author": "human:t",
+                                      "body": "%s%s at abc\n%sev_r\nwhy?" % (lr.THREAD, anchor, lr.REVIEW_OF)}
+        self.reviews["AB-2"] = [thread("ev_1", "plan, line 3"), thread("ev_2", "c, whole file")]
+        page = call(self.base + "/review/t/AB-2")[1]
+        plan_at, code_at = page.index("<h4>Plan</h4>"), page.index("<h4>Code review</h4>")
+        self.assertLess(plan_at, page.index("Plannotator: review the plan"))
+        self.assertLess(page.index(">Open the plan in VS Code</button>"), code_at)
+        self.assertLess(plan_at, page.index("Plan threads"))
+        self.assertLess(page.index("plan, line 3"), code_at)
+        self.assertLess(code_at, page.index("Code review threads"))
+        self.assertLess(code_at, page.index("c, whole file"))
+        self.assertIn("colorScheme=s.colorScheme", page)
+        call(self.base + "/review/t/AB-2/openplan", form(self.ctx))
+        self.assertIn(str(plan), wait_file(self.tools / "code.log"))
 
     def test_thread_actions_write_to_the_board_as_the_owner(self):
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="  still unclear  "))

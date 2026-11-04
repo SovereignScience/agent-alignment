@@ -58,7 +58,9 @@ MAX_BODY = 1_048_576
 # content): blue description, green criteria, accent review, violet plans,
 # cyan comments, slate for the rest. State colours stay for state. Menus
 # follow the theme (Lattice sets no color-scheme, so native selects and their
-# option lists were drawn light on every theme); its left edge drags to resize, the width is kept in
+# option lists were drawn light on every theme). The dashboard's own Show
+# Plan button is hidden while the review section, which carries the plan's
+# buttons, is in the panel; its left edge drags to resize, the width is kept in
 # localStorage, and a double-click on the edge resets it. The edge sits outside the panel, so its
 # clicks stop before the dashboard's click-outside-closes-the-panel listener.
 PANEL = """<style>
@@ -87,7 +89,10 @@ window.addEventListener("resize",function(){apply(wanted())});
 var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments"};
 function tag(){document.querySelectorAll(".dp-section,.detail-section").forEach(function(s){
 var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
-KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k})}
+KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k;
+if(k==="plans"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame")){
+s.querySelectorAll("button[onclick*='openPlans(']").forEach(function(b){b.hidden=true});
+s.hidden=!s.querySelector("button:not([hidden])")}})}
 document.addEventListener("DOMContentLoaded",function(){
 tag();new MutationObserver(tag).observe(document.body,{childList:true,subtree:true});
 var panel=document.getElementById("detail-panel");if(!panel)return;
@@ -685,6 +690,17 @@ class Context:
 
         return self.session(sid, what, args, self.board, None, record)
 
+    def open_plan(self, task):
+        """The task's plan in VS Code, scaffolded from the task the way the
+        dashboard's own plan button does when there is none yet."""
+        if not self.code:
+            raise RuntimeError("the code command is not on PATH; start this server from a VS Code terminal")
+        plan = self.board / ".lattice" / "plans" / (task["id"] + ".md")
+        if not plan.is_file():
+            from lattice.storage.operations import scaffold_plan
+            scaffold_plan(self.board / ".lattice", task["id"], task.get("title", "Untitled"), task.get("short_id"), task.get("description"))
+        self.code_open(plan)
+
     def post_review(self, job, sid, body, role):
         job.out_path.write_text(body)
         rc, msg = self.lattice_cmd("comment", sid, "--file", str(job.out_path), "--role", role)
@@ -869,8 +885,9 @@ textarea{flex:1;min-height:2.6rem;font:inherit;color:inherit;background:var(--su
 
 INHERIT = """<script>try{var s=getComputedStyle(parent.document.documentElement);
 ["--text-primary","--text-muted","--accent-primary","--text-on-accent","--surface","--surface-hover","--surface-raised","--border","--radius-sm",
-"--font-body","--font-mono","--color-warning","--color-danger","--color-success"].forEach(function(v){
-document.documentElement.style.setProperty(v,s.getPropertyValue(v))})}catch(e){}</script>"""
+"--font-body","--font-mono","--color-warning","--color-danger","--color-success","--bg-base"].forEach(function(v){
+document.documentElement.style.setProperty(v,s.getPropertyValue(v))});
+document.documentElement.style.colorScheme=s.colorScheme}catch(e){}</script>"""
 
 
 def e(value):
@@ -899,12 +916,18 @@ def reply_form(ctx, action, parent):
             "<button>Reply</button><button name='resolve' value='1'>Reply and resolve</button></form>" % (e(action), ctx.token, e(parent)))
 
 
-def render_threads(ctx, sid, threads):
+def is_plan_thread(thread):
+    return thread["anchor"].startswith("plan,") or thread["anchor"] == "plan"
+
+
+def render_threads(ctx, sid, threads, title):
     """Each review thread with its whole history, a reply box and Resolve."""
+    if not threads:
+        return ""
     act = REVIEW_PATH + "/t/" + sid + "/"
     unresolved = sum(1 for t in threads if t["state"] != "resolved")
-    out = ["<p><b>Review threads</b> <span class='muted'>%d open of %d. Continue a thread here; a new Plannotator note starts a new one.</span></p>"
-           % (unresolved, len(threads))]
+    out = ["<p><b>%s</b> <span class='muted'>%d open of %d. Continue a thread here; a new Plannotator note starts a new one.</span></p>"
+           % (e(title), unresolved, len(threads))]
     for t in threads:
         resolved = t["state"] == "resolved"
         status = " <span class='muted'>agent: %s</span>" % e(t["status"]) if t["status"] and not resolved else ""
@@ -1007,14 +1030,26 @@ def render_review(ctx, task):
     comments = ctx.comments(sid)
     plan = ctx.board / ".lattice" / "plans" / (task["id"] + ".md")
     plan_state = plan_status(comments, plan.read_text(errors="replace")) if plan.is_file() else None
-    work = []
-    if plan_state:
+    review = latest_review(comments)
+    threads = review_threads(comments)
+    block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
+    job = ctx.jobs.get(sid)
+    running = bool(job and not job.done)
+
+    plan_part = ["<p>Plan: <b>%s</b></p>" % e(plan_state or "none yet")]
+    plan_buttons = []
+    if plan_state and ctx.plannotator:
         waiting = plan_state != "approved" and waits_for_plan_approval(task)
-        work.append("<p>Plan: <b>%s</b> %s</p>" % (e(plan_state), button(ctx, act + "plan", "Plannotator: review the plan", tab=True, primary=waiting)
-                                                   if ctx.plannotator else ""))
-    work.append("<p>Work: %s</p>" % range_summary(task, rng))
+        plan_buttons.append(button(ctx, act + "plan", "Plannotator: review the plan", tab=True, primary=waiting))
+    if ctx.code:
+        plan_buttons.append(button(ctx, act + "openplan", "Open the plan in VS Code" if plan_state else "Write the plan in VS Code"))
+    if plan_buttons:
+        plan_part.append("<p>" + " ".join(plan_buttons) + "</p>")
+    plan_part.append(render_threads(ctx, sid, [t for t in threads if is_plan_thread(t)], "Plan threads"))
+
+    code = ["<p>Work: %s</p>" % range_summary(task, rng)]
     if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
-        work.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
+        code.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
                     % (e(current_branch(ctx.repo)), e(rng["branch"])))
     actions = []
     if ctx.plannotator:
@@ -1024,36 +1059,34 @@ def render_review(ctx, task):
             actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes in %s, feedback only" % home_short(live[0]),
                                   {"live": "1"}, tab=True))
     if actions:
-        work.append("<p>" + " ".join(actions) + "</p>")
-    job = ctx.jobs.get(sid)
-    running = bool(job and not job.done)
+        code.append("<p>" + " ".join(actions) + "</p>")
     if job:
         state = "Plannotator running since " + time.strftime("%H:%M:%S", time.localtime(job.started)) if running else "Plannotator finished"
-        work.append("<p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path)))
+        session = ["<p>%s (%s). Log <code>%s</code></p>" % (e(state), e(job.what), e(job.err_path))]
         url = session_url(job.err_path.read_text()) if job.err_path.is_file() else None
         if running:
             link = "<a href='%s' target='_blank' rel='noopener'>Open the session</a>. " % e(url) if url else ""
-            work.append("<p>%sAnnotations stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
-                        % (link, button(ctx, act + "close", "Close session")))
+            session.append("<p>%sNotes stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
+                           % (link, button(ctx, act + "close", "Close session")))
         if job.error:
-            work.append("<p class='err'>%s</p>" % e(job.error))
+            session.append("<p class='err'>%s</p>" % e(job.error))
         elif job.done and not job.result_path:
-            work.append("<p class='muted'>Plannotator closed without a review.</p>")
-    changes = []
+            session.append("<p class='muted'>Plannotator closed without a review.</p>")
+        (plan_part if job.what.startswith("plan of ") else code).extend(session)
     if rng["commits"]:
-        changes.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
+        code.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
         for c in rng["commits"]:
-            changes.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            code.append("<tr><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
                 e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
                 button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True, small=True) if ctx.plannotator else ""))
-        changes.append("</table>")
+        code.append("</table>")
     if rng["base_sha"]:
         try:
             files = changed_files(ctx.repo, rng["base"], rng["head"])
         except RuntimeError as exc:
             files = []
-            changes.append("<p class='err'>%s</p>" % e(exc))
-        changes.append("<table><tr><th></th><th>File (%d)</th><th></th></tr>" % len(files))
+            code.append("<p class='err'>%s</p>" % e(exc))
+        code.append("<table><tr><th></th><th>File (%d)</th><th></th></tr>" % len(files))
         for f in files:
             shown = f["path"] if f["old_path"] == f["path"] else f["old_path"] + " → " + f["path"]
             cells = ""
@@ -1062,30 +1095,25 @@ def render_review(ctx, task):
                     cells += button(ctx, act + "open", "open", {"path": f["path"]}, small=True)
                 cells += button(ctx, act + "filediff", "diff", {"path": f["path"], "old_path": f["old_path"], "status": f["status"],
                                                                 "base": rng["base"], "head": rng["head"]}, small=True)
-            changes.append("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(f["status"]), e(shown), cells))
-        changes.append("</table>")
-    review = latest_review(comments)
-    threads = review_threads(comments)
-    block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
-    verdict = []
+            code.append("<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>" % (e(f["status"]), e(shown), cells))
+        code.append("</table>")
     if review:
         text = review.get("body") or ""
         label = {"approved": "approved", "annotated": "changes requested"}.get(review_decision(text), "review")
         covered = re.match(r"^Plannotator \w+ \((.*)\), \S+$", text.splitlines()[0] if text else "")
-        verdict.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
+        code.append("<p>Latest review: <b>%s</b>%s <span class='muted'>%s %s</span></p><details><summary>Full review text</summary><pre>%s</pre></details>" % (
             e(label), ", of " + e(covered.group(1)) if covered else "", e(review.get("author")), e(review.get("created_at")), e(text)))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
         if block:
-            verdict.append("<p class='muted'>Completion: %s.</p>" % e(block))
+            code.append("<p class='muted'>Completion: %s.</p>" % e(block))
         else:
-            verdict.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+            code.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+    code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads"))
 
     def section(kind, title, parts):
-        return "<section class='block %s'><h4>%s</h4>%s</section>" % (kind, title, "".join(parts)) if parts else ""
+        return "<section class='block %s'><h4>%s</h4>%s</section>" % (kind, title, "".join(parts))
     body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, live, plan_state),
-            section("plan", "Plan and work", work), section("changes", "Commits and files", changes), section("verdict", "Latest review", verdict)]
-    if threads:
-        body.append(render_threads(ctx, sid, threads))
+            section("plan", "Plan", plan_part), section("verdict", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
 
 
@@ -1210,6 +1238,8 @@ def make_handler(ctx, base=None, static_dir=None):
                     return self.open_session(sid, form)
                 if action == "plan":
                     return self.to_session(sid, lambda: ctx.start_plan_review(task))
+                if action == "openplan":
+                    ctx.open_plan(task)
                 elif action == "close":
                     ctx.close_session(sid)
                 elif action == "open":
