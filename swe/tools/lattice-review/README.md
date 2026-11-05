@@ -30,11 +30,10 @@ answers only requests whose Host names this machine and refuses POSTs
 from another origin, starts Plannotator with its AI and sharing features
 disabled, and feeds it every review as a static patch, so Plannotator runs
 no git of its own. Git here runs with the programs a repository's config can
-name switched off where git allows it (fsmonitor, hooks, external diff, diff
-drivers, text converters), and refuses a repository whose config names a
-diff or filter program. A filter's clean program has no off switch: config
-written between that check and git's read of the working tree can still run
-one.
+name switched off (fsmonitor, hooks, external diff, diff drivers, text
+converters), and refuses a repository whose config names a diff or filter
+program. Git cannot switch off a filter's clean program, which runs when it
+reads a working copy, so the server reviews commits only and never reads one.
 
 ## How a task's work is found
 
@@ -53,13 +52,8 @@ one.
 Plannotator gets the task's range as a static patch (`git diff base
 head` on stdin) of the commit IDs resolved at the moment the button is
 pressed, and the recorded review names those same IDs. The per-commit
-buttons do the same for one commit. Uncommitted work is reviewed where
-it is: in the checkout that has the task's linked branch checked out
-(the repository itself or a `git worktree`), or, for a task without a
-branch, in this checkout when its commits end at HEAD or it has none.
-When that checkout has uncommitted changes, a second button names it and
-reviews them from the task's base; such reviews are recorded as feedback
-and never complete a task. Every file of the range has `diff` (VS
+buttons do the same for one commit. Uncommitted work is not reviewed
+here: the agent commits it first. Every file of the range has `diff` (VS
 Code's two-file diff through `code --diff`, with the old path on the
 base side for renames), and `open` (the file in VS Code) when the range
 ends at this checkout's HEAD and the file exists there.
@@ -193,7 +187,7 @@ decides. "Mark done" appears only when that review is an approval, its
 commit IDs are the task's current work, every one of its notes was
 recorded as a thread and every review thread is resolved; a later
 annotated review, a deleted review, a moved branch, a new trailer
-commit, a live-tree review, a note whose recording failed or an open
+commit, a review of uncommitted changes from an older version, a note whose recording failed or an open
 code or plan thread all withdraw it, and the section says why. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
 spikes) are not gated. Completion is `lattice status <ID> done
@@ -268,7 +262,7 @@ notes and plans handlers), written against Lattice 0.2.
 |---|---|
 | `/`, `/api/...`, `/static/...` | the Lattice dashboard; `/` carries the hook that renders the review section |
 | `/review/t/<ID>` | the review section for one task (what the iframe shows) |
-| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or with the uncommitted work of the checkout that holds it (new files included, symlinks left out); redirects to the session; the JSON decision becomes a review comment |
+| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
 | `/review/t/<ID>/history` | the task's history, shown in the dashboard's History section |

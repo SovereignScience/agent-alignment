@@ -38,7 +38,6 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 REVIEW_PATH = "/review"
-WORKTREE = "WORKTREE"
 REVIEWED = "Reviewed: "
 THREAD = "Thread: "
 REVIEW_OF = "From review "
@@ -131,11 +130,11 @@ INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, t
 # owner outside the agent sandbox. So every git call here switches those programs
 # off when git runs, not only beforehand: the fsmonitor, hooks, optional index
 # writes and the external diff through the environment, and diff drivers and text
-# converters with --no-ext-diff and --no-textconv. Plannotator is only ever given
-# a patch, so it runs no git of its own. Git has no switch for a filter's clean
-# program, which runs whenever git reads working-tree files, so a repository whose
-# config names one, or a diff program, is refused before each call; config written
-# between that check and git's own read can still run a filter.
+# converters with --no-ext-diff and --no-textconv. Git cannot switch off a
+# filter's clean program, which runs when git reads a working copy, so this
+# server never reads one: it reviews commits only. Plannotator is only ever given
+# a patch, so it runs no git of its own. A repository whose config names a diff
+# or filter program is also refused before each call.
 SAFE_GIT = {"GIT_CONFIG_COUNT": "3", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
             "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": "/dev/null",
             "GIT_CONFIG_KEY_2": "diff.external", "GIT_CONFIG_VALUE_2": "", "GIT_OPTIONAL_LOCKS": "0"}
@@ -241,7 +240,7 @@ def resolve_range(repo, task, main):
 def changed_files(repo, base, head):
     """Name-status rows (NUL-delimited, so any file name survives); renames and
     copies keep the old path for the base side."""
-    args = ["diff", "--name-status", "-M", "-z", base] + ([] if head == WORKTREE else [head])
+    args = ["diff", "--name-status", "-M", "-z", base, head]
     fields = run_git(repo, *args).split("\0")
     files = []
     i = 0
@@ -260,68 +259,11 @@ def current_branch(repo):
     return run_git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
 
 
-def worktree_dirty(repo):
-    return bool(run_git(repo, "status", "--porcelain", check=False).strip())
-
-
-def branch_tree(repo, branch):
-    """The checkout of the repository that has branch checked out, or None."""
-    path = None
-    for line in run_git(repo, "worktree", "list", "--porcelain", check=False).splitlines():
-        if line.startswith("worktree "):
-            path = line[len("worktree "):]
-        elif line == "branch refs/heads/" + branch:
-            return Path(path)
-    return None
-
-
-def live_tree(repo, rng):
-    """(checkout, base) where the task's uncommitted work is: the checkout of
-    its linked branch, or this checkout when the task has no branch and its
-    commits end at HEAD or it has none yet. None when there is no such
-    checkout."""
-    branch = rng.get("branch") or rng.get("empty_branch")
-    if branch:
-        tree = branch_tree(repo, branch)
-        return (tree, rng["base"] or rev(repo, branch)) if tree else None
-    if rng["mode"] == "none":
-        return repo, "HEAD"
-    if rng["head_sha"] and rng["head_sha"] == rev(repo, "HEAD"):
-        return repo, rng["base"]
-    return None
-
-
-def home_short(path):
-    home = str(Path.home())
-    return "~" + str(path)[len(home):] if str(path).startswith(home + "/") else str(path)
-
-
-def plannotator_args(plannotator, base=None, head=None, live=False):
-    """Command for one Plannotator session, and the git diff for the patch it reads
-    on stdin: the uncommitted changes of the live checked-out tree from base, or
-    base..head. Plannotator runs no git of its own and opens no browser; the
-    session URL it prints is opened by the page that asked."""
-    args = [plannotator, "--browser", "none", "review", "--patch-file", "-", "--json"]
-    if live:
-        return args, ["diff", base or "HEAD"]
-    return args, ["diff", base] + ([] if head == WORKTREE else [head])
-
-
-def untracked_patch(tree):
-    """New files in tree as patch hunks, read here rather than through git so no
-    filter runs on them. Symlinks are left out, so a link cannot bring a file from
-    outside the tree into the review."""
-    out = []
-    for path in run_git(tree, "ls-files", "--others", "--exclude-standard", "-z").split("\0"):
-        full = Path(tree) / path
-        if not path or full.is_symlink() or not full.is_file():
-            continue
-        hunk = list(difflib.unified_diff([], full.read_text(errors="replace").splitlines(keepends=True),
-                                         "/dev/null", "b/" + path))
-        if hunk and not hunk[-1].endswith("\n"):
-            hunk[-1] += "\n\\ No newline at end of file\n"
-        out.append("diff --git a/%s b/%s\nnew file mode 100644\n%s" % (path, path, "".join(hunk)))
-    return "".join(out)
+def plannotator_args(plannotator, base, head):
+    """Command for one Plannotator session, and the git diff of base..head for
+    the patch it reads on stdin. Plannotator runs no git of its own and opens no
+    browser; the session URL it prints is opened by the page that asked."""
+    return [plannotator, "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", base, head]
 
 
 def parse_review(stdout):
@@ -342,8 +284,8 @@ def parse_review(stdout):
 def reviewed_revision(text):
     """(base_sha, head_sha, qualifier) from a review's Reviewed line.
 
-    qualifier is None for a committed range and "live" for a working-tree
-    review. A missing or malformed line gives (None, None, None)."""
+    qualifier is None for a committed range and "live" for a review of
+    uncommitted changes, which older versions of this server recorded. A missing or malformed line gives (None, None, None)."""
     for line in text.splitlines():
         if line.startswith(REVIEWED):
             match = REVISION.match(line[len(REVIEWED):].strip())
@@ -996,34 +938,24 @@ class Context:
         except json.JSONDecodeError:
             return []
 
-    def start_plannotator(self, key, record_on=None, base=None, head=None, live=False, tree=None):
+    def start_plannotator(self, key, record_on=None, base=None, head=None):
         """One Plannotator code review. The range is resolved to commit IDs once,
-        and those IDs feed both the patch and the recorded Reviewed line. A live
-        session shows the uncommitted changes of tree (default: this checkout)."""
-        tree = Path(tree) if tree else self.repo
-        if live:
-            base_sha = rev(tree, base) if base else None
-            head_sha = rev(tree, "HEAD")
-            what = "uncommitted changes in %s" % home_short(tree) + (" from " + base_sha[:12] if base_sha else "")
-            revision = "%s..%s live" % (base_sha or "-", head_sha)
-            args, patch_args = plannotator_args(self.plannotator, base_sha, live=True)
-        else:
-            base_sha, head_sha = rev(self.repo, base), rev(self.repo, head)
-            if not (base_sha and head_sha):
-                raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
-            if base_sha == head_sha:
-                raise RuntimeError("the range %s..%s is empty: there are no commits to review" % (base, head))
-            what = "patch %s..%s" % (base_sha[:12], head_sha[:12])
-            revision = "%s..%s" % (base_sha, head_sha)
-            args, patch_args = plannotator_args(self.plannotator, base_sha, head_sha)
+        and those IDs feed both the patch and the recorded Reviewed line. Only
+        commits are reviewed: reading a working copy through git can run a filter
+        program its config names, and git cannot switch that off."""
+        base_sha, head_sha = rev(self.repo, base), rev(self.repo, head)
+        if not (base_sha and head_sha):
+            raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
+        if base_sha == head_sha:
+            raise RuntimeError("the range %s..%s is empty: there are no commits to review" % (base, head))
+        what = "patch %s..%s" % (base_sha[:12], head_sha[:12])
+        revision = "%s..%s" % (base_sha, head_sha)
+        args, patch_args = plannotator_args(self.plannotator, base_sha, head_sha)
 
         def source(side, path):
             """A file's text on the reviewed old or new side, or None."""
             if side == "old":
                 return run_git(self.repo, "show", "%s:%s" % (base_sha, path), check=False) if base_sha else None
-            if live:
-                full = (tree / path).resolve()
-                return full.read_text(errors="replace") if tree.resolve() in full.parents and full.is_file() else None
             return run_git(self.repo, "show", "%s:%s" % (head_sha, path), check=False)
 
         def record(job, decision, message, stamp):
@@ -1035,11 +967,8 @@ class Context:
                     notes.append((path, where, text, quoted_lines(source(side.group(3), path), where) if side else []))
                 self.record_threads(record_on, body, notes, head_sha[:12], job)
 
-        if live:
-            stdin = (run_git(tree, *patch_args) + untracked_patch(tree)).encode()
-        else:
-            stdin = run_git(self.repo, *patch_args).encode()
-        return self.session(key, what, args, tree if live else self.repo, stdin, record if record_on else None)
+        stdin = run_git(self.repo, *patch_args).encode()
+        return self.session(key, what, args, self.repo, stdin, record if record_on else None)
 
     def start_plan_review(self, task):
         """A Plannotator annotate session on the task's plan file. The decision
@@ -1240,17 +1169,14 @@ class Context:
     def code_diff(self, base, head, path, old_path, status):
         """Open one file of the range in VS Code's two-file diff."""
         base_sha = rev(self.repo, base)
-        head_sha = None if head == WORKTREE else rev(self.repo, head)
-        if not base_sha or (head != WORKTREE and not head_sha):
+        head_sha = rev(self.repo, head)
+        if not (base_sha and head_sha):
             raise RuntimeError("the range %s..%s does not resolve to commits" % (base, head))
         (self.state / "tmp").mkdir(exist_ok=True)
         left = self.side(base_sha, old_path or path)
         left.write_bytes(b"" if status == "A" else run_git(self.repo, "show", base_sha + ":" + (old_path or path), binary=True))
-        if head == WORKTREE:
-            right = self.repo_path(path)
-        else:
-            right = self.side(head_sha, path)
-            right.write_bytes(b"" if status == "D" else run_git(self.repo, "show", head_sha + ":" + path, binary=True))
+        right = self.side(head_sha, path)
+        right.write_bytes(b"" if status == "D" else run_git(self.repo, "show", head_sha + ":" + path, binary=True))
         subprocess.Popen([self.code, "--reuse-window", "--diff", str(left), str(right)])
 
 
@@ -1484,7 +1410,7 @@ def render_history(ctx, sid, entries):
     return "".join(out)
 
 
-def next_step(ctx, task, rng, review, threads, running, block, live, plan_state):
+def next_step(ctx, task, rng, review, threads, running, block, plan_state):
     """One line that says what the owner does now."""
     sid, status = task["short_id"], task.get("status")
     act = REVIEW_PATH + "/t/" + sid + "/"
@@ -1500,11 +1426,9 @@ def next_step(ctx, task, rng, review, threads, running, block, live, plan_state)
                 "edit it in place, then Send Feedback (each note becomes a thread the agent answers) or Approve, which "
                 "also clears the agent's approval flag.")
     elif rng["mode"] == "none":
-        if not (live or rng.get("empty_branch")):
+        if not rng.get("empty_branch"):
             return ""
         text = "Nothing is committed for %s yet, so there is nothing to approve. " % sid
-        if live:
-            text += ("Its uncommitted work is in %s: the uncommitted-changes button below gives feedback only. " % home_short(live[0]))
         text += "To complete the task, the agent commits the work with the trailer Task: %s." % sid
     elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"]) \
             and on_agent + on_you:
@@ -1561,9 +1485,6 @@ def render_review(ctx, task):
     act = REVIEW_PATH + "/t/" + sid + "/"
     rng = resolve_range(ctx.repo, task, ctx.main)
     head_now = rev(ctx.repo, "HEAD")
-    live = live_tree(ctx.repo, rng)
-    if live and not worktree_dirty(live[0]):
-        live = None
     comments = ctx.comments(sid)
     plan = ctx.board / ".lattice" / "plans" / (task["id"] + ".md")
     plan_state = plan_status(comments, plan.read_text(errors="replace")) if plan.is_file() else None
@@ -1596,9 +1517,6 @@ def render_review(ctx, task):
     if ctx.plannotator:
         if rng["base_sha"]:
             actions.append(button(ctx, act + "plannotator", "Plannotator: the whole range", {"base": rng["base"], "head": rng["head"]}, primary=True, tab=True))
-        if live:
-            actions.append(button(ctx, act + "plannotator", "Plannotator: uncommitted changes in %s, feedback only" % home_short(live[0]),
-                                  {"live": "1"}, tab=True))
     if actions:
         code.append("<p>" + " ".join(actions) + "</p>")
     if job:
@@ -1658,7 +1576,7 @@ def render_review(ctx, task):
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
     deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
-    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, live, plan_state),
+    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, plan_state),
             section("deps", "deps", "Dependencies", deps) if deps else "",
             section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
@@ -1821,13 +1739,8 @@ def make_handler(ctx, base=None, static_dir=None):
             self.redirect(REVIEW_PATH + "/t/" + sid)
 
         def open_session(self, sid, form):
-            """A code review of the task's range, or of its uncommitted work."""
+            """A code review of the task's range."""
             def start():
-                if form.get("live") == "1":
-                    live = live_tree(ctx.repo, resolve_range(ctx.repo, find_task(ctx.board, sid), ctx.main))
-                    if not live:
-                        raise RuntimeError("no checkout holds uncommitted work for %s" % sid)
-                    return ctx.start_plannotator(sid, record_on=sid, base=live[1], live=True, tree=live[0])
                 return ctx.start_plannotator(sid, record_on=sid, base=form.get("base") or None, head=form.get("head") or None)
             return self.to_session(sid, start)
 
