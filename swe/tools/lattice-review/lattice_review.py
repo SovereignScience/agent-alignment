@@ -126,8 +126,29 @@ INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, t
 # git and board reads (pure functions, covered by the tests)
 # --------------------------------------------------------------------------
 
+# A repository's own config can name programs that git runs during ordinary
+# reads. Sessions can write any repository's config, and this server runs as the
+# owner outside the agent sandbox. So git here, and Plannotator's git, runs with
+# the fsmonitor, hooks and optional index writes switched off, and refuses a
+# repository whose own config names a diff or filter program.
+SAFE_GIT = {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"}
+RUNS_PROGRAM = re.compile(r"^(?:local|worktree)\t(diff\.external|diff\..+\.(?:command|textconv)|"
+                          r"filter\..+\.(?:clean|smudge|process))=", re.IGNORECASE | re.MULTILINE)
+
+
+def git_env(repo):
+    env = dict(os.environ, **SAFE_GIT)
+    scoped = subprocess.run(["git", "-C", str(repo), "config", "--list", "--show-scope", "--includes"],
+                            capture_output=True, text=True, env=env).stdout
+    hit = RUNS_PROGRAM.search(scoped)
+    if hit:
+        raise RuntimeError("git refused in %s: the repository's own config runs a program (%s)" % (repo, hit.group(1)))
+    return env
+
+
 def run_git(repo, *args, check=True, binary=False):
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=not binary)
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=not binary, env=git_env(repo))
     if check and result.returncode != 0:
         err = result.stderr if not binary else result.stderr.decode(errors="replace")
         raise RuntimeError(err.strip() or "git " + " ".join(args) + " failed")
@@ -1053,6 +1074,7 @@ class Context:
         """Run one Plannotator session in the background; one per task at a
         time. record(job, decision, message, stamp) is called for an approved or
         annotated decision; None records nothing."""
+        env = dict(git_env(cwd), PLANNOTATOR_AI="disabled", PLANNOTATOR_SHARE="disabled")
         with self.lock:
             running = self.jobs.get(key)
             if running and not running.done:
@@ -1062,7 +1084,6 @@ class Context:
             name = "%s-%s-%d" % (key, stamp, self.runs)
             job = Job(key, what, self.state / (name + ".review.md"), self.state / (name + ".log"))
             self.jobs[key] = job
-        env = dict(os.environ, PLANNOTATOR_AI="disabled", PLANNOTATOR_SHARE="disabled")
         out = open(job.out_path, "w")
         err = open(job.err_path, "w")
         try:
