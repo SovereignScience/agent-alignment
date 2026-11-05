@@ -8,7 +8,8 @@
 # Files it installs:
 #   /etc/claude-code/managed-settings.json            from .claude/managed-settings.example.json
 #   /etc/claude-code/managed-settings.d/50-local.json from the local file below, if present
-#   /etc/claude-code/hooks/                           guard_outward.py, tells_check.py, after_summary.sh
+#   /etc/claude-code/hooks/                           guard_outward.py, tells_check.py, after_summary.sh,
+#                                                     fetch_allow.txt (never fetch_allow.local.txt)
 #   ~/.claude/settings.json                           drops rules the managed layer replaces
 #   ~/.codex/config.toml                              adds the same read denials for Codex
 #
@@ -116,7 +117,7 @@ if codex.exists():
 PY
 
 cp "$swe/.claude/scripts/guard_outward.py" "$swe/.claude/scripts/tells_check.py" \
-   "$swe/.claude/scripts/after_summary.sh" "$stage/"
+   "$swe/.claude/scripts/after_summary.sh" "$swe/.claude/scripts/fetch_allow.txt" "$stage/"
 python3 -m py_compile "$stage/guard_outward.py" "$stage/tells_check.py"
 rm -rf "$stage/__pycache__"
 
@@ -127,6 +128,7 @@ targets=(
     "$etc/hooks/guard_outward.py:guard_outward.py:root:0755"
     "$etc/hooks/tells_check.py:tells_check.py:root:0644"
     "$etc/hooks/after_summary.sh:after_summary.sh:root:0644"
+    "$etc/hooks/fetch_allow.txt:fetch_allow.txt:root:0644"
     "$HOME/.claude/settings.json:settings.json:user:keep"
     "$HOME/.codex/config.toml:config.toml:user:keep"
 )

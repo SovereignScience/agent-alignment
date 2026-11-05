@@ -741,24 +741,34 @@ def decide(cmd):
 
 
 # WebFetch runs outside the sandbox and its network allowlist, so it may read
-# only documentation hosts, through URLs too short to carry data out.
-FETCH_ALLOW = (
-    "code.claude.com", "docs.claude.com", "support.claude.com", "anthropic.com",
-    "developers.openai.com", "platform.openai.com", "learn.chatgpt.com",
-    "learn.microsoft.com", "code.visualstudio.com", "github.com", "docs.github.com",
-    "raw.githubusercontent.com", "modelcontextprotocol.io", "owasp.org", "nist.gov",
-    "ncsc.gov.uk", "cisa.gov", "simonwillison.net", "arxiv.org", "python.org", "pypi.org",
-    "npmjs.com", "debian.org", "ubuntu.com", "developer.1password.com", "docs.gitbutler.com",
-    "sublimemerge.com", "schemastore.org",
-)
+# only the hosts in fetch_allow.txt and fetch_allow.local.txt beside this file,
+# through URLs too short to carry data out. Without fetch_allow.txt every
+# fetch is refused.
+FETCH_LISTS = ("fetch_allow.txt", "fetch_allow.local.txt")
 FETCH_MAX_QUERY = 200
 FETCH_MAX_URL = 1024
+
+
+def fetch_hosts():
+    here = os.path.dirname(os.path.abspath(__file__))
+    hosts = set()
+    for i, name in enumerate(FETCH_LISTS):
+        try:
+            with open(os.path.join(here, name)) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            if i == 0:
+                deny("WebFetch: the reading list %s is missing" % os.path.join(here, name))
+            continue
+        hosts.update(line.split("#", 1)[0].strip().lower() for line in lines)
+    hosts.discard("")
+    return hosts
 
 
 def check_fetch(url):
     parts = urllib.parse.urlsplit(url or "")
     host = (parts.hostname or "").lower().rstrip(".")
-    if not any(host == d or host.endswith("." + d) for d in FETCH_ALLOW):
+    if not any(host == d or host.endswith("." + d) for d in fetch_hosts()):
         deny("fetching %s, which is not on the reading list" % (host or "an unreadable URL"))
     if len(parts.query) > FETCH_MAX_QUERY or len(url) > FETCH_MAX_URL:
         deny("a fetch URL long enough to carry data out")

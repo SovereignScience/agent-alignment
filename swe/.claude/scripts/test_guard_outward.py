@@ -4,16 +4,18 @@ Run: python3 -m unittest discover -s swe/.claude/scripts -p 'test_*.py'
 """
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 GUARD = pathlib.Path(__file__).with_name("guard_outward.py")
 
 
-def decision(tool, tool_input):
+def decision(tool, tool_input, guard=GUARD):
     """The hook's permission decision for one tool call, or None when it allows it."""
-    run = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(
+    run = subprocess.run([sys.executable, str(guard)], input=json.dumps(
         {"tool_name": tool, "tool_input": tool_input}), capture_output=True, text=True, check=True)
     if not run.stdout.strip():
         return None
@@ -37,6 +39,17 @@ class WebFetchTests(unittest.TestCase):
         long_path = "https://github.com/" + "a" * 1100
         for url in (long_query, long_path):
             self.assertEqual(decision("WebFetch", {"url": url, "prompt": "x"}), "deny")
+
+    def test_the_local_list_adds_hosts_and_a_missing_seed_list_refuses_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            guard = pathlib.Path(tmp, GUARD.name)
+            shutil.copy(GUARD, guard)
+            url = {"url": "https://intranet.example.org/doc", "prompt": "x"}
+            self.assertEqual(decision("WebFetch", url, guard), "deny")
+            shutil.copy(GUARD.with_name("fetch_allow.txt"), tmp)
+            pathlib.Path(tmp, "fetch_allow.local.txt").write_text("# ours\nexample.org\n")
+            self.assertIsNone(decision("WebFetch", url, guard))
+            self.assertIsNone(decision("WebFetch", {"url": "https://code.claude.com/docs", "prompt": "x"}, guard))
 
     def test_bash_checks_are_unchanged(self):
         self.assertIsNone(decision("Bash", {"command": "git status"}))
