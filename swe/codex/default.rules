@@ -134,8 +134,11 @@ prefix_rule(
     decision = "forbidden",
     justification = "Agents never change the cluster.",
 )
+# ansible-playbook is left to the sandbox, which has no network, keys or vault
+# passwords, so syntax checks run and nothing reaches a host. An allow rule
+# would run it outside the sandbox; do not add one.
 prefix_rule(
-    pattern = [["ansible-playbook", "ssh", "scp", "sftp"]],
+    pattern = [["ssh", "scp", "sftp"]],
     decision = "forbidden",
     justification = "Agents never touch hosts. Stop and explain the blocked action; do not retry or delegate it.",
 )

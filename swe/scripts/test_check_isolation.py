@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s swe/scripts -p 'test_*.py'
 """
 import os
 import pathlib
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -12,8 +13,10 @@ import unittest
 SCRIPT = pathlib.Path(__file__).with_name("check_isolation.sh")
 SWE = SCRIPT.parent.parent
 FAKE_CURL = '#!/bin/sh\ncase "$*" in *example.com*) exit "${FAKE_EXAMPLE:-7}" ;; *) exit "${FAKE_PYPI:-7}" ;; esac\n'
-FAKE_PYTHON = ('#!/bin/sh\ncase "$3" in *AF_UNIX*) printf "%s" "$FAKE_PY_OUT"; exit "${FAKE_PY_EXIT:-0}" ;; esac\n'
-               'exit 0\n')
+FAKE_PYTHON = ('#!/bin/sh\ncase "$3" in *AF_UNIX*) printf "%s" "$FAKE_PY_OUT"; exit "${FAKE_PY_EXIT:-0}" ;;\n'
+               '*tomllib*) exec "$REAL_PY" "$@" ;; esac\nexit 0\n')
+REQUIREMENTS = ('default_permissions = "alignment_workstation"\n\n[allowed_permission_profiles]\n'
+                'alignment_workstation = true\n\n[permissions.alignment_workstation]\nextends = ":workspace"\n')
 TOOLS = ("cmp", "dirname", "grep", "head", "ls", "rm")
 BASH = shutil.which("bash")
 
@@ -32,7 +35,7 @@ class Probe(unittest.TestCase):
         (self.etc / "codex").mkdir()
         for name in ("guard_outward.py", "tells_check.py", "after_summary.sh", "fetch_allow.txt"):
             shutil.copy(SWE / ".claude/scripts" / name, self.etc / "claude-code/hooks" / name)
-        shutil.copy(SWE / "codex/requirements.toml", self.etc / "codex/requirements.toml")
+        (self.etc / "codex/requirements.toml").write_text(REQUIREMENTS)
         # Only these tools are on PATH, so a probe that reached for the real curl would fail.
         self.bin = root / "bin"
         self.bin.mkdir()
@@ -51,7 +54,7 @@ class Probe(unittest.TestCase):
             self.sentinel.write_text(sentinel)
         env = dict(os.environ, HOME=str(self.home), SWE_WORKSPACE=str(self.home / "projects"),
                    SWE_ETC=str(self.etc / "claude-code"), SWE_CODEX_ETC=str(self.etc / "codex"),
-                   TMPDIR=str(self.repo), PATH=str(self.bin))
+                   TMPDIR=str(self.repo), PATH=str(self.bin), REAL_PY=sys.executable)
         env.update({"FAKE_PY_OUT": "refused", **fake})
         args = ["--client", client] if client else []
         run = subprocess.run([BASH, str(SCRIPT), *args], cwd=self.repo, env=env,
@@ -109,9 +112,11 @@ class Probe(unittest.TestCase):
     def test_installed_files_are_compared_with_the_checkout(self):
         _, out = self.probe("codex", sentinel="")
         self.assertIn("ok    installed hook matches this checkout: guard_outward.py", out)
-        (self.etc / "codex/requirements.toml").write_text("# other\n")
+        self.assertIn("ok    installed Codex requirements allow only the alignment_workstation profile", out)
+        (self.etc / "codex/requirements.toml").write_text(
+            REQUIREMENTS.replace("alignment_workstation = true", "alignment_workstation = true\n\":workspace\" = true"))
         _, out = self.probe("codex", sentinel="")
-        self.assertIn("FAIL  installed Codex requirements differ", out)
+        self.assertIn("FAIL  installed Codex requirements are missing or allow more", out)
         _, out = self.probe("claude", sentinel="")
         self.assertNotIn("Codex requirements", out)
 

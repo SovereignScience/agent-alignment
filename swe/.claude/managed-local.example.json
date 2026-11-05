@@ -11,9 +11,6 @@
       ],
       "denyWrite": [
         "~/projects/example-prod-checkout"
-      ],
-      "allowRead": [
-        "~/miniconda3"
       ]
     },
     "credentials": {

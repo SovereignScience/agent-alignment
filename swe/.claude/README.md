@@ -103,18 +103,41 @@ only managed hooks, allows only the MCP servers it lists (none by
 default) and disables bypass mode. Servers a client builds in, such as the
 VS Code extension's own, are not on that list and still run.
 
-Sandboxed commands read nothing in the home directory except the
-workspace and the toolchain folders the file lists, and nothing under
-/mnt/c on WSL. They write only to the working directory, which the sandbox
-allows on its own, the session's temporary directory and ~/.cache-agent,
-the package and browser cache the managed env points tools at. A parent directory of
-checkouts is not writable, so one session cannot plant a git hook or a
-virtualenv in another project. The file tools refuse reads and writes
-outside the session's working directories. With the sandbox's optional seccomp
+Sandboxed commands and the file tools see only the session's working
+directories: blockReadsOutsideWorkingDirectories hides the rest of the home
+directory from both. To commands the rest of home is an empty throwaway
+folder, so writes there never reach the disk. The file also denies a named
+list of secret locations and /mnt/c, in case that setting changes. Commands
+write only to the working directory, the session's temporary directory and
+~/.cache-agent, the package and browser cache the managed env points tools
+at. A parent directory of checkouts is not writable, so one session cannot
+plant a git hook or a virtualenv in another project. With the sandbox's optional seccomp
 filter installed (npm install -g @anthropic-ai/sandbox-runtime), sandboxed
 commands cannot create Unix sockets; without it they can, so
 check_isolation.sh treats the filter as a prerequisite. A loopback HTTP
 server still binds, inside the sandbox's own network namespace.
+
+Two documented settings break the sandbox on Linux and are left out. A
+denyRead of ~/ with allowRead exceptions leaves the working directory
+read-only, so the sandbox cannot create its mount points for protected files,
+and CLAUDE_CODE_SUBPROCESS_ENV_SCRUB makes it mask the containerd socket,
+which fails when /run/containerd is not listable. The token variables named
+in credentials.envVars are stripped instead. Rerun check_isolation.sh after
+each Claude Code update.
+
+Tools installed in the home directory, such as a lattice venv in ~/.local,
+are hidden from agents too. Install the ones agents need root-owned under
+/opt, so agents can run them but not change them:
+
+```bash
+url=https://github.com/Stage-11-Agentics/lattice.git
+sudo /usr/bin/python3 -I -m venv /opt/lattice
+sudo /opt/lattice/bin/python -I -m pip install --no-cache-dir \
+  "lattice_tracker @ git+$url@$(git ls-remote "$url" refs/heads/main | cut -f1)"
+sudo ln -s /opt/lattice/bin/lattice /usr/local/bin/lattice
+```
+
+Keep your own copy on the same commit; both write the same boards.
 
 This isolates shell commands and limits the file tools; it does not contain
 the agent itself. Hooks, the status line and any MCP server the managed file
@@ -130,9 +153,10 @@ until you review them for a credentialed run. Containing the whole agent
 needs a boundary around it, such as a separate account, WSL distro or VM
 that holds none of your secrets.
 
-Paths only one machine has, such as a production checkout to hide or a
-conda folder to read, go in a local file outside git, started from
-managed-local.example.json. It may only add denials and read paths.
+Paths only one machine has, such as a production checkout or a token file
+to hide, go in a local file outside git, started from
+managed-local.example.json. It may only add denials; the installer refuses
+allowRead, for the reason above.
 To let WebFetch read another host, add it to
 /etc/claude-code/hooks/fetch_allow.local.txt with sudoedit; the
 installer copies fetch_allow.txt and never writes the local list.
@@ -149,9 +173,9 @@ SWE_MANAGED_LOCAL to the local file if it is not at
 ~/.config/agent-alignment/managed-local.json. The preview prints rules and
 paths, never a setting's value. It stops, writing nothing, on a symlinked or
 irregular target, on a managed directory that is a symlink, not owned by root
-or writable by group or others, and on Codex requirements that hold other
-policy. Apply backs up each file under a unique name and prints the commands
-that undo it.
+or writable by group or others, and on Codex requirements this script did
+not write. Apply backs up each file under a unique name and prints the
+commands that undo it.
 
 Restart every session afterwards. In a fresh session of each client, have
 an agent run:
@@ -167,31 +191,33 @@ and 2 when the result is incomplete until you run the outside checks it
 prints, such as confirming that a sentinel it could not see exists. Then
 check by hand, in the same session, what a shell script cannot: the agent's Read of ~/.config/agent-alignment/sentinel is
 refused, a WebFetch of https://example.com is refused, and in Codex the
-session runs on the workstation profile and refuses Full Access.
+session runs on the alignment_workstation profile and refuses Full Access.
 
 ## Codex
 
-../codex/config.snippet.toml holds the permission profile (filesystem
-denials, no network) and ../codex/default.rules the commands Codex refuses
-in every mode. Codex reads AGENTS.md for the rules themselves.
-install_isolation.sh adds the profile's read denials, and the local
-file's, to ~/.codex/config.toml, including the workspace-root denials for
-.env, tfvars, tfstate and key files, and the glob_scan_max_depth those
-patterns need. It stops when that file is missing, does not start on the
-workstation profile, or the profile extends another one, turns network on,
-adds workspace roots, grants anything but denials or sets a shallower scan
-depth.
-Without ~/.codex it leaves Codex alone. It installs
-codex/requirements.toml as /etc/codex/requirements.toml so that only that
-profile may run (Codex 0.138.0 or later), and stops if that file already
-holds other policy. Confirm in the CLI and
-the VS Code extension that sessions start on it and Full Access is refused.
-The profile is a deny list, not Claude's default-deny home read.
-default.rules forbids ansible-playbook as a top-level command, including
---syntax-check, so Codex sessions cannot run that check. How Codex should
-run it is an open decision; until one is chosen and tested, leave the check
-to Claude sessions or your own terminal, and never route it through a
-wrapper to get past the rule.
+../codex/config.snippet.toml holds the Codex settings and the permission
+profile body (filesystem denials, no network), and ../codex/default.rules the
+commands Codex refuses in every mode. Codex reads AGENTS.md for the rules
+themselves. Codex accepts an allowlist only of profiles defined in the
+requirements file, so install_isolation.sh writes that body, plus the local
+file's denials, into /etc/codex/requirements.toml as alignment_workstation,
+the default and the only profile allowed (Codex 0.138.0 or later), and points
+default_permissions in ~/.codex/config.toml at it.
+
+Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
+replaced by its target, or left out when the target is already denied, and
+missing paths are left out; the preview lists both. Rerun the installer after
+creating a file that should be denied. It stops when ~/.codex/config.toml is
+missing, defines alignment_workstation itself or picks another default, and
+when /etc/codex/requirements.toml holds policy it did not write. Without
+~/.codex it leaves Codex alone. Confirm in the CLI and the VS Code extension
+that sessions start on alignment_workstation and that Full Access is refused.
+The profile is a deny list, not Claude's working-directory limit.
+
+default.rules does not forbid ansible-playbook: in the profile's sandbox it
+has no network, keys or vault passwords, so syntax checks run and nothing
+reaches a host. An allow rule would run a command outside the sandbox, so
+none is added. ssh, scp and sftp stay forbidden.
 
 ## Adding a specialist
 

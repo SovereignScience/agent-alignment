@@ -4,7 +4,7 @@
 # in every mode. Codex expands ~ in paths.
 
 approval_policy = "never"
-default_permissions = "workstation"
+default_permissions = "alignment_workstation"
 web_search = "live"
 check_for_update_on_startup = false
 
@@ -25,6 +25,9 @@ generate_memories = false
 memories = false
 chronicle = false
 
+# install_isolation.sh writes this profile body into /etc/codex/requirements.toml
+# as alignment_workstation, the only profile Codex may run. It does not need to
+# be in ~/.codex/config.toml.
 [permissions.workstation]
 extends = ":workspace"
 
