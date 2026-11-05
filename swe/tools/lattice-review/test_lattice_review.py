@@ -269,6 +269,27 @@ class PureTests(RepoFixture):
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
+    def test_repository_config_cannot_make_git_run_a_program(self):
+        marker = self.tools / "ran"
+        probe = self.tools / "probe"
+        probe.write_text("#!/bin/sh\ntouch '%s'\n" % marker)
+        probe.chmod(0o755)
+        shutil.copy(probe, self.repo / ".git" / "hooks" / "post-index-change")
+        git(self.repo, "config", "core.fsmonitor", str(probe))
+        (self.repo / "a").write_text("changed\n")
+        self.assertTrue(lr.worktree_dirty(self.repo))
+        self.assertFalse(marker.exists())
+        git(self.repo, "config", "--unset", "core.fsmonitor")
+        (self.tools / "included").write_text('[diff "x"]\n\ttextconv = %s\n' % probe)
+        for key, value in (("diff.external", str(probe)), ("filter.x.clean", str(probe)),
+                           ("include.path", str(self.tools / "included"))):
+            git(self.repo, "config", key, value)
+            with self.assertRaises(RuntimeError):
+                lr.changed_files(self.repo, self.a, self.d)
+            git(self.repo, "config", "--unset", key)
+        self.assertEqual(len(lr.changed_files(self.repo, self.a, self.d)), 3)
+        self.assertFalse(marker.exists())
+
     def test_plannotator_args(self):
         live, patch = lr.plannotator_args("pl", base="abc", live=True)
         self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--git", "--no-git-remote-check", "--json", "--base", "abc"], None))
