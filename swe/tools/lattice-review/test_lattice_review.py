@@ -49,8 +49,8 @@ def fake_plannotator(where, decision="annotated", message="line 2: rename it", e
     script = where / "plannotator"
     record = json.dumps({"decision": decision, key: message}) if decision else "usage error"
     record = record.replace("'", "")
-    script.write_text("#!/bin/sh\ncat > /dev/null\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
-                      % (delay, record, exit_code))
+    script.write_text("#!/bin/sh\ncat > '%s'\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
+                      % (where / "stdin.patch", delay, record, exit_code))
     script.chmod(0o755)
     return str(script)
 
@@ -253,12 +253,20 @@ class PureTests(RepoFixture):
         git(self.repo, "worktree", "add", "-q", str(wt9), "task/ab-9")
         empty = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
         self.assertEqual(lr.live_tree(self.repo, empty), (Path(str(wt9)), lr.rev(self.repo, "task/ab-9")))
+        (wt / "new.txt").write_text("a new file\nwithout a final newline")
+        (self.tools / "outside").write_text("not part of the tree\n")
+        (wt / "link").symlink_to(self.tools / "outside")
         ctx = self.context()
         ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
         job = ctx.start_plannotator("AB-4", record_on=None, base=base, live=True, tree=tree)
         wait_for(job)
         self.assertTrue(job.what.startswith("uncommitted changes in "), job.what)
         self.assertIn("wt-ab-4", job.what)
+        patch = (self.tools / "stdin.patch").read_text()
+        self.assertIn("+changed in the worktree", patch)
+        self.assertIn("diff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n", patch)
+        self.assertIn("+without a final newline\n\\ No newline at end of file\n", patch)
+        self.assertNotIn("not part of the tree", patch)
 
     def test_commits_that_mention_a_task_are_referenced_except_its_own(self):
         mention = commit(self.repo, "m", "docs: follow-up for AB-2 in the runbook")
@@ -290,9 +298,37 @@ class PureTests(RepoFixture):
         self.assertEqual(len(lr.changed_files(self.repo, self.a, self.d)), 3)
         self.assertFalse(marker.exists())
 
+    def test_config_written_after_the_check_does_not_run_a_program(self):
+        marker = self.tools / "ran"
+        probe = self.tools / "probe"
+        probe.write_text("#!/bin/sh\ntouch '%s'\n" % marker)
+        probe.chmod(0o755)
+        (self.repo / ".git" / "info" / "attributes").write_text("* diff=x\n")
+        keys = ("diff.external", "diff.x.command", "diff.x.textconv")
+        checked = lr.git_env
+
+        def check_then_change(repo):
+            env = checked(repo)
+            for key in keys:
+                git(self.repo, "config", key, str(probe))
+            return env
+
+        lr.git_env = check_then_change
+        outputs = []
+        try:
+            for args in (("diff", self.a, self.d), ("log", "-p", "-1", self.d), ("show", self.d + ":d")):
+                outputs.append(lr.run_git(self.repo, *args))
+                for key in keys:
+                    git(self.repo, "config", "--unset", key)
+        finally:
+            lr.git_env = checked
+        self.assertIn("+d", outputs[0])
+        self.assertFalse(marker.exists())
+
     def test_plannotator_args(self):
         live, patch = lr.plannotator_args("pl", base="abc", live=True)
-        self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--git", "--no-git-remote-check", "--json", "--base", "abc"], None))
+        self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc"]))
+        self.assertEqual(lr.plannotator_args("pl", live=True)[1], ["diff", "HEAD"])
         args, patch = lr.plannotator_args("pl", base="abc^", head="abc")
         self.assertEqual((args, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc^", "abc"]))
         self.assertEqual(lr.plannotator_args("pl", base="abc", head=lr.WORKTREE)[1], ["diff", "abc"])

@@ -128,13 +128,20 @@ INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, t
 
 # A repository's own config can name programs that git runs during ordinary
 # reads. Sessions can write any repository's config, and this server runs as the
-# owner outside the agent sandbox. So git here, and Plannotator's git, runs with
-# the fsmonitor, hooks and optional index writes switched off, and refuses a
-# repository whose own config names a diff or filter program.
-SAFE_GIT = {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
-            "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"}
+# owner outside the agent sandbox. So every git call here switches those programs
+# off when git runs, not only beforehand: the fsmonitor, hooks, optional index
+# writes and the external diff through the environment, and diff drivers and text
+# converters with --no-ext-diff and --no-textconv. Plannotator is only ever given
+# a patch, so it runs no git of its own. Git has no switch for a filter's clean
+# program, which runs whenever git reads working-tree files, so a repository whose
+# config names one, or a diff program, is refused before each call; config written
+# between that check and git's own read can still run a filter.
+SAFE_GIT = {"GIT_CONFIG_COUNT": "3", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": "/dev/null",
+            "GIT_CONFIG_KEY_2": "diff.external", "GIT_CONFIG_VALUE_2": "", "GIT_OPTIONAL_LOCKS": "0"}
 RUNS_PROGRAM = re.compile(r"^(?:local|worktree)\t(diff\.external|diff\..+\.(?:command|textconv)|"
                           r"filter\..+\.(?:clean|smudge|process))=", re.IGNORECASE | re.MULTILINE)
+NO_DIFF_PROGRAMS = ("diff", "log", "show")
 
 
 def git_env(repo):
@@ -148,6 +155,8 @@ def git_env(repo):
 
 
 def run_git(repo, *args, check=True, binary=False):
+    if args and args[0] in NO_DIFF_PROGRAMS:
+        args = (args[0], "--no-ext-diff", "--no-textconv") + args[1:]
     result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=not binary, env=git_env(repo))
     if check and result.returncode != 0:
         err = result.stderr if not binary else result.stderr.decode(errors="replace")
@@ -288,13 +297,31 @@ def home_short(path):
 
 
 def plannotator_args(plannotator, base=None, head=None, live=False):
-    """Command for one Plannotator session: the live checked-out tree from base,
-    or a static patch of base..head fed on stdin. Plannotator opens no browser
-    itself; the session URL it prints is opened by the page that asked."""
+    """Command for one Plannotator session, and the git diff for the patch it reads
+    on stdin: the uncommitted changes of the live checked-out tree from base, or
+    base..head. Plannotator runs no git of its own and opens no browser; the
+    session URL it prints is opened by the page that asked."""
+    args = [plannotator, "--browser", "none", "review", "--patch-file", "-", "--json"]
     if live:
-        args = [plannotator, "--browser", "none", "review", "--git", "--no-git-remote-check", "--json"]
-        return args + (["--base", base] if base else []), None
-    return [plannotator, "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", base] + ([] if head == WORKTREE else [head])
+        return args, ["diff", base or "HEAD"]
+    return args, ["diff", base] + ([] if head == WORKTREE else [head])
+
+
+def untracked_patch(tree):
+    """New files in tree as patch hunks, read here rather than through git so no
+    filter runs on them. Symlinks are left out, so a link cannot bring a file from
+    outside the tree into the review."""
+    out = []
+    for path in run_git(tree, "ls-files", "--others", "--exclude-standard", "-z").split("\0"):
+        full = Path(tree) / path
+        if not path or full.is_symlink() or not full.is_file():
+            continue
+        hunk = list(difflib.unified_diff([], full.read_text(errors="replace").splitlines(keepends=True),
+                                         "/dev/null", "b/" + path))
+        if hunk and not hunk[-1].endswith("\n"):
+            hunk[-1] += "\n\\ No newline at end of file\n"
+        out.append("diff --git a/%s b/%s\nnew file mode 100644\n%s" % (path, path, "".join(hunk)))
+    return "".join(out)
 
 
 def parse_review(stdout):
@@ -1008,7 +1035,10 @@ class Context:
                     notes.append((path, where, text, quoted_lines(source(side.group(3), path), where) if side else []))
                 self.record_threads(record_on, body, notes, head_sha[:12], job)
 
-        stdin = run_git(self.repo, *patch_args).encode() if patch_args else None
+        if live:
+            stdin = (run_git(tree, *patch_args) + untracked_patch(tree)).encode()
+        else:
+            stdin = run_git(self.repo, *patch_args).encode()
         return self.session(key, what, args, tree if live else self.repo, stdin, record if record_on else None)
 
     def start_plan_review(self, task):
