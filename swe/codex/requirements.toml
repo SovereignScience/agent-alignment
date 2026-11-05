@@ -1,0 +1,8 @@
+# Admin-enforced Codex requirements for this track, installed as
+# /etc/codex/requirements.toml by swe/scripts/install_isolation.sh. Only the
+# profiles listed may run, so Full Access and the built-in profiles, which do
+# not carry the workstation profile's read denials, are refused. Needs Codex
+# 0.138.0 or later. After installing, confirm in both the CLI and the VS Code
+# extension that sessions start on workstation and that Full Access is refused.
+[allowed_permission_profiles]
+"workstation" = true

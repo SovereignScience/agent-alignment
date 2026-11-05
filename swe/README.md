@@ -139,6 +139,7 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Test the guard's WebFetch check | `python3 -m unittest discover -s .claude/scripts -p 'test_*.py'` |
+| Test the installer's preview checks | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |

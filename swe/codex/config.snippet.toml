@@ -57,7 +57,7 @@ glob_scan_max_depth = 8
 # Sessions, shell history, browser profiles and tool tokens. Claude Code hides
 # all of ~/ by default; Codex profiles take exact paths, so these are named.
 "/mnt/c" = "deny"
-"~/.claude/projects" = "deny"
+"~/.claude" = "deny"
 "~/.codex/sessions" = "deny"
 "~/.bash_history" = "deny"
 "~/.python_history" = "deny"
@@ -97,8 +97,8 @@ ignore_default_excludes = false
 # by this snippet. Validate enforcement on each supported client version.
 #
 # Option A, user config: the built-in proxy with a domain allowlist.
-# [features.network_proxy]
-# enabled = true
+# [features]
+# network_proxy = true
 #
 # [permissions.workstation.network]
 # enabled = true

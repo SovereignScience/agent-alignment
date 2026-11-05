@@ -63,7 +63,7 @@ the user pushes, posts or applies it in their own terminal.
 |---|---|---|
 | SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
-| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside fetch_allow.txt and fetch_allow.local.txt, or with a URL long enough to carry data. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
+| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside fetch_allow.txt and fetch_allow.local.txt, or with a URL longer than its limits. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
 | PostToolUse on Write and Edit | post_edit_verify.sh | Names the file-level check for the session to run (hooks run outside the sandbox, so it runs no project tool), leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
@@ -99,18 +99,35 @@ managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
 unavailable, allows only package registries on the network, hides
 credential files and token variables, denies the outward commands, runs
-only managed hooks and disables bypass mode.
+only managed hooks, starts no MCP server it does not list (none by
+default) and disables bypass mode.
 
 Sandboxed commands read nothing in the home directory except the
 workspace and the toolchain folders the file lists, and nothing under
 /mnt/c on WSL. They write only to the working directory, which the sandbox
 allows on its own, the session's temporary directory and ~/.cache-agent,
-a cache that no tool outside the sandbox uses. A parent directory of
+the package and browser cache the managed env points tools at. A parent directory of
 checkouts is not writable, so one session cannot plant a git hook or a
 virtualenv in another project. The file tools refuse reads and writes
-outside the session's working directories. Unix sockets stay closed, which
-keeps D-Bus, Docker and WSL interop out of reach; a loopback HTTP server
-still binds, inside the sandbox's own network namespace.
+outside the session's working directories. With the sandbox's optional seccomp
+filter installed (npm install -g @anthropic-ai/sandbox-runtime), sandboxed
+commands cannot create Unix sockets; without it they can, so
+check_isolation.sh treats the filter as a prerequisite. A loopback HTTP
+server still binds, inside the sandbox's own network namespace.
+
+This isolates shell commands and limits the file tools; it does not contain
+the agent itself. Hooks, the status line and any MCP server the managed file
+lists run with your full access and inherit the managed env, so a listed
+MCP server that starts programs from ~/.cache-agent would run what a
+sandboxed command left there. WebSearch sends queries to the search
+service, the registries accept uploads made with anyone's credentials, a
+listed WebFetch host can receive a short query, and sessions on this machine
+can message each other; isolatePeerMachines only asks before messages to
+other machines. The session temporary directory is shared by every session
+of one account. Code, scripts and dependencies an agent wrote stay untrusted
+until you review them for a credentialed run. Containing the whole agent
+needs a boundary around it, such as a separate account, WSL distro or VM
+that holds none of your secrets.
 
 Paths only one machine has, such as a production checkout to hide or a
 conda folder to read, go in a local file outside git, started from
@@ -129,7 +146,11 @@ swe/scripts/install_isolation.sh --apply   # backs up each file, then installs
 Set SWE_WORKSPACE to the folder that holds your checkouts and
 SWE_MANAGED_LOCAL to the local file if it is not at
 ~/.config/agent-alignment/managed-local.json. Restart every session
-afterwards, then have an agent run swe/scripts/check_isolation.sh.
+afterwards, then have an agent run swe/scripts/check_isolation.sh in a
+fresh session of each client. It tests read access only on sentinel files
+with made-up content, and reports real credential paths by metadata alone.
+The preview prints rules and paths, never a setting's value; apply backs up
+each file under a unique name and prints the commands that undo it.
 
 ## Codex
 
@@ -137,7 +158,14 @@ afterwards, then have an agent run swe/scripts/check_isolation.sh.
 denials, no network) and ../codex/default.rules the commands Codex refuses
 in every mode. Codex reads AGENTS.md for the rules themselves.
 install_isolation.sh adds the profile's read denials, and the local
-file's, to ~/.codex/config.toml.
+file's, to ~/.codex/config.toml. It stops when that file grants one of
+those paths, lacks the workstation profile or does not start on it, and it
+installs codex/requirements.toml as /etc/codex/requirements.toml so that
+only that profile may run (Codex 0.138.0 or later). Confirm in the CLI and
+the VS Code extension that sessions start on it and Full Access is refused.
+The profile is a deny list, not Claude's default-deny home read.
+default.rules forbids ansible-playbook as a top-level command, so syntax
+checks in Codex go through the repository's own validation script.
 
 ## Adding a specialist
 
@@ -162,6 +190,7 @@ file's, to ~/.codex/config.toml.
 python3 -c "import json; json.load(open('.claude/settings.json'))"
 for script in .claude/scripts/*.sh scripts/*.sh; do bash -n "$script"; done
 python3 -m unittest discover -s .claude/scripts -p 'test_*.py'
+python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 -m py_compile .claude/scripts/guard_outward.py .claude/scripts/tells_check.py .claude/scripts/pre-push
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | python3 .claude/scripts/guard_outward.py
 bash .claude/scripts/statusline.sh
