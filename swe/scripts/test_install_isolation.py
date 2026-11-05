@@ -16,11 +16,8 @@ PROFILE = '''default_permissions = "workstation"
 
 [permissions.workstation]
 extends = ":workspace"
-
-[permissions.workstation.filesystem]
-"~/.ssh" = "deny"
 '''
-ROOTS = '\n[permissions.workstation.filesystem.":workspace_roots"]\n'
+MARK = "# Admin-enforced Codex requirements. Only the profile defined here may run,"
 # Runs the command as the current user, without install's root ownership flags.
 # FAKE_SUDO_FAIL makes any command naming a path with that ending fail.
 FAKE_SUDO = '''#!/usr/bin/env bash
@@ -75,26 +72,40 @@ class Installer(unittest.TestCase):
 
     preview = run_installer
 
-    def test_a_conflicting_codex_grant_stops_the_preview(self):
-        code, out = self.preview(codex=PROFILE + '"~/.vault-token" = "read"\n')
-        self.assertNotEqual(code, 0, out)
-        self.assertIn('"~/.vault-token" = "read"', out)
-        self.assertIn("Nothing was written", out)
+    def requirements(self):
+        return tomllib.loads((self.etc / "codex/requirements.toml").read_text())
 
-    def test_a_profile_that_does_more_than_the_snippet_stops_the_preview(self):
-        for config in ('default_permissions = "workstation"\n',
-                       PROFILE.replace('default_permissions = "workstation"', 'default_permissions = ":workspace"'),
-                       PROFILE.replace('extends = ":workspace"', 'extends = ":danger-full-access"'),
-                       PROFILE + '"~/.cache" = "write"\n',
-                       PROFILE + ROOTS + '"**/.env" = "read"\n',
-                       PROFILE + '\n[permissions.workstation.network]\nenabled = true\n',
-                       PROFILE + '\n[permissions.workstation.workspace_roots]\n"~" = true\n',
-                       PROFILE + 'glob_scan_max_depth = 2\n',
+    def test_a_codex_config_the_admin_profile_cannot_follow_stops_the_preview(self):
+        for config in (PROFILE.replace('"workstation"', '":danger-full-access"', 1),
+                       PROFILE + '\n[permissions.alignment_workstation]\nextends = ":workspace"\n',
                        None):
             with self.subTest(config=config):
                 code, out = self.preview(codex=config)
                 self.assertNotEqual(code, 0, out)
                 self.assertIn("Nothing was written", out)
+
+    def test_the_profile_skips_denials_codex_cannot_apply(self):
+        (self.home / ".ssh").mkdir()
+        (self.home / "elsewhere").mkdir()
+        (self.home / ".aws").symlink_to(self.home / ".ssh")
+        (self.home / ".kube").symlink_to(self.home / "elsewhere")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        req = self.requirements()
+        self.assertEqual(req["default_permissions"], "alignment_workstation")
+        self.assertEqual(req["allowed_permission_profiles"], {"alignment_workstation": True})
+        fs = req["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertEqual(fs["~/.ssh"], "deny")
+        self.assertEqual(fs[str(self.home / "elsewhere")], "deny")
+        self.assertNotIn("~/.aws", fs)
+        self.assertNotIn("~/.kube", fs)
+        self.assertNotIn("~/.netrc", fs)
+        self.assertEqual(fs["glob_scan_max_depth"], 8)
+        self.assertEqual(fs[":workspace_roots"]["**/.env"], "deny")
+        self.assertIn("~/.aws (links into a denied folder)", out)
+        self.assertIn("~/.netrc (does not exist)", out)
+        config = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(config["default_permissions"], "alignment_workstation")
 
     def test_unsafe_targets_or_managed_directories_stop_the_preview(self):
         real = self.home / "settings-real.json"
@@ -127,11 +138,17 @@ class Installer(unittest.TestCase):
         self.assertIn("not a regular file", out)
         (self.etc / "claude-code/managed-settings.json").rmdir()
 
+    def test_only_requirements_this_script_wrote_are_replaced(self):
         (self.etc / "codex").mkdir()
-        (self.etc / "codex/requirements.toml").write_text('[allowed_permission_profiles]\n"other" = true\n')
+        requirements = self.etc / "codex/requirements.toml"
+        requirements.write_text('[allowed_permission_profiles]\n"other" = true\n')
         code, out = self.preview()
         self.assertNotEqual(code, 0, out)
-        self.assertIn("already holds other policy", out)
+        self.assertIn("holds policy this script did not write", out)
+        requirements.write_text(MARK + "\n# an older run\n")
+        code, out = self.preview()
+        self.assertEqual(code, 0, out)
+        self.assertIn("== %s" % requirements, out)
 
     def test_without_codex_the_admin_requirements_are_left_alone(self):
         shutil.rmtree(self.home / ".codex")
@@ -140,21 +157,13 @@ class Installer(unittest.TestCase):
         self.assertIn("note: no ~/.codex", out)
         self.assertNotIn(str(self.etc / "codex/requirements.toml"), out)
 
-    def test_entries_already_denied_are_not_added_again(self):
-        code, out = self.preview(codex=PROFILE + 'glob_scan_max_depth = 12\n' + ROOTS + '"**/.env" = "deny"\n')
-        self.assertEqual(code, 0, out)
-        self.assertNotIn("add glob_scan_max_depth", out)
-        self.assertNotIn('add "~/.ssh" = "deny"', out)
-        self.assertIn('add "~/.claude" = "deny"', out)
-        self.assertNotIn('add [":workspace_roots"] "**/.env"', out)
-        self.assertIn('add [":workspace_roots"] "**/*.tfvars" = "deny"', out)
-
     def test_invalid_local_entries_are_refused(self):
         for local in ({"permissions": {"deny": [123]}},
                       {"permissions": {"deny": [""]}},
                       {"sandbox": {"filesystem": {}}},
                       {"sandbox": {"credentials": {"files": [{"path": "~/.x", "mode": "mask"}]}}},
                       {"sandbox": {"credentials": {"files": [{"path": "", "mode": "deny"}]}}},
+                      {"sandbox": {"filesystem": {"allowRead": ["~/miniconda3"]}}},
                       {"sandbox": {"filesystem": {"allowWrite": ["~/"]}}}):
             with self.subTest(local=local):
                 code, out = self.preview(local=local)
@@ -175,12 +184,13 @@ class Installer(unittest.TestCase):
         self.assertIn("warning:", out)
 
     def test_local_paths_are_escaped_and_prerequisites_listed(self):
+        (self.home / 'odd"name').write_text("")
         sentinel = self.home / ".config/agent-alignment/sentinel"
         sentinel.parent.mkdir(parents=True)
         sentinel.write_text("")
         code, out = self.preview(local={"sandbox": {"filesystem": {"denyRead": ['~/odd"name']}}})
         self.assertEqual(code, 0, out)
-        self.assertIn('add "~/odd\\"name" = "deny"', out)
+        self.assertIn('"~/odd\\"name" = "deny"', out)
         self.assertIn("write      %s/.cache-agent" % self.home, out)
         self.assertIn("write      %s" % sentinel, out)
 
@@ -188,15 +198,13 @@ class Installer(unittest.TestCase):
         user = {"permissions": {"deny": ["Read(**/*token*)", "Bash(git push *)"]}}
         code, out = self.run_installer(user=user, apply=True)
         self.assertEqual(code, 0, out)
-        config = tomllib.loads((self.home / ".codex/config.toml").read_text())
-        fs = config["permissions"]["workstation"]["filesystem"]
-        self.assertEqual(fs["~/.claude"], "deny")
-        self.assertEqual(fs[":workspace_roots"]["**/.env"], "deny")
-        self.assertEqual(fs["glob_scan_max_depth"], 8)
+        self.assertEqual(self.requirements()["default_permissions"], "alignment_workstation")
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text())["permissions"]["deny"],
                          ["Bash(git push *)"])
+        managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
+        self.assertNotIn("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", managed["env"])
+        self.assertNotIn("~/", managed["sandbox"]["filesystem"]["denyRead"])
         self.assertTrue((self.etc / "claude-code/hooks/guard_outward.py").is_file())
-        self.assertTrue((self.etc / "codex/requirements.toml").is_file())
         sentinel = self.home / ".config/agent-alignment/sentinel"
         self.assertIn("agent-alignment sentinel", sentinel.read_text())
 

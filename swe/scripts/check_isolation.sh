@@ -6,7 +6,7 @@
 #
 # The clients differ on purpose: Claude's sandbox reaches the package
 # registries and, with its seccomp filter installed, refuses Unix sockets;
-# Codex's workstation profile runs commands without network.
+# Codex's alignment_workstation profile runs commands without network.
 #
 # Read access is tested only on sentinel files with made-up content: the
 # installer writes ~/.config/agent-alignment/sentinel, and --sentinel adds files
@@ -92,7 +92,13 @@ done
 
 if can_write "$PWD"; then ok "working directory writable"; else bad "working directory not writable"; fi
 if can_write "${TMPDIR:-/tmp}"; then ok "temp directory writable"; else bad "temp directory not writable"; fi
-if can_write "$HOME"; then bad "home directory writable"; else ok "home directory not writable"; fi
+if [ "$(stat -f -c %T "$HOME" 2>/dev/null)" = tmpfs ]; then
+    ok "home directory is a throwaway copy; writes there do not reach the disk"
+elif can_write "$HOME"; then
+    bad "home directory writable"
+else
+    ok "home directory not writable"
+fi
 if [ -d "$HOME/.cache" ] && can_write "$HOME/.cache"; then bad "$HOME/.cache writable"; else ok "$HOME/.cache not writable"; fi
 if [ "$client" = claude ]; then
     if can_write "$HOME/.cache-agent"; then ok "$HOME/.cache-agent writable"; else bad "$HOME/.cache-agent not writable"; fi
@@ -112,10 +118,14 @@ for f in guard_outward.py tells_check.py after_summary.sh fetch_allow.txt; do
     fi
 done
 if [ "$client" = codex ]; then
-    if cmp -s "$here/codex/requirements.toml" "$codex_etc/requirements.toml"; then
-        ok "installed Codex requirements match this checkout"
+    if python3 -I -c 'import sys, tomllib
+r = tomllib.load(open(sys.argv[1], "rb"))
+p = "alignment_workstation"
+sys.exit(0 if r.get("default_permissions") == p and r.get("allowed_permission_profiles") == {p: True}
+         and p in r.get("permissions", {}) else 1)' "$codex_etc/requirements.toml" 2>/dev/null; then
+        ok "installed Codex requirements allow only the alignment_workstation profile"
     else
-        bad "installed Codex requirements differ from this checkout, or are missing: $codex_etc/requirements.toml"
+        bad "installed Codex requirements are missing or allow more than alignment_workstation: $codex_etc/requirements.toml"
     fi
 fi
 

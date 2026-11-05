@@ -176,28 +176,44 @@
         "~/projects/CLAUDE.md"
       ],
       "denyRead": [
-        "~/",
         "/mnt/c",
         "~/.cargo/credentials.toml",
         "~/.cargo/credentials",
-        "~/.config/git/credentials"
-      ],
-      "allowRead": [
-        "~/projects",
-        "~/.cache-agent",
-        "~/.gitconfig",
-        "~/.config/git",
-        "~/.local/bin",
-        "~/.local/lib",
-        "~/.local/share/pipx",
-        "~/.nvm",
-        "~/.cargo",
-        "~/.rustup",
-        "~/go",
-        "~/.pyenv",
-        "~/.venvs"
-      ],
-      "allowManagedReadPathsOnly": true
+        "~/.config/git/credentials",
+        "~/.ssh",
+        "~/.kube",
+        "~/.config/gh",
+        "~/.config/age",
+        "~/.gnupg",
+        "~/.password-store",
+        "~/.docker/config.json",
+        "~/.codex/auth.json",
+        "~/.codex/sessions",
+        "~/.claude/.credentials.json",
+        "~/.claude/projects",
+        "~/.claude.json",
+        "~/.npmrc",
+        "~/.pypirc",
+        "~/.git-credentials",
+        "~/.aws",
+        "~/.netrc",
+        "~/.config/gcloud",
+        "~/.config/b2",
+        "~/.config/doctl",
+        "~/.config/helm",
+        "~/.config/pinniped",
+        "~/.gsutil",
+        "~/.vault-token",
+        "~/.config/agent-alignment",
+        "~/.bash_history",
+        "~/.python_history",
+        "~/.node_repl_history",
+        "~/.mozilla",
+        "~/.config/chromium",
+        "~/.config/google-chrome",
+        "~/.copilot",
+        "~/.gemini"
+      ]
     },
     "credentials": {
       "files": [
@@ -306,6 +322,82 @@
         {
           "name": "CLOUDFLARE_API_TOKEN",
           "mode": "deny"
+        },
+        {
+          "name": "DIGITALOCEAN_ACCESS_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "DIGITALOCEAN_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "DO_API_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "DH_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "ANSIBLE_VAULT_PASSWORD_FILE",
+          "mode": "deny"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "HF_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "HUGGING_FACE_HUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "GOOGLE_API_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "NPM_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "PYPI_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "TWINE_PASSWORD",
+          "mode": "deny"
+        },
+        {
+          "name": "B2_APPLICATION_KEY",
+          "mode": "deny"
+        },
+        {
+          "name": "B2_APPLICATION_KEY_ID",
+          "mode": "deny"
+        },
+        {
+          "name": "RESTIC_PASSWORD",
+          "mode": "deny"
+        },
+        {
+          "name": "TF_VAR_do_token",
+          "mode": "deny"
+        },
+        {
+          "name": "DOCKER_AUTH_CONFIG",
+          "mode": "deny"
         }
       ]
     }
@@ -321,8 +413,7 @@
     "ANSIBLE_LOCAL_TEMP": "~/.cache-agent/ansible/tmp",
     "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
     "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
-    "PIP_CERT": "/etc/ssl/certs/ca-certificates.crt",
-    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"
+    "PIP_CERT": "/etc/ssl/certs/ca-certificates.crt"
   },
   "allowManagedHooksOnly": true,
   "allowManagedMcpServersOnly": true,

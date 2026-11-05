@@ -11,15 +11,15 @@
 #   /etc/claude-code/managed-settings.d/50-local.json from the local file below, if present
 #   /etc/claude-code/hooks/                           guard_outward.py, tells_check.py, after_summary.sh,
 #                                                     fetch_allow.txt (never fetch_allow.local.txt)
-#   /etc/codex/requirements.toml                      from codex/requirements.toml
+#   /etc/codex/requirements.toml                      the Codex profile, built from codex/config.snippet.toml
 #   ~/.claude/settings.json                           drops rules the managed layer replaces
-#   ~/.codex/config.toml                              adds the profile's read denials
+#   ~/.codex/config.toml                              default_permissions set to that profile
 #   ~/.config/agent-alignment/sentinel                made-up content for check_isolation.sh
 #
 # SWE_WORKSPACE is the folder that holds your checkouts (default ~/projects).
 # SWE_MANAGED_LOCAL is this machine's own paths (default
 # ~/.config/agent-alignment/managed-local.json): a production checkout to hide,
-# extra toolchains to read, credential files. Start it from
+# credential files. Start it from
 # .claude/managed-local.example.json. It stays out of git.
 # SWE_ETC and SWE_CODEX_ETC replace /etc/claude-code and /etc/codex, for tests.
 #
@@ -29,12 +29,12 @@
 #
 # It stops, writing nothing, when a managed directory is a symlink, is not
 # owned by root or is writable by group or others; when a target is a symlink
-# or not a regular file; when /etc/codex/requirements.toml already holds other
-# content; or when the Codex profile is missing, extends another profile, turns
-# network on, adds workspace roots, grants anything but denials or scans globs
-# less deeply than the snippet. Without ~/.codex it leaves the Codex profile and
-# /etc/codex alone. A managed file with the right content but the wrong owner or
-# mode is reinstalled.
+# or not a regular file; when /etc/codex/requirements.toml holds policy this
+# script did not write; when the local file re-opens paths; or when
+# ~/.codex/config.toml is missing, defines the admin profile itself or picks
+# another default. Without ~/.codex it leaves Codex and /etc/codex alone. A
+# managed file with the right content but the wrong owner or mode is
+# reinstalled.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,7 +56,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
 python3 - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
-import json, os, pathlib, re, shutil, stat, sys, tomllib
+import json, os, pathlib, re, stat, sys, tomllib
 
 swe, workspace, local_file, stage, etc, codex_etc, test_dirs = sys.argv[1:]
 home = os.path.expanduser("~")
@@ -99,10 +99,12 @@ for key, value in managed.get("env", {}).items():
         managed["env"][key] = home + value[1:]
 (stage / "managed-settings.json").write_text(json.dumps(managed, indent=2) + "\n")
 
-# Local drop-in: it may only add denials and read paths, as lists of
-# non-empty strings, plus credential entries of exactly {path, mode: deny}.
+# Local drop-in: it may only add denials, as lists of non-empty strings, plus
+# credential entries of exactly {path, mode: deny}. allowRead is refused: on
+# Linux, re-opened paths leave the working directory read-only and the sandbox
+# cannot start.
 LISTS = {("permissions", "deny"), ("sandbox", "filesystem", "denyRead"),
-         ("sandbox", "filesystem", "denyWrite"), ("sandbox", "filesystem", "allowRead")}
+         ("sandbox", "filesystem", "denyWrite")}
 CREDS = ("sandbox", "credentials", "files")
 local = {}
 if os.path.exists(local_file):
@@ -168,94 +170,95 @@ if user.exists():
     (stage / "settings.json").write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     (stage / "settings.json.changes").write_text("\n".join(changes) + ("\n" if changes else ""))
 
-# Codex: the snippet's read denials, at the top level and for workspace roots,
-# plus the local file's, added to the workstation profile. A profile that does
-# more than the snippet's, or an unexpected layout, stops the run. The admin
-# requirements that allow only this profile are staged only alongside it.
+# Codex accepts an allowlist only of profiles defined in the requirements file,
+# so the snippet's [permissions.workstation] body, plus the local file's
+# denials, becomes the admin profile there: the default and the only profile
+# allowed. Codex's sandbox cannot mask a symlink or a path that does not exist,
+# so a symlinked denial is replaced by its target (or left out when the target
+# is already denied or missing), and missing paths and paths inside a denied
+# folder are left out. ~/.codex/config.toml only gets its default pointed at
+# the admin profile.
+PROFILE = "alignment_workstation"
+MARK = "# Admin-enforced Codex requirements. Only the profile defined here may run,"
 if codex_dir.exists() and not codex.exists():
-    stop("%s is missing; add the profile from codex/config.snippet.toml first" % codex)
+    stop("%s is missing; create it with the settings in codex/config.snippet.toml first" % codex)
 if not codex_dir.exists():
-    notes.append("note: no ~/.codex, so the Codex profile and %s were left alone" % codex_etc)
+    notes.append("note: no ~/.codex, so Codex and %s were left alone" % codex_etc)
 if codex.exists():
     snippet = tomllib.loads(pathlib.Path(swe, "codex/config.snippet.toml").read_text())
-    base = snippet["permissions"]["workstation"]["extends"]
-    snippet_fs = snippet["permissions"]["workstation"]["filesystem"]
+    body = snippet["permissions"]["workstation"]
+    snippet_fs = body["filesystem"]
     ROOTS = ":workspace_roots"
     wanted = [p for p, v in snippet_fs.items() if v == "deny"]
     wanted += local.get("sandbox", {}).get("filesystem", {}).get("denyRead", [])
     wanted += [e["path"] for e in local.get("sandbox", {}).get("credentials", {}).get("files", [])]
     wanted = list(dict.fromkeys(wanted))
-    wanted_roots = [p for p, v in snippet_fs[ROOTS].items() if v == "deny"]
+    ex = os.path.expanduser
+    folders = [ex(p) for p in wanted if os.path.isdir(ex(p)) and not os.path.islink(ex(p))]
+    def covered(path):
+        return any(path == d or path.startswith(d.rstrip("/") + "/") for d in folders)
+    denies, skipped = [], []
+    for p in wanted:
+        q = ex(p)
+        if os.path.islink(q):
+            target = os.path.realpath(q)
+            if covered(target):
+                skipped.append("%s (links into a denied folder)" % p)
+            elif os.path.exists(target):
+                denies.append(target)
+            else:
+                skipped.append("%s (links to a missing path)" % p)
+        elif not os.path.lexists(q):
+            skipped.append("%s (does not exist)" % p)
+        elif any(q != d and q.startswith(d.rstrip("/") + "/") for d in folders):
+            skipped.append("%s (inside a denied folder)" % p)
+        else:
+            denies.append(p)
+    denies = list(dict.fromkeys(denies))
+    if skipped:
+        notes.append("note: the Codex profile leaves out " + "; ".join(skipped))
+
     current = codex.read_text()
     try:
         config = tomllib.loads(current)
     except tomllib.TOMLDecodeError as error:
         stop("%s does not parse: %s" % (codex, error))
-    if config.get("default_permissions") != "workstation":
-        stop('%s must set default_permissions = "workstation" (see codex/config.snippet.toml)' % codex)
-    profile = config.get("permissions", {}).get("workstation", {})
-    table = profile.get("filesystem")
-    header = re.compile(r"^\[permissions\.workstation\.filesystem\][ \t]*\n", re.MULTILINE)
-    if not isinstance(table, dict) or len(header.findall(current)) != 1:
-        stop("%s needs exactly one [permissions.workstation.filesystem] table, written as a table "
-             "header; add the profile from codex/config.snippet.toml first" % codex)
-    if profile.get("extends") != base:
-        stop('%s: [permissions.workstation] must set extends = "%s", as codex/config.snippet.toml does'
-             % (codex, base))
-    if profile.get("network", {}).get("enabled"):
-        stop("%s: the workstation profile turns command networking on; this track runs Codex "
-             "commands without network" % codex)
-    if profile.get("workspace_roots"):
-        stop("%s: [permissions.workstation.workspace_roots] adds workspace roots; this track uses "
-             "only the session's own workspace, so remove them, then rerun" % codex)
-    def grants(node, path=()):
-        for key, value in node.items():
-            if isinstance(value, dict):
-                yield from grants(value, path + (key,))
-            elif isinstance(value, str) and value != "deny":
-                yield ".".join(json.dumps(p) for p in path + (key,)) + " = " + json.dumps(value)
-    granted = list(grants(table))
-    if granted:
-        stop("%s grants %s; the workstation profile may only add denials, so change each to "
-             "\"deny\" or remove it, then rerun" % (codex, ", ".join(granted)))
-    roots = table.get(ROOTS)
-    roots_header = re.compile(r'^\[permissions\.workstation\.filesystem\.":workspace_roots"\][ \t]*\n',
-                              re.MULTILINE)
-    if roots is not None and (not isinstance(roots, dict) or len(roots_header.findall(current)) != 1):
-        stop('%s: write [permissions.workstation.filesystem.":workspace_roots"] once, as a table '
-             "header, then rerun" % codex)
-    line = lambda p: '%s = "deny"\n' % json.dumps(p)
-    missing = [p for p in wanted if p not in table]
-    missing_roots = [p for p in wanted_roots if p not in (roots or {})]
-    depth = snippet_fs["glob_scan_max_depth"]
-    have = table.get("glob_scan_max_depth")
-    if have is not None and (type(have) is not int or have < depth):
-        stop("%s: glob_scan_max_depth is %r; the workspace-root denials need a whole number of at "
-             "least %d, as codex/config.snippet.toml sets" % (codex, have, depth))
-    add_depth = "" if have is not None else "glob_scan_max_depth = %d\n" % depth
-    updated = header.sub(lambda m: m.group(0) + add_depth + "".join(map(line, missing)), current, count=1)
-    if missing_roots and roots is None:
-        updated = (updated.rstrip("\n") + '\n\n[permissions.workstation.filesystem.":workspace_roots"]\n'
-                   + "".join(map(line, missing_roots)))
-    elif missing_roots:
-        updated = roots_header.sub(lambda m: m.group(0) + "".join(map(line, missing_roots)), updated, count=1)
-    try:
-        result = tomllib.loads(updated)["permissions"]["workstation"]["filesystem"]
-    except (tomllib.TOMLDecodeError, KeyError) as error:
-        stop("%s: adding the denials would break the file (%s); add them by hand from "
-             "codex/config.snippet.toml" % (codex, error))
-    scan = result.get("glob_scan_max_depth")
-    if any(result.get(p) != "deny" for p in wanted) or \
-            any(result.get(ROOTS, {}).get(p) != "deny" for p in wanted_roots) or \
-            type(scan) is not int or scan < depth:
-        stop("%s: the denials did not land where expected; add them by hand from "
-             "codex/config.snippet.toml" % codex)
+    if PROFILE in config.get("permissions", {}):
+        stop("%s defines [permissions.%s]; that name belongs to the admin profile in %s/requirements.toml, "
+             "so remove it, then rerun" % (codex, PROFILE, codex_etc))
+    default = config.get("default_permissions")
+    if default not in (None, "workstation", PROFILE):
+        stop('%s sets default_permissions = %s; set it to "%s", then rerun' % (codex, json.dumps(default), PROFILE))
+    want_line = 'default_permissions = "%s"' % PROFILE
+    if default == PROFILE:
+        updated = current
+    elif default is None:
+        updated = want_line + "\n" + current
+    else:
+        updated = re.sub(r"^default_permissions[ \t]*=.*$", want_line, current, count=1, flags=re.MULTILINE)
+    if tomllib.loads(updated).get("default_permissions") != PROFILE:
+        stop("%s: could not set default_permissions; set it to \"%s\" by hand" % (codex, PROFILE))
     (stage / "config.toml").write_text(updated)
-    (stage / "config.toml.changes").write_text(
-        ("add " + add_depth if add_depth else "")
-        + "".join("add %s" % line(p) for p in missing)
-        + "".join('add [":workspace_roots"] %s' % line(p) for p in missing_roots))
-    shutil.copy(pathlib.Path(swe, "codex/requirements.toml"), stage / "requirements.toml")
+    (stage / "config.toml.changes").write_text("" if updated == current else "set %s\n" % want_line)
+
+    q = json.dumps
+    lines = [MARK,
+             "# so Full Access and the built-in profiles are refused. Written by install_isolation.sh.",
+             "default_permissions = %s" % q(PROFILE), "",
+             "[allowed_permission_profiles]", "%s = true" % PROFILE, "",
+             "[permissions.%s]" % PROFILE, "extends = %s" % q(body["extends"]), "",
+             "[permissions.%s.filesystem]" % PROFILE,
+             "glob_scan_max_depth = %d" % snippet_fs["glob_scan_max_depth"]]
+    lines += ["%s = \"deny\"" % q(p) for p in denies]
+    roots = snippet_fs.get(ROOTS, {})
+    if roots:
+        lines += ["", "[permissions.%s.filesystem.%s]" % (PROFILE, q(ROOTS))]
+        lines += ["%s = %s" % (q(k), q(v)) for k, v in roots.items()]
+    requirements = "\n".join(lines) + "\n"
+    parsed = tomllib.loads(requirements)
+    if parsed["default_permissions"] != PROFILE or parsed["allowed_permission_profiles"] != {PROFILE: True}:
+        stop("the Codex requirements did not come out as expected")
+    (stage / "requirements.toml").write_text(requirements)
 
 (stage / "notes").write_text("\n".join(notes) + ("\n" if notes else ""))
 PY
@@ -300,10 +303,11 @@ for t in "${targets[@]}"; do
         exit 1
     fi
 done
+mark="# Admin-enforced Codex requirements. Only the profile defined here may run,"
 if [ -f "$stage/requirements.toml" ] && [ -f "$codex_etc/requirements.toml" ] \
-        && ! cmp -s "$codex_etc/requirements.toml" "$stage/requirements.toml"; then
-    echo "install_isolation: $codex_etc/requirements.toml already holds other policy. Compare it with" >&2
-    echo "codex/requirements.toml, merge the two by hand or move it aside, then rerun." >&2
+        && [ "$(head -n 1 "$codex_etc/requirements.toml")" != "$mark" ]; then
+    echo "install_isolation: $codex_etc/requirements.toml holds policy this script did not write." >&2
+    echo "Merge it by hand or move it aside, then rerun." >&2
     echo "Nothing was written." >&2
     exit 1
 fi
@@ -428,6 +432,6 @@ install -d -m 0700 "$HOME/.cache-agent" "$HOME/.config/agent-alignment"
 sentinel_ok || { rm -f "$sentinel"; ( umask 077; echo "$sentinel_text" > "$sentinel" ); }
 echo
 echo "Done. Restart every Claude Code and Codex session, confirm Codex starts on the"
-echo "workstation profile and refuses Full Access, then ask an agent to run"
+echo "alignment_workstation profile and refuses Full Access, then ask an agent to run"
 echo "swe/scripts/check_isolation.sh --client claude, or --client codex, in a fresh"
 echo "session of each client."
