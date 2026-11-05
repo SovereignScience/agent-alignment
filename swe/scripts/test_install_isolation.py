@@ -36,7 +36,9 @@ class Preview(unittest.TestCase):
         self.tmp.cleanup()
 
     def preview(self, codex=PROFILE, local=None, user=None):
-        if codex is not None:
+        if codex is None:
+            (self.home / ".codex/config.toml").unlink(missing_ok=True)
+        else:
             (self.home / ".codex/config.toml").write_text(codex)
         if local is not None:
             self.local.write_text(json.dumps(local))
@@ -54,11 +56,32 @@ class Preview(unittest.TestCase):
         self.assertIn('"~/.vault-token" = "read"', out)
         self.assertIn("Nothing was written", out)
 
-    def test_a_missing_profile_table_or_default_stops_the_preview(self):
+    def test_a_profile_that_does_more_than_the_snippet_stops_the_preview(self):
         for config in ('default_permissions = "workstation"\n',
-                       PROFILE.replace('default_permissions = "workstation"', 'default_permissions = ":workspace"')):
-            code, out = self.preview(codex=config)
-            self.assertNotEqual(code, 0, out)
+                       PROFILE.replace('default_permissions = "workstation"', 'default_permissions = ":workspace"'),
+                       PROFILE.replace('extends = ":workspace"', 'extends = ":danger-full-access"'),
+                       PROFILE + '"~/.cache" = "write"\n',
+                       PROFILE + '\n[permissions.workstation.filesystem.":workspace_roots"]\n"**/.env" = "read"\n',
+                       PROFILE + '\n[permissions.workstation.network]\nenabled = true\n',
+                       None):
+            with self.subTest(config=config):
+                code, out = self.preview(codex=config)
+                self.assertNotEqual(code, 0, out)
+                self.assertIn("Nothing was written", out)
+
+    def test_a_symlinked_target_or_other_codex_policy_stops_the_preview(self):
+        real = self.home / "settings-real.json"
+        real.write_text("{}")
+        (self.home / ".claude/settings.json").symlink_to(real)
+        code, out = self.preview()
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("symlink", out)
+        (self.home / ".claude/settings.json").unlink()
+        (self.etc / "codex").mkdir()
+        (self.etc / "codex/requirements.toml").write_text('[allowed_permission_profiles]\n"other" = true\n')
+        code, out = self.preview()
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("already holds other policy", out)
 
     def test_entries_already_denied_are_not_added_again(self):
         code, out = self.preview()
@@ -81,12 +104,22 @@ class Preview(unittest.TestCase):
         user = {"env": {"EXAMPLE_API_KEY": "made-up-user-value"},
                 "permissions": {"deny": ["Read(**/*token*)"], "additionalDirectories": [str(self.home)]}}
         codex = PROFILE + '\n[mcp_servers.example.env]\nTOKEN = "made-up-codex-value"\n'
+        (self.etc / "claude-code/managed-settings.json").write_text(json.dumps(
+            {"apiKeyHelper": "made-up-helper-value", "env": {"X": "made-up-env-value"},
+             "permissions": {"deny": ["Bash(git push *)"]}}))
         code, out = self.preview(codex=codex, user=user)
         self.assertEqual(code, 0, out)
-        self.assertNotIn("made-up-user-value", out)
-        self.assertNotIn("made-up-codex-value", out)
+        for value in ("made-up-user-value", "made-up-codex-value", "made-up-helper-value", "made-up-env-value"):
+            self.assertNotIn(value, out)
         self.assertIn("remove permissions.deny Read(**/*token*)", out)
         self.assertIn("warning:", out)
+
+    def test_local_paths_are_escaped_and_missing_prerequisites_listed(self):
+        code, out = self.preview(local={"sandbox": {"filesystem": {"denyRead": ['~/odd"name']}}})
+        self.assertEqual(code, 0, out)
+        self.assertIn('add "~/odd\\"name" = "deny"', out)
+        self.assertIn("create     %s/.cache-agent" % self.home, out)
+        self.assertIn("create     %s/.config/agent-alignment/sentinel" % self.home, out)
 
 
 if __name__ == "__main__":
