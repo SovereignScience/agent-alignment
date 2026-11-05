@@ -27,10 +27,12 @@
 # the rules it adds or removes, and managed settings are shown with every text
 # value outside permissions, sandbox and hook matchers masked.
 #
-# It stops, writing nothing, when a target is a symlink, when
-# /etc/codex/requirements.toml already holds other content, or when the Codex
-# profile is missing, extends another profile, turns network on or grants
-# anything but denials.
+# It stops, writing nothing, when a managed directory is a symlink, is not
+# owned by root or is writable by group or others; when a target is a symlink
+# or not a regular file; when /etc/codex/requirements.toml already holds other
+# content; or when the Codex profile is missing, extends another profile, turns
+# network on, adds workspace roots or grants anything but denials. Without
+# ~/.codex it leaves the Codex profile and /etc/codex alone.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,13 +48,15 @@ case "${1:-}" in
     *) echo "usage: $0 [--apply]" >&2; exit 64 ;;
 esac
 [ -d "$workspace" ] || { echo "SWE_WORKSPACE $workspace does not exist" >&2; exit 1; }
+test_dirs=no
+[ -z "${SWE_ETC:-}${SWE_CODEX_ETC:-}" ] || test_dirs=yes
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-python3 - "$swe" "$workspace" "$local_file" "$stage" <<'PY'
-import json, os, pathlib, re, sys, tomllib
+python3 - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
+import json, os, pathlib, re, shutil, stat, sys, tomllib
 
-swe, workspace, local_file, stage = sys.argv[1:]
+swe, workspace, local_file, stage, etc, codex_etc, test_dirs = sys.argv[1:]
 home = os.path.expanduser("~")
 ws = "~/" + os.path.relpath(workspace, home) if workspace.startswith(home + "/") else workspace
 stage = pathlib.Path(stage)
@@ -60,6 +64,30 @@ notes = []
 
 def stop(message):
     sys.exit("install_isolation: " + message + "\nNothing was written.")
+
+# Managed directories, from the one above each managed root down, must be real
+# directories owned by root and closed to group and others; otherwise a user
+# could swap the root-owned hooks inside. With SWE_ETC or SWE_CODEX_ETC set,
+# for tests, directories you own also pass the owner check.
+owners = {0, os.getuid()} if test_dirs == "yes" else {0}
+def managed_dir(path):
+    if not os.path.lexists(path):
+        return False
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode):
+        stop("%s is a symlink; managed files must sit in real directories" % path)
+    if not stat.S_ISDIR(st.st_mode):
+        stop("%s is not a directory" % path)
+    if st.st_uid not in owners:
+        stop("%s is owned by uid %d; managed directories must be owned by root" % (path, st.st_uid))
+    if st.st_mode & 0o022:
+        stop("%s is writable by group or others" % path)
+    return True
+for top, subs in ((etc, ("hooks", "managed-settings.d")), (codex_etc, ())):
+    top = os.path.normpath(top)
+    if managed_dir(os.path.dirname(top)) and managed_dir(top):
+        for sub in subs:
+            managed_dir(os.path.join(top, sub))
 
 # Managed settings: the reviewed example with the workspace root filled in.
 text = pathlib.Path(swe, ".claude/managed-settings.example.json").read_text()
@@ -138,19 +166,24 @@ if user.exists():
     (stage / "settings.json").write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     (stage / "settings.json.changes").write_text("\n".join(changes) + ("\n" if changes else ""))
 
-# Codex: the snippet's read denials plus the local file's, added to the
-# workstation profile. A profile that does more than the snippet's, or an
-# unexpected layout, stops the run.
+# Codex: the snippet's read denials, at the top level and for workspace roots,
+# plus the local file's, added to the workstation profile. A profile that does
+# more than the snippet's, or an unexpected layout, stops the run. The admin
+# requirements that allow only this profile are staged only alongside it.
 if codex_dir.exists() and not codex.exists():
     stop("%s is missing; add the profile from codex/config.snippet.toml first" % codex)
 if not codex_dir.exists():
-    notes.append("note: no ~/.codex, so the Codex profile was left alone")
+    notes.append("note: no ~/.codex, so the Codex profile and %s were left alone" % codex_etc)
 if codex.exists():
     snippet = tomllib.loads(pathlib.Path(swe, "codex/config.snippet.toml").read_text())
     base = snippet["permissions"]["workstation"]["extends"]
-    wanted = [p for p, v in snippet["permissions"]["workstation"]["filesystem"].items() if v == "deny"]
+    snippet_fs = snippet["permissions"]["workstation"]["filesystem"]
+    ROOTS = ":workspace_roots"
+    wanted = [p for p, v in snippet_fs.items() if v == "deny"]
     wanted += local.get("sandbox", {}).get("filesystem", {}).get("denyRead", [])
     wanted += [e["path"] for e in local.get("sandbox", {}).get("credentials", {}).get("files", [])]
+    wanted = list(dict.fromkeys(wanted))
+    wanted_roots = [p for p, v in snippet_fs[ROOTS].items() if v == "deny"]
     current = codex.read_text()
     try:
         config = tomllib.loads(current)
@@ -170,6 +203,9 @@ if codex.exists():
     if profile.get("network", {}).get("enabled"):
         stop("%s: the workstation profile turns command networking on; this track runs Codex "
              "commands without network" % codex)
+    if profile.get("workspace_roots"):
+        stop("%s: [permissions.workstation.workspace_roots] adds workspace roots; this track uses "
+             "only the session's own workspace, so remove them, then rerun" % codex)
     def grants(node, path=()):
         for key, value in node.items():
             if isinstance(value, dict):
@@ -180,19 +216,41 @@ if codex.exists():
     if granted:
         stop("%s grants %s; the workstation profile may only add denials, so change each to "
              "\"deny\" or remove it, then rerun" % (codex, ", ".join(granted)))
-    missing = [p for p in dict.fromkeys(wanted) if p not in table]
-    lines = "".join("%s = \"deny\"\n" % json.dumps(p) for p in missing)
-    updated = header.sub(lambda m: m.group(0) + lines, current, count=1)
-    tomllib.loads(updated)
+    roots = table.get(ROOTS)
+    roots_header = re.compile(r'^\[permissions\.workstation\.filesystem\.":workspace_roots"\][ \t]*\n',
+                              re.MULTILINE)
+    if roots is not None and (not isinstance(roots, dict) or len(roots_header.findall(current)) != 1):
+        stop('%s: write [permissions.workstation.filesystem.":workspace_roots"] once, as a table '
+             "header, then rerun" % codex)
+    line = lambda p: '%s = "deny"\n' % json.dumps(p)
+    missing = [p for p in wanted if p not in table]
+    missing_roots = [p for p in wanted_roots if p not in (roots or {})]
+    updated = header.sub(lambda m: m.group(0) + "".join(map(line, missing)), current, count=1)
+    if missing_roots and roots is None:
+        updated = (updated.rstrip("\n") + '\n\n[permissions.workstation.filesystem.":workspace_roots"]\n'
+                   + "".join(map(line, missing_roots)))
+    elif missing_roots:
+        updated = roots_header.sub(lambda m: m.group(0) + "".join(map(line, missing_roots)), updated, count=1)
+    try:
+        result = tomllib.loads(updated)["permissions"]["workstation"]["filesystem"]
+    except (tomllib.TOMLDecodeError, KeyError) as error:
+        stop("%s: adding the denials would break the file (%s); add them by hand from "
+             "codex/config.snippet.toml" % (codex, error))
+    if any(result.get(p) != "deny" for p in wanted) or \
+            any(result.get(ROOTS, {}).get(p) != "deny" for p in wanted_roots):
+        stop("%s: the denials did not land where expected; add them by hand from "
+             "codex/config.snippet.toml" % codex)
     (stage / "config.toml").write_text(updated)
-    (stage / "config.toml.changes").write_text("".join("add %s\n" % line for line in lines.splitlines()))
+    (stage / "config.toml.changes").write_text(
+        "".join("add %s" % line(p) for p in missing)
+        + "".join('add [":workspace_roots"] %s' % line(p) for p in missing_roots))
+    shutil.copy(pathlib.Path(swe, "codex/requirements.toml"), stage / "requirements.toml")
 
 (stage / "notes").write_text("\n".join(notes) + ("\n" if notes else ""))
 PY
 
 cp "$swe/.claude/scripts/guard_outward.py" "$swe/.claude/scripts/tells_check.py" \
    "$swe/.claude/scripts/after_summary.sh" "$swe/.claude/scripts/fetch_allow.txt" "$stage/"
-cp "$swe/codex/requirements.toml" "$stage/requirements.toml"
 python3 -m py_compile "$stage/guard_outward.py" "$stage/tells_check.py"
 rm -rf "$stage/__pycache__"
 
@@ -225,13 +283,14 @@ targets=(
 )
 for t in "${targets[@]}"; do
     IFS=: read -r target _ _ _ _ <<<"$t"
-    if [ -L "$target" ]; then
-        echo "install_isolation: $target is a symlink; make it a regular file, then rerun" >&2
+    if [ -L "$target" ] || { [ -e "$target" ] && [ ! -f "$target" ]; }; then
+        echo "install_isolation: $target is a symlink or not a regular file; make it a regular file, then rerun" >&2
         echo "Nothing was written." >&2
         exit 1
     fi
 done
-if [ -f "$codex_etc/requirements.toml" ] && ! cmp -s "$codex_etc/requirements.toml" "$stage/requirements.toml"; then
+if [ -f "$stage/requirements.toml" ] && [ -f "$codex_etc/requirements.toml" ] \
+        && ! cmp -s "$codex_etc/requirements.toml" "$stage/requirements.toml"; then
     echo "install_isolation: $codex_etc/requirements.toml already holds other policy. Compare it with" >&2
     echo "codex/requirements.toml, merge the two by hand or move it aside, then rerun." >&2
     echo "Nothing was written." >&2
@@ -270,10 +329,12 @@ fi
 cat "$stage/notes"
 
 sentinel="$HOME/.config/agent-alignment/sentinel"
+sentinel_text="agent-alignment sentinel: made-up content, not a secret"
+sentinel_ok() { [ -f "$sentinel" ] && [ ! -L "$sentinel" ] && grep -qxF "$sentinel_text" "$sentinel"; }
 prereq=()
 [ -d "$HOME/.cache-agent" ] || prereq+=("$HOME/.cache-agent")
-[ -f "$sentinel" ] || prereq+=("$sentinel")
-for p in "${prereq[@]}"; do echo "create     $p"; done
+sentinel_ok || prereq+=("$sentinel")
+for p in "${prereq[@]}"; do echo "write      $p"; done
 
 if [ "${#changed[@]}" -eq 0 ] && [ "${#prereq[@]}" -eq 0 ]; then
     echo "Nothing to change."
@@ -314,7 +375,9 @@ report() {
 trap 'status=$?; report; rm -rf "$stage"; [ "$status" -eq 0 ] || echo "Stopped part way; the lines above say what changed." >&2' EXIT
 
 if [ "${#changed[@]}" -gt 0 ]; then
-    sudo install -d -m 0755 "$etc" "$etc/hooks" "$etc/managed-settings.d" "$codex_etc"
+    dirs=("$etc" "$etc/hooks" "$etc/managed-settings.d")
+    [ -f "$stage/requirements.toml" ] && dirs+=("$codex_etc")
+    sudo install -d -m 0755 "${dirs[@]}"
 fi
 for t in "${changed[@]}"; do
     IFS=: read -r target name owner mode _ <<<"$t"
@@ -333,7 +396,7 @@ for t in "${changed[@]}"; do
     echo "installed  $target"
 done
 install -d -m 0700 "$HOME/.cache-agent" "$HOME/.config/agent-alignment"
-[ -f "$sentinel" ] || ( umask 077; echo "agent-alignment sentinel: made-up content, not a secret" > "$sentinel" )
+sentinel_ok || { rm -f "$sentinel"; ( umask 077; echo "$sentinel_text" > "$sentinel" ); }
 echo
 echo "Done. Restart every Claude Code and Codex session, confirm Codex starts on the"
 echo "workstation profile and refuses Full Access, then ask an agent to run"

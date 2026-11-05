@@ -11,10 +11,13 @@
 # Read access is tested only on sentinel files with made-up content: the
 # installer writes ~/.config/agent-alignment/sentinel, and --sentinel adds files
 # you created yourself (outside the sandbox) in places that must stay hidden.
-# A sentinel that opens with its text is readable. One that opens empty is
-# masked and one refused with "Permission denied" is denied. One that looks
-# absent may be hidden or missing, so the script lists it for you to confirm
-# outside the sandbox.
+# A sentinel that opens with its text is readable. One the sandbox replaces
+# with /dev/null is masked, and one refused with "Permission denied" is denied.
+# An empty file is no evidence. One that looks absent may be hidden or missing.
+#
+# Exit status: 0 when every check passed, 1 when one failed, 2 when the result
+# is incomplete until you run the outside checks it prints: a sentinel the
+# sandbox did not show, and under Codex whether the machine was online.
 #
 # The other PATHs, and the built-in list of credential stores, are reported by
 # metadata only: whether the sandbox shows the path at all. That is information,
@@ -57,9 +60,11 @@ can_write() {
 }
 
 for s in "${sentinels[@]}"; do
-    if out="$(head -c 128 -- "$s" 2>&1)"; then
+    if [ -c "$s" ]; then
+        ok "sentinel masked (replaced with a device): $s"
+    elif out="$(head -c 128 -- "$s" 2>&1)"; then
         if [ -z "$out" ]; then
-            ok "sentinel masked (opens empty): $s"
+            bad "sentinel is an empty file, so it proves nothing; rerun install_isolation.sh: $s"
         elif grep -qF "$sentinel_text" <<<"$out"; then
             bad "sentinel readable: $s"
         else
@@ -68,7 +73,7 @@ for s in "${sentinels[@]}"; do
     else
         case "$out" in
             *"Permission denied"*) ok "sentinel refused: $s" ;;
-            *"No such file"*) info "sentinel not visible: $s"; confirm+=("$s") ;;
+            *"No such file"*) info "sentinel not visible: $s"; confirm+=("$(printf 'test -s %q && echo present' "$s")") ;;
             *) bad "sentinel could not be tested: $s: $out" ;;
         esac
     fi
@@ -106,47 +111,67 @@ for f in guard_outward.py tells_check.py after_summary.sh fetch_allow.txt; do
         bad "installed hook differs from this checkout, or is missing: $etc/hooks/$f"
     fi
 done
-if cmp -s "$here/codex/requirements.toml" "$codex_etc/requirements.toml"; then
-    ok "installed Codex requirements match this checkout"
-else
-    bad "installed Codex requirements differ from this checkout, or are missing: $codex_etc/requirements.toml"
+if [ "$client" = codex ]; then
+    if cmp -s "$here/codex/requirements.toml" "$codex_etc/requirements.toml"; then
+        ok "installed Codex requirements match this checkout"
+    else
+        bad "installed Codex requirements differ from this checkout, or are missing: $codex_etc/requirements.toml"
+    fi
 fi
 
-if sock="$(python3 -c 'import socket; socket.socket(socket.AF_UNIX).close()' 2>&1)"; then
-    if [ "$client" = claude ]; then
-        bad "Unix sockets can be created: the sandbox's optional seccomp filter is missing (npm install -g @anthropic-ai/sandbox-runtime)"
-    else
-        info "Unix sockets can be created; the Codex profile does not claim to block them"
-    fi
-else
-    case "$sock" in
-        *PermissionError*|*"Operation not permitted"*) ok "Unix socket creation refused" ;;
-        *) bad "Unix socket test failed for another reason: $(tail -n 1 <<<"$sock")" ;;
-    esac
-fi
-if python3 -c 'import http.server as h; h.ThreadingHTTPServer(("127.0.0.1", 0), h.BaseHTTPRequestHandler).server_close()' 2>/dev/null; then
+# Import first, then classify only the error from creating the socket.
+sock="$(python3 -I -c '
+import errno, socket
+try:
+    socket.socket(socket.AF_UNIX).close()
+except OSError as error:
+    print("refused" if error.errno in (errno.EPERM, errno.EACCES) else "error %s" % error.errno)
+else:
+    print("created")' 2>/dev/null)"
+case "$sock" in
+    refused) ok "Unix socket creation refused" ;;
+    created)
+        if [ "$client" = claude ]; then
+            bad "Unix sockets can be created: the sandbox's optional seccomp filter is missing (npm install -g @anthropic-ai/sandbox-runtime)"
+        else
+            info "Unix sockets can be created; the Codex profile does not claim to block them"
+        fi ;;
+    *) bad "Unix socket test did not run: ${sock:-python3 failed before creating a socket}" ;;
+esac
+if python3 -I -c 'import http.server as h; h.ThreadingHTTPServer(("127.0.0.1", 0), h.BaseHTTPRequestHandler).server_close()' 2>/dev/null; then
     info "a local test server can bind 127.0.0.1"
 else
     info "a local test server cannot bind 127.0.0.1"
 fi
 
-if curl -sS -m 8 -o /dev/null https://example.com 2>/dev/null; then
-    bad "example.com reachable"
+if ! command -v curl >/dev/null; then
+    bad "curl not found, so the network checks did not run"
 else
-    ok "example.com not reached"
-fi
-if curl -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
-    if [ "$client" = claude ]; then ok "pypi.org reachable"; else bad "pypi.org reachable, but Codex commands should have no network"; fi
-else
-    if [ "$client" = claude ]; then bad "pypi.org not reached"; else ok "pypi.org not reached (an offline machine looks the same)"; fi
+    if curl -sS -m 8 -o /dev/null https://example.com 2>/dev/null; then
+        bad "example.com reachable"
+    else
+        ok "example.com not reached"
+    fi
+    if curl -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
+        if [ "$client" = claude ]; then ok "pypi.org reachable"; else bad "pypi.org reachable, but Codex commands should have no network"; fi
+    elif [ "$client" = claude ]; then
+        bad "pypi.org not reached"
+    else
+        info "pypi.org not reached"
+        confirm+=("curl -sS -m 8 -o /dev/null https://pypi.org/simple/ && echo online   # an offline machine also reaches nothing")
+    fi
 fi
 
+if [ "${#confirm[@]}" -gt 0 ]; then
+    echo "Outside checks, for your own terminal:"
+    for c in "${confirm[@]}"; do printf '  %s\n' "$c"; done
+fi
 if [ "$failed" != 0 ]; then
     echo "Some checks failed."
     exit 1
 fi
-echo "All checks passed."
 if [ "${#confirm[@]}" -gt 0 ]; then
-    echo "The sandbox did not show these sentinels. Confirm outside it that each exists:"
-    for s in "${confirm[@]}"; do printf '  test -f %q && echo present\n' "$s"; done
+    echo "Incomplete: no check failed, but the result waits on the outside checks above."
+    exit 2
 fi
+echo "All checks passed."
