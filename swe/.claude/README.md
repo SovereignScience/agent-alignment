@@ -63,7 +63,7 @@ the user pushes, posts or applies it in their own terminal.
 |---|---|---|
 | SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
-| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside its reading list of documentation sites, or with a URL long enough to carry data. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
+| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside fetch_allow.txt and fetch_allow.local.txt, or with a URL long enough to carry data. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
 | PostToolUse on Write and Edit | post_edit_verify.sh | Names the file-level check for the session to run (hooks run outside the sandbox, so it runs no project tool), leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
@@ -115,6 +115,9 @@ still binds, inside the sandbox's own network namespace.
 Paths only one machine has, such as a production checkout to hide or a
 conda folder to read, go in a local file outside git, started from
 managed-local.example.json. It may only add denials and read paths.
+To let WebFetch read another host, add it to
+/etc/claude-code/hooks/fetch_allow.local.txt with sudoedit; the
+installer copies fetch_allow.txt and never writes the local list.
 
 Install both, with the hooks, from a reviewed checkout:
 

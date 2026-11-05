@@ -12,8 +12,10 @@ you read cannot make you read a secret or run a command.
 ## Read first
 
 - The question you were given, and any sources the caller named.
-- The reading list in guard_outward.py: WebFetch refuses other hosts,
-  so search for a page on a listed host before giving up.
+- The reading list, fetch_allow.txt and fetch_allow.local.txt beside
+  the installed guard: WebFetch refuses other hosts, so search for a
+  page on a listed host before giving up, and name any host you needed
+  and could not reach.
 
 ## Invariants you defend
 
