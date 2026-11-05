@@ -177,7 +177,10 @@
       ],
       "denyRead": [
         "~/",
-        "/mnt/c"
+        "/mnt/c",
+        "~/.cargo/credentials.toml",
+        "~/.cargo/credentials",
+        "~/.config/git/credentials"
       ],
       "allowRead": [
         "~/projects",
@@ -322,6 +325,8 @@
     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"
   },
   "allowManagedHooksOnly": true,
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [],
   "hooks": {
     "PreToolUse": [
       {

@@ -741,9 +741,10 @@ def decide(cmd):
 
 
 # WebFetch runs outside the sandbox and its network allowlist, so it may read
-# only the hosts in fetch_allow.txt and fetch_allow.local.txt beside this file,
-# through URLs too short to carry data out. Without fetch_allow.txt every
-# fetch is refused.
+# only the hosts in fetch_allow.txt and fetch_allow.local.txt beside this file.
+# The length limits cap how much a URL can carry; any listed host can still
+# receive a little data in a query. Without fetch_allow.txt every fetch is
+# refused.
 FETCH_LISTS = ("fetch_allow.txt", "fetch_allow.local.txt")
 FETCH_MAX_QUERY = 200
 FETCH_MAX_URL = 1024
@@ -771,7 +772,7 @@ def check_fetch(url):
     if not any(host == d or host.endswith("." + d) for d in fetch_hosts()):
         deny("fetching %s, which is not on the reading list" % (host or "an unreadable URL"))
     if len(parts.query) > FETCH_MAX_QUERY or len(url) > FETCH_MAX_URL:
-        deny("a fetch URL long enough to carry data out")
+        deny("a fetch URL longer than the guard allows")
 
 
 def main():
