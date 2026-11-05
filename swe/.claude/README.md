@@ -176,9 +176,11 @@ denials, no network) and ../codex/default.rules the commands Codex refuses
 in every mode. Codex reads AGENTS.md for the rules themselves.
 install_isolation.sh adds the profile's read denials, and the local
 file's, to ~/.codex/config.toml, including the workspace-root denials for
-.env, tfvars, tfstate and key files. It stops when that file is missing, does
-not start on the workstation profile, or the profile extends another one,
-turns network on, adds workspace roots or grants anything but denials.
+.env, tfvars, tfstate and key files, and the glob_scan_max_depth those
+patterns need. It stops when that file is missing, does not start on the
+workstation profile, or the profile extends another one, turns network on,
+adds workspace roots, grants anything but denials or sets a shallower scan
+depth.
 Without ~/.codex it leaves Codex alone. It installs
 codex/requirements.toml as /etc/codex/requirements.toml so that only that
 profile may run (Codex 0.138.0 or later), and stops if that file already

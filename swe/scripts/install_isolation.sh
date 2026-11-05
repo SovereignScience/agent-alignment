@@ -31,8 +31,10 @@
 # owned by root or is writable by group or others; when a target is a symlink
 # or not a regular file; when /etc/codex/requirements.toml already holds other
 # content; or when the Codex profile is missing, extends another profile, turns
-# network on, adds workspace roots or grants anything but denials. Without
-# ~/.codex it leaves the Codex profile and /etc/codex alone.
+# network on, adds workspace roots, grants anything but denials or scans globs
+# less deeply than the snippet. Without ~/.codex it leaves the Codex profile and
+# /etc/codex alone. A managed file with the right content but the wrong owner or
+# mode is reinstalled.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -225,7 +227,13 @@ if codex.exists():
     line = lambda p: '%s = "deny"\n' % json.dumps(p)
     missing = [p for p in wanted if p not in table]
     missing_roots = [p for p in wanted_roots if p not in (roots or {})]
-    updated = header.sub(lambda m: m.group(0) + "".join(map(line, missing)), current, count=1)
+    depth = snippet_fs["glob_scan_max_depth"]
+    have = table.get("glob_scan_max_depth")
+    if have is not None and (type(have) is not int or have < depth):
+        stop("%s: glob_scan_max_depth is %r; the workspace-root denials need a whole number of at "
+             "least %d, as codex/config.snippet.toml sets" % (codex, have, depth))
+    add_depth = "" if have is not None else "glob_scan_max_depth = %d\n" % depth
+    updated = header.sub(lambda m: m.group(0) + add_depth + "".join(map(line, missing)), current, count=1)
     if missing_roots and roots is None:
         updated = (updated.rstrip("\n") + '\n\n[permissions.workstation.filesystem.":workspace_roots"]\n'
                    + "".join(map(line, missing_roots)))
@@ -236,13 +244,16 @@ if codex.exists():
     except (tomllib.TOMLDecodeError, KeyError) as error:
         stop("%s: adding the denials would break the file (%s); add them by hand from "
              "codex/config.snippet.toml" % (codex, error))
+    scan = result.get("glob_scan_max_depth")
     if any(result.get(p) != "deny" for p in wanted) or \
-            any(result.get(ROOTS, {}).get(p) != "deny" for p in wanted_roots):
+            any(result.get(ROOTS, {}).get(p) != "deny" for p in wanted_roots) or \
+            type(scan) is not int or scan < depth:
         stop("%s: the denials did not land where expected; add them by hand from "
              "codex/config.snippet.toml" % codex)
     (stage / "config.toml").write_text(updated)
     (stage / "config.toml.changes").write_text(
-        "".join("add %s" % line(p) for p in missing)
+        ("add " + add_depth if add_depth else "")
+        + "".join("add %s" % line(p) for p in missing)
         + "".join('add [":workspace_roots"] %s' % line(p) for p in missing_roots))
     shutil.copy(pathlib.Path(swe, "codex/requirements.toml"), stage / "requirements.toml")
 
@@ -297,12 +308,30 @@ if [ -f "$stage/requirements.toml" ] && [ -f "$codex_etc/requirements.toml" ] \
     exit 1
 fi
 
+# A managed file is unchanged only with the same bytes, root as owner (or you,
+# in tests) and the mode it is installed with; otherwise it is reinstalled.
+owners=(0)
+[ "$test_dirs" = no ] || owners+=("$(id -u)")
+managed_meta() {
+    local uid perm u
+    read -r uid perm < <(stat -c '%u %a' "$1")
+    [ "$perm" = "${2#0}" ] || return 1
+    for u in "${owners[@]}"; do [ "$uid" = "$u" ] && return 0; done
+    return 1
+}
+
 changed=()
 for t in "${targets[@]}"; do
     IFS=: read -r target name owner mode display <<<"$t"
     [ -f "$stage/$name" ] || continue
     if [ -f "$target" ] && cmp -s "$target" "$stage/$name"; then
-        echo "unchanged  $target"
+        if [ "$owner" != root ] || managed_meta "$target" "$mode"; then
+            echo "unchanged  $target"
+            continue
+        fi
+        echo "== $target"
+        echo "same content, but $(stat -c 'owner uid %u, mode %a' "$target"); reinstall as root with mode ${mode#0}"
+        changed+=("$t")
         continue
     fi
     echo "== $target"
