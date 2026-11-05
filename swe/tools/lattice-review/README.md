@@ -28,8 +28,13 @@ dropdown menus and the review section follow the theme's color scheme.
 Everything stays on the machine. The server binds to 127.0.0.1 only,
 answers only requests whose Host names this machine and refuses POSTs
 from another origin, starts Plannotator with its AI and sharing features
-disabled, feeds committed ranges to it as a static patch, and passes
-`--no-git-remote-check` to reviews of uncommitted changes.
+disabled, and feeds it every review as a static patch, so Plannotator runs
+no git of its own. Git here runs with the programs a repository's config can
+name switched off where git allows it (fsmonitor, hooks, external diff, diff
+drivers, text converters), and refuses a repository whose config names a
+diff or filter program. A filter's clean program has no off switch: config
+written between that check and git's read of the working tree can still run
+one.
 
 ## How a task's work is found
 
@@ -263,7 +268,7 @@ notes and plans handlers), written against Lattice 0.2.
 |---|---|
 | `/`, `/api/...`, `/static/...` | the Lattice dashboard; `/` carries the hook that renders the review section |
 | `/review/t/<ID>` | the review section for one task (what the iframe shows) |
-| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` in the checkout that holds the task's uncommitted work; redirects to the session; the JSON decision becomes a review comment |
+| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or with the uncommitted work of the checkout that holds it (new files included, symlinks left out); redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
 | `/review/t/<ID>/history` | the task's history, shown in the dashboard's History section |
