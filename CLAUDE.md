@@ -65,10 +65,17 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 ## Working a task (every agent)
 
 Tasks for this repository are on the owner's Lattice board in `.lattice/`
-(not committed). Read `.lattice/context.md` before working a task.
+(not committed). Read `.lattice/context.md` before working a task: it holds
+the plan-first step, the branch and worktree per task, the `Task: AA-<n>`
+commit trailer, the review flow, and the reply shape and rules for
+answering review threads.
 
 - Never edit files in this checkout for task work. It stays on main for
   the owner's merges and for board writes.
+- Plan before code. For a task that changes behaviour, write the plan to
+  the file `lattice plan AA-<n>` names, set
+  `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
+  owner approves it.
 - Before the first edit for AA-<n>, from this checkout:
 
   ```
@@ -78,6 +85,11 @@ Tasks for this repository are on the owner's Lattice board in `.lattice/`
 
   Then edit, test and run servers only there, with `LATTICE_ROOT` set to
   this checkout.
+- End every commit for a task with the trailer line `Task: AA-<n>`, so the
+  review section can find it.
+- Reviewing a diff or giving a verdict: load `swe/SKEPTIC_ARBITER.md`.
+  Answering review threads: use the reply shape and rules in
+  `.lattice/context.md`.
 - One question per needs_human flag, starting "Need:"; other decisions go
   in the plan, one per line. Clear a flag only when the owner says so,
   quoting the owner's words in the note.

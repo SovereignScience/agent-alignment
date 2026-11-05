@@ -273,13 +273,24 @@ must hold from the first edit in AGENTS.md as well:
 ```
 ## Working a task (every agent)
 
+Tasks are on the owner's Lattice board in .lattice/ (not committed). Read
+.lattice/context.md before working a task: it holds the plan-first step,
+the branch and worktree per task, the Task: <CODE>-<n> commit trailer, the
+review flow, and the reply shape and rules for answering review threads.
+
 - Never edit files in this checkout for task work. It stays on <branch>
   for the owner's merges and for board writes.
+- Plan before code. For a task that changes behaviour, write the plan to
+  the file lattice plan <CODE>-<n> names, set
+  lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
+  owner approves it.
 - Before the first edit for <CODE>-<n>:
     git worktree add <worktree root>/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
     LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n> feature/<CODE>-<n>-<slug> --actor agent:<tool>
   Then edit, test and run servers only there, with
   LATTICE_ROOT=<board directory>.
+- End every commit for a task with the trailer line Task: <CODE>-<n>, so
+  the review section can find it.
 - One question per needs_human flag, starting "Need:"; other decisions
   go in the plan, one per line. Clear a flag only when the owner says so,
   quoting the owner's words in the note.
