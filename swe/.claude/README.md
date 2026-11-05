@@ -147,9 +147,11 @@ swe/scripts/install_isolation.sh --apply   # backs up each file, then installs
 Set SWE_WORKSPACE to the folder that holds your checkouts and
 SWE_MANAGED_LOCAL to the local file if it is not at
 ~/.config/agent-alignment/managed-local.json. The preview prints rules and
-paths, never a setting's value. It stops, writing nothing, on a symlinked
-target or on Codex requirements that hold other policy. Apply backs up each
-file under a unique name and prints the commands that undo it.
+paths, never a setting's value. It stops, writing nothing, on a symlinked or
+irregular target, on a managed directory that is a symlink, not owned by root
+or writable by group or others, and on Codex requirements that hold other
+policy. Apply backs up each file under a unique name and prints the commands
+that undo it.
 
 Restart every session afterwards. In a fresh session of each client, have
 an agent run:
@@ -160,8 +162,10 @@ swe/scripts/check_isolation.sh --client claude   # or --client codex
 
 It tests read access only on sentinel files with made-up content, reports
 real credential paths by metadata alone, and checks that the installed hooks
-match the checkout. Then check by hand, in the same session, what a shell
-script cannot: the agent's Read of ~/.config/agent-alignment/sentinel is
+match the checkout. It exits 0 when every check passed, 1 when one failed,
+and 2 when the result is incomplete until you run the outside checks it
+prints, such as confirming that a sentinel it could not see exists. Then
+check by hand, in the same session, what a shell script cannot: the agent's Read of ~/.config/agent-alignment/sentinel is
 refused, a WebFetch of https://example.com is refused, and in Codex the
 session runs on the workstation profile and refuses Full Access.
 
@@ -171,16 +175,21 @@ session runs on the workstation profile and refuses Full Access.
 denials, no network) and ../codex/default.rules the commands Codex refuses
 in every mode. Codex reads AGENTS.md for the rules themselves.
 install_isolation.sh adds the profile's read denials, and the local
-file's, to ~/.codex/config.toml. It stops when that file is missing, does
+file's, to ~/.codex/config.toml, including the workspace-root denials for
+.env, tfvars, tfstate and key files. It stops when that file is missing, does
 not start on the workstation profile, or the profile extends another one,
-turns network on or grants anything but denials. It installs
+turns network on, adds workspace roots or grants anything but denials.
+Without ~/.codex it leaves Codex alone. It installs
 codex/requirements.toml as /etc/codex/requirements.toml so that only that
 profile may run (Codex 0.138.0 or later), and stops if that file already
 holds other policy. Confirm in the CLI and
 the VS Code extension that sessions start on it and Full Access is refused.
 The profile is a deny list, not Claude's default-deny home read.
-default.rules forbids ansible-playbook as a top-level command, so syntax
-checks in Codex go through the repository's own validation script.
+default.rules forbids ansible-playbook as a top-level command, including
+--syntax-check, so Codex sessions cannot run that check. How Codex should
+run it is an open decision; until one is chosen and tested, leave the check
+to Claude sessions or your own terminal, and never route it through a
+wrapper to get past the rule.
 
 ## Adding a specialist
 
