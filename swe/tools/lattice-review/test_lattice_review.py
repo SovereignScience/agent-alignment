@@ -49,8 +49,8 @@ def fake_plannotator(where, decision="annotated", message="line 2: rename it", e
     script = where / "plannotator"
     record = json.dumps({"decision": decision, key: message}) if decision else "usage error"
     record = record.replace("'", "")
-    script.write_text("#!/bin/sh\ncat > '%s'\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
-                      % (where / "stdin.patch", delay, record, exit_code))
+    script.write_text("#!/bin/sh\ncat > /dev/null\necho 'session ready: http://localhost:4242' >&2\nsleep %s\nprintf '%%s\\n' '%s'\nexit %d\n"
+                      % (delay, record, exit_code))
     script.chmod(0o755)
     return str(script)
 
@@ -239,35 +239,6 @@ class PureTests(RepoFixture):
         with self.assertRaisesRegex(RuntimeError, "is empty"):
             ctx.start_plannotator("AB-9", record_on="AB-9", base="main", head="main")
 
-    def test_uncommitted_work_is_reviewed_in_the_checkout_of_the_task_branch(self):
-        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-4"), "main")
-        self.assertIsNone(lr.live_tree(self.repo, rng))
-        wt = Path(self.tmp.name) / "wt-ab-4"
-        git(self.repo, "worktree", "add", "-q", str(wt), "task/ab-4")
-        (wt / "e").write_text("changed in the worktree\n")
-        tree, base = lr.live_tree(self.repo, rng)
-        self.assertEqual((tree.resolve(), base), (wt.resolve(), rng["base"]))
-        git(self.repo, "branch", "task/ab-9", "main")
-        task(self.repo, "AB-9", "in_review", "work only in a worktree", branch="task/ab-9")
-        wt9 = Path(self.tmp.name) / "wt-ab-9"
-        git(self.repo, "worktree", "add", "-q", str(wt9), "task/ab-9")
-        empty = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
-        self.assertEqual(lr.live_tree(self.repo, empty), (Path(str(wt9)), lr.rev(self.repo, "task/ab-9")))
-        (wt / "new.txt").write_text("a new file\nwithout a final newline")
-        (self.tools / "outside").write_text("not part of the tree\n")
-        (wt / "link").symlink_to(self.tools / "outside")
-        ctx = self.context()
-        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
-        job = ctx.start_plannotator("AB-4", record_on=None, base=base, live=True, tree=tree)
-        wait_for(job)
-        self.assertTrue(job.what.startswith("uncommitted changes in "), job.what)
-        self.assertIn("wt-ab-4", job.what)
-        patch = (self.tools / "stdin.patch").read_text()
-        self.assertIn("+changed in the worktree", patch)
-        self.assertIn("diff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n", patch)
-        self.assertIn("+without a final newline\n\\ No newline at end of file\n", patch)
-        self.assertNotIn("not part of the tree", patch)
-
     def test_commits_that_mention_a_task_are_referenced_except_its_own(self):
         mention = commit(self.repo, "m", "docs: follow-up for AB-2 in the runbook")
         refs = lr.commit_mentions(self.repo, "AB-2", {self.c})
@@ -285,7 +256,7 @@ class PureTests(RepoFixture):
         shutil.copy(probe, self.repo / ".git" / "hooks" / "post-index-change")
         git(self.repo, "config", "core.fsmonitor", str(probe))
         (self.repo / "a").write_text("changed\n")
-        self.assertTrue(lr.worktree_dirty(self.repo))
+        lr.run_git(self.repo, "status", "--porcelain")
         self.assertFalse(marker.exists())
         git(self.repo, "config", "--unset", "core.fsmonitor")
         (self.tools / "included").write_text('[diff "x"]\n\ttextconv = %s\n' % probe)
@@ -326,12 +297,8 @@ class PureTests(RepoFixture):
         self.assertFalse(marker.exists())
 
     def test_plannotator_args(self):
-        live, patch = lr.plannotator_args("pl", base="abc", live=True)
-        self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc"]))
-        self.assertEqual(lr.plannotator_args("pl", live=True)[1], ["diff", "HEAD"])
         args, patch = lr.plannotator_args("pl", base="abc^", head="abc")
         self.assertEqual((args, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc^", "abc"]))
-        self.assertEqual(lr.plannotator_args("pl", base="abc", head=lr.WORKTREE)[1], ["diff", "abc"])
 
     def test_parse_review_and_decision(self):
         self.assertEqual(lr.parse_review('noise\n{"decision": "annotated", "message": "fix line 3"}\n'), ("annotated", "fix line 3"))
@@ -789,10 +756,8 @@ class SectionTests(RepoFixture):
         self.assertIn(">Write the plan in VS Code</button>", none)
         self.assertNotIn("Completion", none)
         (self.repo / "scratch").write_text("x\n")
-        here = lr.home_short(self.repo)
-        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-9")[1])
-        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-10")[1])
-        self.assertNotIn("uncommitted changes in", call(self.base + "/review/t/AB-2")[1])
+        for sid in ("AB-2", "AB-9", "AB-10"):
+            self.assertNotIn("uncommitted changes in", call(self.base + "/review/t/" + sid)[1])
         self.reviews["AB-2"] = [{"id": "ev_r1", "role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
                                  "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}]
         page = call(self.base + "/review/t/AB-2")[1]

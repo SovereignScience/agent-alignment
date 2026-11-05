@@ -387,11 +387,8 @@ open, a second note on the same lines adds to it instead of starting
 another. A line at the top of the section says what to do next. One
 Plannotator session per task, plan and code together: any Plannotator
 button returns to the open one, and "Close session" ends one that was
-abandoned. When the checkout that has the task's branch checked out
-(often the task's worktree) has uncommitted changes, a second button
-names that checkout and reviews them, for feedback only: it never
-completes a task and, as the latest review, it withdraws an earlier
-approval until the range is reviewed again. Status, comments,
+abandoned. Only commits are reviewed: uncommitted work is committed
+first. Status, comments,
 notes and plans are the dashboard's own controls on the same page;
 writes made there carry the owner's actor. The review is bound to the
 commit IDs it covered: "Mark done" appears only while the latest review
