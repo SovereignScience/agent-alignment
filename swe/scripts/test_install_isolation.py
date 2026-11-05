@@ -89,6 +89,7 @@ class Installer(unittest.TestCase):
                        PROFILE + ROOTS + '"**/.env" = "read"\n',
                        PROFILE + '\n[permissions.workstation.network]\nenabled = true\n',
                        PROFILE + '\n[permissions.workstation.workspace_roots]\n"~" = true\n',
+                       PROFILE + 'glob_scan_max_depth = 2\n',
                        None):
             with self.subTest(config=config):
                 code, out = self.preview(codex=config)
@@ -140,8 +141,9 @@ class Installer(unittest.TestCase):
         self.assertNotIn(str(self.etc / "codex/requirements.toml"), out)
 
     def test_entries_already_denied_are_not_added_again(self):
-        code, out = self.preview(codex=PROFILE + ROOTS + '"**/.env" = "deny"\n')
+        code, out = self.preview(codex=PROFILE + 'glob_scan_max_depth = 12\n' + ROOTS + '"**/.env" = "deny"\n')
         self.assertEqual(code, 0, out)
+        self.assertNotIn("add glob_scan_max_depth", out)
         self.assertNotIn('add "~/.ssh" = "deny"', out)
         self.assertIn('add "~/.claude" = "deny"', out)
         self.assertNotIn('add [":workspace_roots"] "**/.env"', out)
@@ -190,6 +192,7 @@ class Installer(unittest.TestCase):
         fs = config["permissions"]["workstation"]["filesystem"]
         self.assertEqual(fs["~/.claude"], "deny")
         self.assertEqual(fs[":workspace_roots"]["**/.env"], "deny")
+        self.assertEqual(fs["glob_scan_max_depth"], 8)
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text())["permissions"]["deny"],
                          ["Bash(git push *)"])
         self.assertTrue((self.etc / "claude-code/hooks/guard_outward.py").is_file())
@@ -205,6 +208,19 @@ class Installer(unittest.TestCase):
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text()), user)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
         self.assertFalse((self.etc / "codex/requirements.toml").exists())
+
+    def test_a_managed_file_with_the_right_content_but_wrong_mode_is_reinstalled(self):
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        guard = self.etc / "claude-code/hooks/guard_outward.py"
+        guard.chmod(0o777)
+        code, out = self.preview()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("unchanged  %s" % guard, out)
+        self.assertIn("same content, but owner uid %d, mode 777" % os.getuid(), out)
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(guard.stat().st_mode & 0o7777, 0o755)
 
     def test_a_failed_write_stops_and_names_what_changed(self):
         user = {"permissions": {"deny": ["Read(**/*token*)"]}}
