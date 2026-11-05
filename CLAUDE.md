@@ -49,11 +49,11 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 
 - Plain language over jargon.
 - Operational rules over aspirational language.
-- Push, force-push and `--no-verify` are denied. Never amend or
-  rewrite published history. Confirm before recursive deletes, local
-  history rewrites, dependency removal and CI changes. Hooks are
-  best-effort guards; the deny lists, and in `swe/` the sandbox, are
-  the boundary.
+- Push, force-push and `git commit --no-verify` are denied. Never
+  amend or rewrite published history; history rewrites are the user's
+  to run. Confirm before recursive deletes, dependency removal and CI
+  changes. Hooks are best-effort guards; the deny lists, and in
+  `swe/` the sandbox, are the boundary.
 - No AI attribution anywhere: no AI co-author trailers, no
   "generated with" footers, badges or emoji. Keep human co-author
   trailers.

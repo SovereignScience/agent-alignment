@@ -153,7 +153,8 @@ flourishing/
    one, stop. Read `../CONTRIBUTING.md`.
 2. Read the relevant module; use a steward only when requested.
 3. Propagate affected content to derived files using the documented format.
-4. Check affected canonical and derived content for consistency.
+4. Check affected canonical and derived content for consistency with
+   `bash scripts/check_drift.sh`.
 5. Check affected scenarios and state the evaluation boundary.
 6. Use `/align-swarm-review` only when the user requests that review.
 
