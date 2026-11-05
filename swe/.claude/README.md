@@ -10,7 +10,8 @@ instructions; the Codex profile and rules live in ../codex/.
 |---|---|
 | settings.json | Permissions (allow, ask, deny), sandbox, hooks, status line. |
 | managed-settings.example.json | The admin-enforced layer for /etc/claude-code/managed-settings.json. |
-| agents/ | 12 specialist subagent definitions, each run by name. |
+| managed-local.example.json | Template for one machine's own paths, installed as managed-settings.d/50-local.json. |
+| agents/ | 13 specialist subagent definitions, each run by name. |
 | commands/ | 14 slash commands. |
 | scripts/ | Hooks and the status line. Need bash, python3, git and sha256sum. |
 
@@ -30,15 +31,18 @@ settings.json are ignored; this directory is for repositories without one.
 settings.json carries:
 
 - deny rules for common outward commands and live-system changes:
-  git push, gh writes, kubectl, helm, argocd, ansible, ssh, scp, terraform
+  git push, gh writes, kubectl, helm, argocd, ssh, scp, terraform
   and tofu apply, vault, aws s3 writes, docker push, npm publish, twine,
   crontab, at, systemd-run, tmux send-keys, and the Workflow, RemoteTrigger,
   CronCreate and Artifact tools;
 - deny rules for reading credential stores and secret files: ~/.ssh,
   ~/.kube, ~/.config/gh, ~/.aws, ~/.netrc, ~/.gnupg, ~/.password-store,
   ~/.config/age, ~/.docker/config.json, .env files, tfvars, tfstate, age,
-  kdbx, pem and key files, id_* keys, and anything named like a token,
-  secret or credential;
+  kdbx, pem and key files and id_* keys. Name patterns such as *token*
+  are left out: they hide library files (PyYAML's tokens.py) and never
+  reach the home directory, which the managed layer's default-deny read
+  covers. Ansible is left to the guard, which allows --syntax-check and
+  the list options and refuses every other run;
 - deny rules for editing this directory's settings, scripts, agents and
   commands, the user's ~/.claude settings, hooks, agents and CLAUDE.md,
   ~/.codex and /etc/claude-code;
@@ -59,7 +63,7 @@ the user pushes, posts or applies it in their own terminal.
 |---|---|---|
 | SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
-| PreToolUse on Bash and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
+| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside its reading list of documentation sites, or with a URL long enough to carry data. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
 | PostToolUse on Write and Edit | post_edit_verify.sh | Names the file-level check for the session to run (hooks run outside the sandbox, so it runs no project tool), leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
 
@@ -93,21 +97,44 @@ origin/main.
 
 managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
-unavailable, allows only its own domain list, hides credential files and
-token variables, denies the outward commands, runs only managed hooks and
-disables bypass mode. Sandboxed commands write only to the working
-directory, which the sandbox allows on its own, plus ~/.cache for package
-and browser caches and /tmp for scratch files; a parent directory of
-checkouts is not writable, so one session cannot edit another project.
-To use it, copy guard_outward.py, tells_check.py and after_summary.sh to
-/etc/claude-code/hooks/, replace ~/projects with your workspace root, and
-install the file as /etc/claude-code/managed-settings.json.
+unavailable, allows only package registries on the network, hides
+credential files and token variables, denies the outward commands, runs
+only managed hooks and disables bypass mode.
+
+Sandboxed commands read nothing in the home directory except the
+workspace and the toolchain folders the file lists, and nothing under
+/mnt/c on WSL. They write only to the working directory, which the sandbox
+allows on its own, the session's temporary directory and ~/.cache-agent,
+a cache that no tool outside the sandbox uses. A parent directory of
+checkouts is not writable, so one session cannot plant a git hook or a
+virtualenv in another project. The file tools refuse reads and writes
+outside the session's working directories. Unix sockets stay closed, which
+keeps D-Bus, Docker and WSL interop out of reach; a loopback HTTP server
+still binds, inside the sandbox's own network namespace.
+
+Paths only one machine has, such as a production checkout to hide or a
+conda folder to read, go in a local file outside git, started from
+managed-local.example.json. It may only add denials and read paths.
+
+Install both, with the hooks, from a reviewed checkout:
+
+```bash
+swe/scripts/install_isolation.sh           # shows every change, writes nothing
+swe/scripts/install_isolation.sh --apply   # backs up each file, then installs
+```
+
+Set SWE_WORKSPACE to the folder that holds your checkouts and
+SWE_MANAGED_LOCAL to the local file if it is not at
+~/.config/agent-alignment/managed-local.json. Restart every session
+afterwards, then have an agent run swe/scripts/check_isolation.sh.
 
 ## Codex
 
 ../codex/config.snippet.toml holds the permission profile (filesystem
 denials, no network) and ../codex/default.rules the commands Codex refuses
 in every mode. Codex reads AGENTS.md for the rules themselves.
+install_isolation.sh adds the profile's read denials, and the local
+file's, to ~/.codex/config.toml.
 
 ## Adding a specialist
 
@@ -130,7 +157,8 @@ in every mode. Codex reads AGENTS.md for the rules themselves.
 
 ```bash
 python3 -c "import json; json.load(open('.claude/settings.json'))"
-for script in .claude/scripts/*.sh; do bash -n "$script"; done
+for script in .claude/scripts/*.sh scripts/*.sh; do bash -n "$script"; done
+python3 -m unittest discover -s .claude/scripts -p 'test_*.py'
 python3 -m py_compile .claude/scripts/guard_outward.py .claude/scripts/tells_check.py .claude/scripts/pre-push
 echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | python3 .claude/scripts/guard_outward.py
 bash .claude/scripts/statusline.sh
