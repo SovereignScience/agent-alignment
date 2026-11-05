@@ -99,8 +99,9 @@ managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
 unavailable, allows only package registries on the network, hides
 credential files and token variables, denies the outward commands, runs
-only managed hooks, starts no MCP server it does not list (none by
-default) and disables bypass mode.
+only managed hooks, allows only the MCP servers it lists (none by
+default) and disables bypass mode. Servers a client builds in, such as the
+VS Code extension's own, are not on that list and still run.
 
 Sandboxed commands read nothing in the home directory except the
 workspace and the toolchain folders the file lists, and nothing under
@@ -145,12 +146,24 @@ swe/scripts/install_isolation.sh --apply   # backs up each file, then installs
 
 Set SWE_WORKSPACE to the folder that holds your checkouts and
 SWE_MANAGED_LOCAL to the local file if it is not at
-~/.config/agent-alignment/managed-local.json. Restart every session
-afterwards, then have an agent run swe/scripts/check_isolation.sh in a
-fresh session of each client. It tests read access only on sentinel files
-with made-up content, and reports real credential paths by metadata alone.
-The preview prints rules and paths, never a setting's value; apply backs up
-each file under a unique name and prints the commands that undo it.
+~/.config/agent-alignment/managed-local.json. The preview prints rules and
+paths, never a setting's value. It stops, writing nothing, on a symlinked
+target or on Codex requirements that hold other policy. Apply backs up each
+file under a unique name and prints the commands that undo it.
+
+Restart every session afterwards. In a fresh session of each client, have
+an agent run:
+
+```bash
+swe/scripts/check_isolation.sh --client claude   # or --client codex
+```
+
+It tests read access only on sentinel files with made-up content, reports
+real credential paths by metadata alone, and checks that the installed hooks
+match the checkout. Then check by hand, in the same session, what a shell
+script cannot: the agent's Read of ~/.config/agent-alignment/sentinel is
+refused, a WebFetch of https://example.com is refused, and in Codex the
+session runs on the workstation profile and refuses Full Access.
 
 ## Codex
 
@@ -158,10 +171,12 @@ each file under a unique name and prints the commands that undo it.
 denials, no network) and ../codex/default.rules the commands Codex refuses
 in every mode. Codex reads AGENTS.md for the rules themselves.
 install_isolation.sh adds the profile's read denials, and the local
-file's, to ~/.codex/config.toml. It stops when that file grants one of
-those paths, lacks the workstation profile or does not start on it, and it
-installs codex/requirements.toml as /etc/codex/requirements.toml so that
-only that profile may run (Codex 0.138.0 or later). Confirm in the CLI and
+file's, to ~/.codex/config.toml. It stops when that file is missing, does
+not start on the workstation profile, or the profile extends another one,
+turns network on or grants anything but denials. It installs
+codex/requirements.toml as /etc/codex/requirements.toml so that only that
+profile may run (Codex 0.138.0 or later), and stops if that file already
+holds other policy. Confirm in the CLI and
 the VS Code extension that sessions start on it and Full Access is refused.
 The profile is a deny list, not Claude's default-deny home read.
 default.rules forbids ansible-playbook as a top-level command, so syntax

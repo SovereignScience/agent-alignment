@@ -54,13 +54,24 @@ glob_scan_max_depth = 8
 "~/.config/gcloud" = "deny"
 "~/.config/b2" = "deny"
 "~/.config/doctl" = "deny"
+"~/.cargo/credentials.toml" = "deny"
+"~/.cargo/credentials" = "deny"
+"~/.config/git/credentials" = "deny"
+"~/.config/helm" = "deny"
+"~/.config/pinniped" = "deny"
+"~/.gsutil" = "deny"
 # Sessions, shell history, browser profiles and tool tokens. Claude Code hides
 # all of ~/ by default; Codex profiles take exact paths, so these are named.
+# ~/.config/agent-alignment holds the local file and check_isolation.sh's
+# sentinel, which must stay unreadable.
 "/mnt/c" = "deny"
 "~/.claude" = "deny"
+"~/.claude.json" = "deny"
 "~/.codex/sessions" = "deny"
+"~/.config/agent-alignment" = "deny"
 "~/.bash_history" = "deny"
 "~/.python_history" = "deny"
+"~/.node_repl_history" = "deny"
 "~/.vault-token" = "deny"
 "~/.mozilla" = "deny"
 "~/.config/chromium" = "deny"

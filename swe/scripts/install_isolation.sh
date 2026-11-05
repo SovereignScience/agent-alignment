@@ -24,7 +24,13 @@
 # SWE_ETC and SWE_CODEX_ETC replace /etc/claude-code and /etc/codex, for tests.
 #
 # The preview never prints a setting's value: settings files are summarised by
-# the rules it adds or removes, and env values in managed settings are masked.
+# the rules it adds or removes, and managed settings are shown with every text
+# value outside permissions, sandbox and hook matchers masked.
+#
+# It stops, writing nothing, when a target is a symlink, when
+# /etc/codex/requirements.toml already holds other content, or when the Codex
+# profile is missing, extends another profile, turns network on or grants
+# anything but denials.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -101,6 +107,11 @@ if os.path.exists(local_file):
 # PyYAML's tokens.py and miss the home directory, which the managed default-deny
 # read covers), the Ansible denials the guard replaces, and home-wide read allows.
 user = pathlib.Path(home, ".claude/settings.json")
+codex_dir = pathlib.Path(home, ".codex")
+codex = codex_dir / "config.toml"
+for path in (user, codex):
+    if path.is_symlink():
+        stop("%s is a symlink; make it a regular file, then rerun" % path)
 if user.exists():
     settings = json.loads(user.read_text())
     perms = settings.get("permissions", {})
@@ -128,10 +139,15 @@ if user.exists():
     (stage / "settings.json.changes").write_text("\n".join(changes) + ("\n" if changes else ""))
 
 # Codex: the snippet's read denials plus the local file's, added to the
-# workstation profile. A conflicting grant or an unexpected layout stops the run.
-codex = pathlib.Path(home, ".codex/config.toml")
+# workstation profile. A profile that does more than the snippet's, or an
+# unexpected layout, stops the run.
+if codex_dir.exists() and not codex.exists():
+    stop("%s is missing; add the profile from codex/config.snippet.toml first" % codex)
+if not codex_dir.exists():
+    notes.append("note: no ~/.codex, so the Codex profile was left alone")
 if codex.exists():
     snippet = tomllib.loads(pathlib.Path(swe, "codex/config.snippet.toml").read_text())
+    base = snippet["permissions"]["workstation"]["extends"]
     wanted = [p for p, v in snippet["permissions"]["workstation"]["filesystem"].items() if v == "deny"]
     wanted += local.get("sandbox", {}).get("filesystem", {}).get("denyRead", [])
     wanted += [e["path"] for e in local.get("sandbox", {}).get("credentials", {}).get("files", [])]
@@ -142,17 +158,30 @@ if codex.exists():
         stop("%s does not parse: %s" % (codex, error))
     if config.get("default_permissions") != "workstation":
         stop('%s must set default_permissions = "workstation" (see codex/config.snippet.toml)' % codex)
-    table = config.get("permissions", {}).get("workstation", {}).get("filesystem")
+    profile = config.get("permissions", {}).get("workstation", {})
+    table = profile.get("filesystem")
     header = re.compile(r"^\[permissions\.workstation\.filesystem\][ \t]*\n", re.MULTILINE)
     if not isinstance(table, dict) or len(header.findall(current)) != 1:
         stop("%s needs exactly one [permissions.workstation.filesystem] table, written as a table "
              "header; add the profile from codex/config.snippet.toml first" % codex)
-    conflicts = [p for p in dict.fromkeys(wanted) if p in table and table[p] != "deny"]
-    if conflicts:
-        stop("%s grants %s; change each to \"deny\" or remove it, then rerun"
-             % (codex, ", ".join('"%s" = "%s"' % (p, table[p]) for p in conflicts)))
+    if profile.get("extends") != base:
+        stop('%s: [permissions.workstation] must set extends = "%s", as codex/config.snippet.toml does'
+             % (codex, base))
+    if profile.get("network", {}).get("enabled"):
+        stop("%s: the workstation profile turns command networking on; this track runs Codex "
+             "commands without network" % codex)
+    def grants(node, path=()):
+        for key, value in node.items():
+            if isinstance(value, dict):
+                yield from grants(value, path + (key,))
+            elif isinstance(value, str) and value != "deny":
+                yield ".".join(json.dumps(p) for p in path + (key,)) + " = " + json.dumps(value)
+    granted = list(grants(table))
+    if granted:
+        stop("%s grants %s; the workstation profile may only add denials, so change each to "
+             "\"deny\" or remove it, then rerun" % (codex, ", ".join(granted)))
     missing = [p for p in dict.fromkeys(wanted) if p not in table]
-    lines = "".join('"%s" = "deny"\n' % p for p in missing)
+    lines = "".join("%s = \"deny\"\n" % json.dumps(p) for p in missing)
     updated = header.sub(lambda m: m.group(0) + lines, current, count=1)
     tomllib.loads(updated)
     (stage / "config.toml").write_text(updated)
@@ -167,12 +196,19 @@ cp "$swe/codex/requirements.toml" "$stage/requirements.toml"
 python3 -m py_compile "$stage/guard_outward.py" "$stage/tells_check.py"
 rm -rf "$stage/__pycache__"
 
-# Managed settings with every env value masked, for display only.
+# Managed settings for display only: text values outside permissions, sandbox
+# and hook matchers, such as env, helpers and headers, are masked.
 masked() {
     python3 -c 'import json, sys
-d = json.load(open(sys.argv[1]))
-d["env"] = {k: "(set)" for k in d.get("env", {})}
-print(json.dumps(d, indent=2))' "$1"
+def mask(node, path=()):
+    if isinstance(node, dict):
+        return {k: mask(v, path + (k,)) for k, v in node.items()}
+    if isinstance(node, list):
+        return [mask(v, path) for v in node]
+    if isinstance(node, str) and path[:1] not in (("permissions",), ("sandbox",)) and path[-1:] != ("matcher",):
+        return "(set)"
+    return node
+print(json.dumps(mask(json.load(open(sys.argv[1]))), indent=2))' "$1"
 }
 
 # target:staged-name:owner:mode:display
@@ -187,6 +223,21 @@ targets=(
     "$HOME/.claude/settings.json:settings.json:user:keep:summary"
     "$HOME/.codex/config.toml:config.toml:user:keep:summary"
 )
+for t in "${targets[@]}"; do
+    IFS=: read -r target _ _ _ _ <<<"$t"
+    if [ -L "$target" ]; then
+        echo "install_isolation: $target is a symlink; make it a regular file, then rerun" >&2
+        echo "Nothing was written." >&2
+        exit 1
+    fi
+done
+if [ -f "$codex_etc/requirements.toml" ] && ! cmp -s "$codex_etc/requirements.toml" "$stage/requirements.toml"; then
+    echo "install_isolation: $codex_etc/requirements.toml already holds other policy. Compare it with" >&2
+    echo "codex/requirements.toml, merge the two by hand or move it aside, then rerun." >&2
+    echo "Nothing was written." >&2
+    exit 1
+fi
+
 changed=()
 for t in "${targets[@]}"; do
     IFS=: read -r target name owner mode display <<<"$t"
@@ -218,7 +269,13 @@ if [ ! -f "$local_file" ] && [ -f "$etc/managed-settings.d/50-local.json" ]; the
 fi
 cat "$stage/notes"
 
-if [ "${#changed[@]}" -eq 0 ]; then
+sentinel="$HOME/.config/agent-alignment/sentinel"
+prereq=()
+[ -d "$HOME/.cache-agent" ] || prereq+=("$HOME/.cache-agent")
+[ -f "$sentinel" ] || prereq+=("$sentinel")
+for p in "${prereq[@]}"; do echo "create     $p"; done
+
+if [ "${#changed[@]}" -eq 0 ] && [ "${#prereq[@]}" -eq 0 ]; then
     echo "Nothing to change."
     exit 0
 fi
@@ -227,11 +284,19 @@ if [ "$apply" != yes ]; then
     echo "Nothing written. Review the changes above, then rerun with --apply."
     exit 0
 fi
-read -r -p "Install ${#changed[@]} file(s)? Each is backed up as <file>.$stamp.bak. [y/N] " answer
-[ "$answer" = y ] || { echo "Nothing written."; exit 1; }
+if [ "${#changed[@]}" -gt 0 ]; then
+    read -r -p "Install ${#changed[@]} file(s)? Each is backed up as <file>.$stamp.bak. [y/N] " answer
+    [ "$answer" = y ] || { echo "Nothing written."; exit 1; }
+fi
 
 installed=()
+current=""
 report() {
+    if [ -n "$current" ]; then
+        echo
+        echo "Stopped while installing $current; it may be unchanged or partly written."
+        [ -e "$current.$stamp.bak" ] && echo "Its earlier content is in $current.$stamp.bak."
+    fi
     [ "${#installed[@]}" -gt 0 ] || return 0
     echo
     echo "Installed ${#installed[@]} of ${#changed[@]} file(s). To undo, run:"
@@ -239,32 +304,38 @@ report() {
         IFS=: read -r target _ owner _ _ <<<"$t"
         sudo_cmd=""; [ "$owner" = root ] && sudo_cmd="sudo "
         if [ -e "$target.$stamp.bak" ]; then
-            echo "  ${sudo_cmd}cp -a '$target.$stamp.bak' '$target'"
+            printf '  %scp -a %q %q\n' "$sudo_cmd" "$target.$stamp.bak" "$target"
         else
-            echo "  ${sudo_cmd}rm '$target'"
+            printf '  %srm %q\n' "$sudo_cmd" "$target"
         fi
     done
 }
 # shellcheck disable=SC2154  # status is assigned inside the trap text
-trap 'status=$?; report; rm -rf "$stage"; [ "$status" -eq 0 ] || echo "Stopped part way; the files above are installed, the rest are not." >&2' EXIT
+trap 'status=$?; report; rm -rf "$stage"; [ "$status" -eq 0 ] || echo "Stopped part way; the lines above say what changed." >&2' EXIT
 
-sudo install -d -m 0755 "$etc" "$etc/hooks" "$etc/managed-settings.d" "$codex_etc"
+if [ "${#changed[@]}" -gt 0 ]; then
+    sudo install -d -m 0755 "$etc" "$etc/hooks" "$etc/managed-settings.d" "$codex_etc"
+fi
 for t in "${changed[@]}"; do
     IFS=: read -r target name owner mode _ <<<"$t"
+    current="$target"
     if [ "$owner" = root ]; then
-        [ -f "$target" ] && sudo cp -a "$target" "$target.$stamp.bak"
+        if [ -f "$target" ]; then sudo cp -a "$target" "$target.$stamp.bak"; fi
         sudo install -m "$mode" -o root -g root "$stage/$name" "$target"
     else
         cp -a "$target" "$target.$stamp.bak"
-        cat "$stage/$name" > "$target"
+        cp -p "$target" "$target.$stamp.new"
+        cat "$stage/$name" > "$target.$stamp.new"
+        mv -f "$target.$stamp.new" "$target"
     fi
     installed+=("$t")
+    current=""
     echo "installed  $target"
 done
 install -d -m 0700 "$HOME/.cache-agent" "$HOME/.config/agent-alignment"
-sentinel="$HOME/.config/agent-alignment/sentinel"
 [ -f "$sentinel" ] || ( umask 077; echo "agent-alignment sentinel: made-up content, not a secret" > "$sentinel" )
 echo
 echo "Done. Restart every Claude Code and Codex session, confirm Codex starts on the"
 echo "workstation profile and refuses Full Access, then ask an agent to run"
-echo "swe/scripts/check_isolation.sh in a fresh session of each client."
+echo "swe/scripts/check_isolation.sh --client claude, or --client codex, in a fresh"
+echo "session of each client."
