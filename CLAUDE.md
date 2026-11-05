@@ -62,6 +62,37 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 
 ---
 
+## Working a task (every agent)
+
+Tasks for this repository are on the owner's Lattice board in `.lattice/`
+(not committed). Read `.lattice/context.md` before working a task.
+
+- Never edit files in this checkout for task work. It stays on main for
+  the owner's merges and for board writes.
+- Before the first edit for AA-<n>, from this checkout:
+
+  ```
+  git worktree add ../agent-alignment-wt/AA-<n> -b feature/AA-<n>-<slug> main
+  LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n> feature/AA-<n>-<slug> --actor agent:<tool>
+  ```
+
+  Then edit, test and run servers only there, with `LATTICE_ROOT` set to
+  this checkout.
+- One question per needs_human flag, starting "Need:"; other decisions go
+  in the plan, one per line. Clear a flag only when the owner says so,
+  quoting the owner's words in the note.
+- The comment roles review and plan-review are only for the owner's
+  Plannotator results. Agents use validation, or no role.
+- At most three workers at once, each in its own task's worktree.
+- Write board comments for the owner in plain language: the point first,
+  then why, what a thing is before its path, one idea per paragraph, raw
+  output attached rather than pasted. The full rule is "Writing on the
+  board" in `.lattice/context.md`.
+- Never run lattice status <ID> done, lattice complete or lattice next;
+  completion is the owner's, through the review section.
+
+---
+
 ## Top-level layout
 
 ```
