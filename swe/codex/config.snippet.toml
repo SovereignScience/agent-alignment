@@ -54,6 +54,19 @@ glob_scan_max_depth = 8
 "~/.config/gcloud" = "deny"
 "~/.config/b2" = "deny"
 "~/.config/doctl" = "deny"
+# Sessions, shell history, browser profiles and tool tokens. Claude Code hides
+# all of ~/ by default; Codex profiles take exact paths, so these are named.
+"/mnt/c" = "deny"
+"~/.claude/projects" = "deny"
+"~/.codex/sessions" = "deny"
+"~/.bash_history" = "deny"
+"~/.python_history" = "deny"
+"~/.vault-token" = "deny"
+"~/.mozilla" = "deny"
+"~/.config/chromium" = "deny"
+"~/.config/google-chrome" = "deny"
+"~/.copilot" = "deny"
+"~/.gemini" = "deny"
 
 [permissions.workstation.filesystem.":workspace_roots"]
 "**/.env" = "deny"

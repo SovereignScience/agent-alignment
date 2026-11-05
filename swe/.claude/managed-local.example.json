@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/projects/example-prod-checkout/**)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyRead": [
+        "~/projects/example-prod-checkout"
+      ],
+      "denyWrite": [
+        "~/projects/example-prod-checkout"
+      ],
+      "allowRead": [
+        "~/miniconda3"
+      ]
+    },
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.example-token",
+          "mode": "deny"
+        }
+      ]
+    }
+  }
+}

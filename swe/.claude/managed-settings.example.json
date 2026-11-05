@@ -50,8 +50,6 @@
       "Bash(argocd app set *)",
       "Bash(argocd app delete *)",
       "Bash(argocd app create *)",
-      "Bash(ansible-playbook *)",
-      "Bash(ansible *)",
       "Bash(ssh *)",
       "Bash(scp *)",
       "Bash(sftp *)",
@@ -135,8 +133,11 @@
       "Read(~/.config/b2)",
       "Read(~/.config/b2/**)",
       "Read(~/.config/doctl)",
-      "Read(~/.config/doctl/**)"
+      "Read(~/.config/doctl/**)",
+      "Read(//mnt/c/**)"
     ],
+    "blockReadsOutsideWorkingDirectories": true,
+    "blockWritesOutsideWorkingDirectories": true,
     "disableBypassPermissionsMode": "disable"
   },
   "sandbox": {
@@ -156,29 +157,14 @@
         "sum.golang.org",
         "deb.debian.org",
         "cdn.playwright.dev",
-        "playwright.download.prss.microsoft.com",
-        "github.com",
-        "api.github.com",
-        "raw.githubusercontent.com",
-        "docs.github.com",
-        "code.visualstudio.com",
-        "code.claude.com",
-        "support.claude.com",
-        "skills.sh",
-        "developer.1password.com",
-        "docs.gitbutler.com",
-        "www.sublimemerge.com",
-        "developers.openai.com",
-        "platform.openai.com",
-        "learn.chatgpt.com"
+        "playwright.download.prss.microsoft.com"
       ],
       "strictAllowlist": true,
       "allowManagedDomainsOnly": true
     },
     "filesystem": {
       "allowWrite": [
-        "~/.cache",
-        "/tmp"
+        "~/.cache-agent"
       ],
       "denyWrite": [
         "~/.claude/settings.json",
@@ -188,7 +174,27 @@
         "~/.codex",
         "/etc/claude-code",
         "~/projects/CLAUDE.md"
-      ]
+      ],
+      "denyRead": [
+        "~/",
+        "/mnt/c"
+      ],
+      "allowRead": [
+        "~/projects",
+        "~/.cache-agent",
+        "~/.gitconfig",
+        "~/.config/git",
+        "~/.local/bin",
+        "~/.local/lib",
+        "~/.local/share/pipx",
+        "~/.nvm",
+        "~/.cargo",
+        "~/.rustup",
+        "~/go",
+        "~/.pyenv",
+        "~/.venvs"
+      ],
+      "allowManagedReadPathsOnly": true
     },
     "credentials": {
       "files": [
@@ -301,11 +307,25 @@
       ]
     }
   },
+  "env": {
+    "XDG_CACHE_HOME": "~/.cache-agent",
+    "PIP_CACHE_DIR": "~/.cache-agent/pip",
+    "npm_config_cache": "~/.cache-agent/npm",
+    "UV_CACHE_DIR": "~/.cache-agent/uv",
+    "PRE_COMMIT_HOME": "~/.cache-agent/pre-commit",
+    "PLAYWRIGHT_BROWSERS_PATH": "~/.cache-agent/ms-playwright",
+    "ANSIBLE_HOME": "~/.cache-agent/ansible",
+    "ANSIBLE_LOCAL_TEMP": "~/.cache-agent/ansible/tmp",
+    "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+    "PIP_CERT": "/etc/ssl/certs/ca-certificates.crt",
+    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"
+  },
   "allowManagedHooksOnly": true,
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__.*",
+        "matcher": "Bash|WebFetch|mcp__.*",
         "hooks": [
           {
             "type": "command",

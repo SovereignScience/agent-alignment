@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import sys
+import urllib.parse
 
 REASON = (
     "Blocked by the user's standing rule: agents never act outside this machine "
@@ -739,6 +740,30 @@ def decide(cmd):
             deny("unparsed outward command")
 
 
+# WebFetch runs outside the sandbox and its network allowlist, so it may read
+# only documentation hosts, through URLs too short to carry data out.
+FETCH_ALLOW = (
+    "code.claude.com", "docs.claude.com", "support.claude.com", "anthropic.com",
+    "developers.openai.com", "platform.openai.com", "learn.chatgpt.com",
+    "learn.microsoft.com", "code.visualstudio.com", "github.com", "docs.github.com",
+    "raw.githubusercontent.com", "modelcontextprotocol.io", "owasp.org", "nist.gov",
+    "ncsc.gov.uk", "cisa.gov", "simonwillison.net", "arxiv.org", "python.org", "pypi.org",
+    "npmjs.com", "debian.org", "ubuntu.com", "developer.1password.com", "docs.gitbutler.com",
+    "sublimemerge.com", "schemastore.org",
+)
+FETCH_MAX_QUERY = 200
+FETCH_MAX_URL = 1024
+
+
+def check_fetch(url):
+    parts = urllib.parse.urlsplit(url or "")
+    host = (parts.hostname or "").lower().rstrip(".")
+    if not any(host == d or host.endswith("." + d) for d in FETCH_ALLOW):
+        deny("fetching %s, which is not on the reading list" % (host or "an unreadable URL"))
+    if len(parts.query) > FETCH_MAX_QUERY or len(url) > FETCH_MAX_URL:
+        deny("a fetch URL long enough to carry data out")
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -756,6 +781,8 @@ def main():
     try:
         if tool == "Bash":
             decide(tin.get("command", ""))
+        elif tool == "WebFetch":
+            check_fetch(tin.get("url", ""))
         elif MCP_WRITE.match(tool):
             deny(tool)
         elif tool.count("__") >= 2 and BROWSER_SERVER.search(tool.split("__")[1]):
