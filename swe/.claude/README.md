@@ -117,11 +117,50 @@ commands cannot create Unix sockets; without it they can, so
 check_isolation.sh treats the filter as a prerequisite. A loopback HTTP
 server still binds, inside the sandbox's own network namespace.
 
+Keep git worktrees inside the checkout, at .worktrees/<name> with
+/.worktrees/ in .git/info/exclude (../LATTICE_ONBOARDING.md). This policy
+makes the sandbox admin-required, so Claude Code ignores allowWrite and
+additionalDirectories in a repository's own .claude settings, and a grant in
+~/.claude/settings.json would open the folder to every session.
+
+Sessions meet these limits by design. When one blocks a step, the agent hands
+the owner the exact command instead of working around it:
+
+- Python tools cannot use HTTPS: the *.pem deny also hides certifi's CA
+  bundle, so pip, pip-compile and pip-audit fail. Ansible Galaxy, the
+  Terraform registry, GitHub and every other host off the allowlist are
+  unreachable.
+- Anything that needs a Unix socket fails: Terraform providers, so validate
+  and plan, and Ansible past --syntax-check, whose task queue starts a local
+  RPC server. Tests that run them fail in the sandbox and pass in the owner's
+  terminal.
+- Files matching the secret patterns are masked inside the project too. They
+  cannot be read, edited or deleted, and the guard refuses commands that read
+  them, even a made-up test file.
+- Home is the throwaway folder above, so config written there is gone after
+  the command. Use the project, the session's temporary directory or
+  ~/.cache-agent.
+- git status in the sandbox lists placeholder devices the sandbox mounts over
+  protected names (.bashrc, .gitconfig, .mcp.json, .vscode, .claude/hooks and
+  others). They are not on disk; leave them. A command run from a subfolder
+  leaves an empty .claude/.cc-writes folder there, so run commands from the
+  project root and pass paths.
+- A worktree outside the project, such as a production checkout kept from
+  agents, shows as prunable. Never run git worktree prune; the owner locks
+  such worktrees with git worktree lock.
+
+Blocks prepared for the owner run in a subshell with set -euo pipefail, so a
+failed step stops the rest, and carry any script inline: a file in the
+session's temporary directory can be changed by any session before the owner
+runs it.
+
 Two documented settings break the sandbox on Linux and are left out. A
 denyRead of ~/ with allowRead exceptions leaves the working directory
 read-only, so the sandbox cannot create its mount points for protected files,
 and CLAUDE_CODE_SUBPROCESS_ENV_SCRUB makes it mask the containerd socket,
-which fails when /run/containerd is not listable. The token variables named
+which fails when /run/containerd is not listable; its stub mode also leaves
+empty package, lock and .env files in each checkout, hidden by a block it
+appends to .git/info/exclude on every run. The token variables named
 in credentials.envVars are stripped instead. Rerun check_isolation.sh after
 each Claude Code update.
 
