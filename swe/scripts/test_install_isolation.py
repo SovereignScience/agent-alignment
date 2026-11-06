@@ -18,6 +18,16 @@ PROFILE = '''default_permissions = "workstation"
 extends = ":workspace"
 '''
 MARK = "# Admin-enforced Codex requirements. Only the profile defined here may run,"
+# swe/codex/requirements.toml as 17def8a shipped and installed it.
+PREDECESSOR = '''# Admin-enforced Codex requirements for this track, installed as
+# /etc/codex/requirements.toml by swe/scripts/install_isolation.sh. Only the
+# profiles listed may run, so Full Access and the built-in profiles, which do
+# not carry the workstation profile's read denials, are refused. Needs Codex
+# 0.138.0 or later. After installing, confirm in both the CLI and the VS Code
+# extension that sessions start on workstation and that Full Access is refused.
+[allowed_permission_profiles]
+"workstation" = true
+'''
 # Runs the command as the current user, without install's root ownership flags.
 # FAKE_SUDO_FAIL makes any command naming a path with that ending fail.
 FAKE_SUDO = '''#!/usr/bin/env bash
@@ -149,6 +159,11 @@ class Installer(unittest.TestCase):
         code, out = self.preview()
         self.assertEqual(code, 0, out)
         self.assertIn("== %s" % requirements, out)
+        requirements.write_text(PREDECESSOR)
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.requirements()["default_permissions"], "alignment_workstation")
+        self.assertEqual([b.read_text() for b in requirements.parent.glob("requirements.toml.*.bak")], [PREDECESSOR])
 
     def test_without_codex_the_admin_requirements_are_left_alone(self):
         shutil.rmtree(self.home / ".codex")

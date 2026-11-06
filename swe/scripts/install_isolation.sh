@@ -304,8 +304,11 @@ for t in "${targets[@]}"; do
     fi
 done
 mark="# Admin-enforced Codex requirements. Only the profile defined here may run,"
+# The requirements file 17def8a installed, before it carried the profile.
+predecessor=0cd81bf0aef9a0d63019984800d84ebdfbc548928a48aa611bdc52e918fc69ff
 if [ -f "$stage/requirements.toml" ] && [ -f "$codex_etc/requirements.toml" ] \
-        && [ "$(head -n 1 "$codex_etc/requirements.toml")" != "$mark" ]; then
+        && [ "$(head -n 1 "$codex_etc/requirements.toml")" != "$mark" ] \
+        && [ "$(sha256sum < "$codex_etc/requirements.toml" | cut -d' ' -f1)" != "$predecessor" ]; then
     echo "install_isolation: $codex_etc/requirements.toml holds policy this script did not write." >&2
     echo "Merge it by hand or move it aside, then rerun." >&2
     echo "Nothing was written." >&2

@@ -17,7 +17,8 @@
 #
 # Exit status: 0 when every check passed, 1 when one failed, 2 when the result
 # is incomplete until you run the outside checks it prints: a sentinel the
-# sandbox did not show, and under Codex whether the machine was online.
+# sandbox did not show, a marker it wrote to a home directory on tmpfs, and
+# under Codex whether the machine was online.
 #
 # The other PATHs, and the built-in list of credential stores, are reported by
 # metadata only: whether the sandbox shows the path at all. That is information,
@@ -92,12 +93,15 @@ done
 
 if can_write "$PWD"; then ok "working directory writable"; else bad "working directory not writable"; fi
 if can_write "${TMPDIR:-/tmp}"; then ok "temp directory writable"; else bad "temp directory not writable"; fi
-if [ "$(stat -f -c %T "$HOME" 2>/dev/null)" = tmpfs ]; then
-    ok "home directory is a throwaway copy; writes there do not reach the disk"
-elif can_write "$HOME"; then
-    bad "home directory writable"
-else
+home_marker="$HOME/.agent-alignment-home-probe.$$"
+if ! ( : > "$home_marker" ) 2>/dev/null; then
     ok "home directory not writable"
+elif [ "$(stat -f -c %T "$HOME" 2>/dev/null)" = tmpfs ]; then
+    info "home directory writable, on tmpfs; left $home_marker to check from outside"
+    confirm+=("$(printf 'test -e %q && rm -f -- %q && echo present   # writes to the sandbox home reached your home' "$home_marker" "$home_marker")")
+else
+    rm -f "$home_marker"
+    bad "home directory writable"
 fi
 if [ -d "$HOME/.cache" ] && can_write "$HOME/.cache"; then bad "$HOME/.cache writable"; else ok "$HOME/.cache not writable"; fi
 if [ "$client" = claude ]; then
