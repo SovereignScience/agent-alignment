@@ -13,6 +13,8 @@ this file, then act.
   [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md)): drop-in system prompts.
 - A user-level rules template in [user/CLAUDE.md](user/CLAUDE.md): copy it to
   ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md.
+- A review request template in [REVIEW_REQUEST.md](REVIEW_REQUEST.md), for
+  handing a change to an independent reviewer.
 - Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
 - Fourteen slash commands in [.claude/commands/](.claude/commands/).
 - Hooks in [.claude/scripts/](.claude/scripts/): `guard_outward.py`
