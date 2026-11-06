@@ -154,6 +154,21 @@ failed step stops the rest, and carry any script inline: a file in the
 session's temporary directory can be changed by any session before the owner
 runs it.
 
+A hook folder that a repository tracks and git is set to run (core.hooksPath,
+husky) runs when the owner commits or pushes, outside the sandbox, so an
+agent could plant code there. Lock each one in
+~/.config/agent-alignment/managed-local.json with an exact-path
+sandbox.filesystem.denyWrite entry and an Edit(<path>/**) deny, then rerun
+the installer; denyWrite takes exact paths here, not ** patterns. Point a
+relative core.hooksPath at the main checkout's folder by absolute path, so
+commits in task worktrees use the locked copy. The hooks still run the
+project scripts they call, so read the diff before committing or pushing.
+To find them:
+
+```bash
+git -C <checkout> config --get core.hooksPath
+```
+
 Two documented settings break the sandbox on Linux and are left out. A
 denyRead of ~/ with allowRead exceptions leaves the working directory
 read-only, so the sandbox cannot create its mount points for protected files,
