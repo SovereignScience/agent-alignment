@@ -767,7 +767,13 @@ def fetch_hosts():
 
 
 def check_fetch(url):
-    parts = urllib.parse.urlsplit(url or "")
+    url = url or ""
+    parts = urllib.parse.urlsplit(url)
+    # Python and the client can read a URL with a backslash or a user@ part as
+    # different hosts, so refuse those.
+    if (parts.scheme not in ("http", "https") or "\\" in url or "@" in parts.netloc
+            or ":" in parts.netloc or any(c.isspace() or ord(c) < 32 for c in url)):
+        deny("a fetch URL with a backslash, credentials, a port or an unusual scheme")
     host = (parts.hostname or "").lower().rstrip(".")
     if not any(host == d or host.endswith("." + d) for d in fetch_hosts()):
         deny("fetching %s, which is not on the reading list" % (host or "an unreadable URL"))

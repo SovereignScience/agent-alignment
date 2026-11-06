@@ -34,6 +34,12 @@ class WebFetchTests(unittest.TestCase):
                     "https://evil.example/?u=code.claude.com", "not a url", ""):
             self.assertEqual(decision("WebFetch", {"url": url, "prompt": "x"}), "deny", url)
 
+    def test_a_url_the_client_could_read_as_another_host_is_refused(self):
+        for url in ("https://evil.example\\@code.claude.com/x", "https://user@code.claude.com/",
+                    "https://code.claude.com:8443/docs", "ftp://code.claude.com/",
+                    "https://code.claude.com/a b"):
+            self.assertEqual(decision("WebFetch", {"url": url, "prompt": "x"}), "deny", url)
+
     def test_a_url_that_could_carry_data_out_is_refused(self):
         long_query = "https://github.com/search?q=" + "a" * 300
         long_path = "https://github.com/" + "a" * 1100
