@@ -3,6 +3,7 @@
 Run: python3 -m unittest discover -s swe/.claude/scripts -p 'test_*.py'
 """
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -20,6 +21,39 @@ def decision(tool, tool_input, guard=GUARD):
     if not run.stdout.strip():
         return None
     return json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"]
+
+
+class MonitorTests(unittest.TestCase):
+    def test_monitor_commands_get_the_same_checks_as_bash(self):
+        tin = {"description": "x", "timeout_ms": 1000}
+        self.assertEqual(decision("Monitor", dict(tin, command="git push origin main")), "deny")
+        self.assertIsNone(decision("Monitor", dict(tin, command="tail -f build.log")))
+
+
+class HookPathTests(unittest.TestCase):
+    def test_hooks_ignore_helpers_planted_on_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = pathlib.Path(tmp, "bin")
+            fake.mkdir()
+            marker = pathlib.Path(tmp, "ran")
+            for name in ("cat", "git"):
+                (fake / name).write_text("#!/bin/sh\ntouch %s\necho HIJACKED\nexit 1\n" % marker)
+                (fake / name).chmod(0o755)
+            env = dict(os.environ, PATH="%s:%s" % (fake, os.environ["PATH"]))
+            out = subprocess.run(["/bin/sh", str(GUARD.with_name("after_summary.sh"))], env=env,
+                                 capture_output=True, text=True, timeout=30).stdout
+            self.assertIn("hookSpecificOutput", out)
+            repo = pathlib.Path(tmp, "repo")
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty",
+                            "-m", "fixture"], cwd=repo, check=True)
+            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True,
+                                  check=True).stdout.strip()
+            subprocess.run(["/usr/bin/python3", "-I", str(GUARD.with_name("pre-push")), "origin", "url"], cwd=repo,
+                           env=env, input="refs/heads/main %s refs/heads/main %s\n" % (head, "0" * 40),
+                           capture_output=True, text=True, timeout=60)
+            self.assertFalse(marker.exists())
 
 
 class WebFetchTests(unittest.TestCase):

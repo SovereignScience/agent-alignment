@@ -63,9 +63,14 @@ the user pushes, posts or applies it in their own terminal.
 |---|---|---|
 | SessionStart | session_start.sh | Prints the branch, the protocol hashes and the roster. |
 | SessionStart on compact, resume, fork | after_summary.sh | Tells the session to re-read the rules and resume only the last request. |
-| PreToolUse on Bash, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside fetch_allow.txt and fetch_allow.local.txt, or with a URL longer than its limits. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
+| PreToolUse on Bash, Monitor, WebFetch and MCP tools | guard_outward.py | Returns a deny decision for pushes, PR and issue writes, cluster, host and cloud changes, messages to third-party services, secret reads, and writes to the guardrail files. WebFetch runs outside the sandbox's network allowlist, so the guard refuses a fetch to a host outside fetch_allow.txt and fetch_allow.local.txt, or with a URL longer than its limits. Unparsable commands that look outward are denied too. Browser MCP tools (Playwright, Chrome DevTools, Puppeteer) are denied when any argument names a URL off this machine, since MCP servers run outside the Bash sandbox. That check reads tool arguments only: redirects, subresources and URLs built by page scripts are not covered, so the server's own origin flags and the sandbox stay the boundary. |
 | PostToolUse on Write and Edit | tells_check.py | Points out AI tells in prose the session just wrote, so it rewrites them. Never blocks. |
 | PostToolUse on Write and Edit | post_edit_verify.sh | Names the file-level check for the session to run (hooks run outside the sandbox, so it runs no project tool), leaves broad checks to the task checkpoint, and validates .claude files. Never blocks. |
+
+The managed hooks start /usr/bin/python3 -I and /bin/sh by absolute path, and
+after_summary.sh and pre-push set PATH to root-owned directories before they
+call cat or git. Hooks run outside the sandbox, and a program found first on
+an inherited PATH can sit in a project venv that agents can write.
 
 pre-push is a git hook for the user, not a Claude hook. It shows what is
 about to leave the machine and asks for a y when a push has more than 3
@@ -268,6 +273,8 @@ Codex's runtime set (":minimal") and the paths the snippet lists, so files in
 other projects stay unreadable; the named denials remain a second layer.
 Codex reads the profile and rules when a chat starts, so start a new chat after
 changing them; a resumed chat keeps the old ones.
+The requirements also turn off Codex's MCP servers, plugins and apps, and run
+only managed hooks, as the Claude layer does.
 
 Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
 replaced by its target, or left out when the target is already denied, and

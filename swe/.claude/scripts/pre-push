@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """pre-push: show what is about to leave this machine, and stop oversized pushes.
 
 Agents cannot push, so this only ever asks the user. It asks for y when a push has
@@ -12,6 +12,9 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+# git and pre-push.local resolve from root-owned directories, never from a PATH
+# that a project venv put first.
+os.environ["PATH"] = "/usr/local/bin:/usr/bin:/bin"
 try:
     from tells_check import find_tells
 except ImportError:
