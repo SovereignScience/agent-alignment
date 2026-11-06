@@ -216,15 +216,23 @@ if codex.exists():
         else:
             denies.append(p)
     denies = list(dict.fromkeys(denies))
+    denied = [os.path.normpath(ex(p)) for p in denies]
     reads = []
     for p in (p for p, v in snippet_fs.items() if v == "read" and not p.startswith(":")):
         q = ex(p)
         if os.path.islink(q) and os.path.exists(q):
-            reads.append(os.path.realpath(q))
+            target = os.path.realpath(q)
         elif os.path.exists(q) and not os.path.islink(q):
-            reads.append(p)
+            target = p
         else:
             skipped.append("%s (does not exist)" % p)
+            continue
+        n = os.path.normpath(ex(target))
+        if any(n == d or n.startswith(d.rstrip("/") + "/") for d in denied):
+            skipped.append("%s (at or under a denied path)" % p)
+            continue
+        reads.append(target)
+    reads = list(dict.fromkeys(reads))
     if skipped:
         notes.append("note: the Codex profile leaves out " + "; ".join(skipped))
 
