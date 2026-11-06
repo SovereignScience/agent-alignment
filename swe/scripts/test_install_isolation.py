@@ -136,6 +136,17 @@ class Installer(unittest.TestCase):
         self.assertIn("~/.config/git (at or under a denied path)", out)
         self.assertIn("/etc (at or under a denied path)", out)
 
+    def test_a_reopen_under_a_symlinked_denial_is_left_out(self):
+        (self.home / "protected/git").mkdir(parents=True)
+        (self.home / "protected/git/private-settings.txt").write_text("made-up")
+        (self.home / ".config").symlink_to(self.home / "protected")
+        code, out = self.run_installer(local={"sandbox": {"filesystem": {"denyRead": ["~/.config"]}}}, apply=True)
+        self.assertEqual(code, 0, out)
+        fs = self.requirements()["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertEqual(fs[str(self.home / "protected")], "deny")
+        self.assertEqual([k for k in fs if k.endswith("/git")], [])
+        self.assertIn("~/.config/git (at or under a denied path)", out)
+
     def test_unsafe_targets_or_managed_directories_stop_the_preview(self):
         real = self.home / "settings-real.json"
         real.write_text("{}")
