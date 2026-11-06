@@ -81,6 +81,11 @@ glob_scan_max_depth = 8
 "~/.config/google-chrome" = "deny"
 "~/.copilot" = "deny"
 "~/.gemini" = "deny"
+# Local control sockets: WSL interop starts Windows programs, the systemd user
+# bus starts unsandboxed ones, and Docker is root on the host.
+"/run/WSL" = "deny"
+"/run/user" = "deny"
+"/run/docker.sock" = "deny"
 
 [permissions.workstation.filesystem.":workspace_roots"]
 "**/.env" = "deny"
