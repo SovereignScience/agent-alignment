@@ -124,6 +124,9 @@ ignores allowWrite and additionalDirectories in a repository's own .claude
 settings. The file tools still follow them, so a session can read a folder
 its shell cannot reach. A grant in ~/.claude/settings.json would open the
 folder to every session.
+A checkout kept from agents, such as production, is safest as a separate
+clone. As a worktree of an agent-writable checkout it shares that checkout's
+refs and objects, so run git there with --no-replace-objects and hooks off.
 
 Sessions meet these limits by design. When one blocks a step, the agent hands
 the owner the exact command instead of working around it:
@@ -154,7 +157,8 @@ the owner the exact command instead of working around it:
 Blocks prepared for the owner run in a subshell with set -euo pipefail, so a
 failed step stops the rest, and carry any script inline: a file in the
 session's temporary directory can be changed by any session before the owner
-runs it.
+runs it. They call /usr/bin/python3, not the first python3 on PATH, which can
+be a project venv that agents can write.
 
 A hook folder that a repository tracks and git is set to run (core.hooksPath,
 husky) runs when the owner commits or pushes, outside the sandbox, so an
@@ -262,6 +266,8 @@ default_permissions in ~/.codex/config.toml at it. As in Codex's documented
 workspace-only profile, it denies every read (":root") and reopens only
 Codex's runtime set (":minimal") and the paths the snippet lists, so files in
 other projects stay unreadable; the named denials remain a second layer.
+Codex reads the profile and rules when a chat starts, so start a new chat after
+changing them; a resumed chat keeps the old ones.
 
 Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
 replaced by its target, or left out when the target is already denied, and

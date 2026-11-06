@@ -12,7 +12,8 @@ this file, then act.
   [SECURITY_PROTOCOL.md](SECURITY_PROTOCOL.md),
   [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md)): drop-in system prompts.
 - A user-level rules template in [user/CLAUDE.md](user/CLAUDE.md): copy it to
-  ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md.
+  ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, and keep both copies in step with
+  it.
 - A review request template in [REVIEW_REQUEST.md](REVIEW_REQUEST.md), for
   handing a change to an independent reviewer.
 - Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
