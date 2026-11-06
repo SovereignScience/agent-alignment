@@ -6,35 +6,28 @@
 # guard (sudoedit /etc/claude-code/hooks/fetch_allow.local.txt); the installer
 # never writes that file. Leave out hosts that serve anyone's content under
 # one name, such as github.io or readthedocs.io: a page there can be written
-# to steer an agent.
+# to steer an agent. Prefer a docs subdomain to a whole domain that also runs
+# forums. "exception" marks a host with some user content that agents need.
 
 # Agent tools and their docs
 anthropic.com
 claude.com
-code.claude.com
-docs.claude.com
-support.claude.com
 developers.openai.com
 platform.openai.com
 learn.chatgpt.com
-modelcontextprotocol.io
+modelcontextprotocol.io      # exception: its public server registry
 code.visualstudio.com
-learn.microsoft.com
+learn.microsoft.com          # exception: Microsoft Q&A on the same host
 developer.1password.com
 docs.gitbutler.com
 sublimemerge.com
 schemastore.org
 
-# Source hosting and release assets. A release download raises a counter the
-# repository owner can see, so a fetch of a chosen asset can signal a bit.
-github.com
-docs.github.com
-raw.githubusercontent.com
-objects.githubusercontent.com
-release-assets.githubusercontent.com
+# Source hosting
+github.com                   # exception: anyone's repos and issues
+raw.githubusercontent.com    # exception
 
-# Advisories and vulnerability data
-nvd.nist.gov
+# Advisories, vulnerability data and security standards
 nist.gov
 cve.org
 osv.dev
@@ -46,47 +39,63 @@ owasp.org
 security.snyk.io
 endoflife.date
 msrc.microsoft.com
+cwe.mitre.org
+attack.mitre.org
+openssf.org
+slsa.dev
 
-# Languages, package indexes and distributions
-python.org
-pypi.org
-npmjs.com
+# Engineering practice and standards
+google.github.io
+sre.google
+semver.org
+conventionalcommits.org
+www.rfc-editor.org
+whatwg.org
+tc39.es
+www.w3.org
+
+# Languages, tools, package indexes and distributions
+docs.python.org
+peps.python.org
+packaging.python.org
+www.python.org
+pypi.org                     # exception: anyone's packages
+npmjs.com                    # exception
 nodejs.org
-go.dev
-rust-lang.org
-docs.rs
-php.net
-debian.org
-ubuntu.com
-launchpad.net
-kernel.org
-
-# Software this workspace runs
-nextcloud.com
-mariadb.org
-mariadb.com
-redis.io
-nginx.org
-openssl.org
-tailscale.com
-headscale.net
-restic.net
-ansible.com
-hashicorp.com
-terraform.io
-digitalocean.com
-docker.com
-letsencrypt.org
-onlyoffice.com
-ghostscript.com
-imagemagick.org
-mozilla.org
-chromium.org
+www.typescriptlang.org
+react.dev
+vite.dev
+nextjs.org
+go.dev                       # exception: pkg.go.dev
+doc.rust-lang.org
+www.rust-lang.org
+docs.rs                      # exception
+php.net                      # exception: user notes on manual pages
+docs.astral.sh
+git-scm.com
+man7.org
+systemd.io
+www.debian.org
+security-tracker.debian.org
+manpages.debian.org
+ubuntu.com                   # exception: covers its forum
+docs.kernel.org
+www.kernel.org
+www.postgresql.org
+sqlite.org
+kubernetes.io                # exception: covers its forum
+helm.sh
+docs.docker.com
+developer.mozilla.org
+www.mozilla.org
+www.chromium.org
 chromereleases.googleblog.com
 
-# Security research
+# Research and security writing
+arxiv.org                    # exception: preprints
+usenix.org
+dl.acm.org
 simonwillison.net
-arxiv.org
 invariantlabs.ai
 trailofbits.com
 wiz.io
