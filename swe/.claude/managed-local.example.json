@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/projects/example-prod-checkout/**)"
+    ]
+  },
+  "sandbox": {
+    "filesystem": {
+      "denyRead": [
+        "~/projects/example-prod-checkout"
+      ],
+      "denyWrite": [
+        "~/projects/example-prod-checkout"
+      ]
+    },
+    "credentials": {
+      "files": [
+        {
+          "path": "~/.example-token",
+          "mode": "deny"
+        }
+      ]
+    }
+  }
+}

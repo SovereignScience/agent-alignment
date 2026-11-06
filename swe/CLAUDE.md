@@ -15,7 +15,7 @@ the root, you do not need to read anything outside this subtree.
 
 ## What this folder is
 
-A complete agentic-coding toolkit: five canonical protocols, twelve
+A complete agentic-coding toolkit: five canonical protocols, thirteen
 specialist subagents, fourteen slash commands, language-aware hooks,
 sane permissions. Drop into this folder and you have everything
 you need; the only other file to visit is `CONTRIBUTING.md` at the
@@ -90,6 +90,7 @@ affected protocol.
 | Plan a behavior-preserving refactor | `refactoring-planner` | `/swe-refactor` |
 | Browser-verify a UI fix (headless Chromium) | `dashboard-probe` | `/swe-probe` |
 | Update a README or runbook; write an ADR the user names | `docs-writer` | `/swe-docs` |
+| Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
 | Five-specialist review of the branch | (orchestrator) | `/swe-swarm-review` |
 | Install the five protocols in another repo | (orchestrator) | `/swe-init` |
@@ -137,7 +138,7 @@ swe/
 └── .claude/
     ├── settings.json             # permissions, sandbox, hooks, status line
     ├── README.md                 # hook architecture, how to add agents and commands
-    ├── agents/                   # 12 specialists
+    ├── agents/                   # 13 specialists
     ├── commands/                 # 14 slash commands
     └── scripts/                  # hooks and status line
 ```

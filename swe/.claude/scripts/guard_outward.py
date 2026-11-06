@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import sys
+import urllib.parse
 
 REASON = (
     "Blocked by the user's standing rule: agents never act outside this machine "
@@ -739,6 +740,41 @@ def decide(cmd):
             deny("unparsed outward command")
 
 
+# WebFetch runs outside the sandbox and its network allowlist, so it may read
+# only the hosts in fetch_allow.txt and fetch_allow.local.txt beside this file.
+# The length limits cap how much a URL can carry; any listed host can still
+# receive a little data in a query. Without fetch_allow.txt every fetch is
+# refused.
+FETCH_LISTS = ("fetch_allow.txt", "fetch_allow.local.txt")
+FETCH_MAX_QUERY = 200
+FETCH_MAX_URL = 1024
+
+
+def fetch_hosts():
+    here = os.path.dirname(os.path.abspath(__file__))
+    hosts = set()
+    for i, name in enumerate(FETCH_LISTS):
+        try:
+            with open(os.path.join(here, name)) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            if i == 0:
+                deny("WebFetch: the reading list %s is missing" % os.path.join(here, name))
+            continue
+        hosts.update(line.split("#", 1)[0].strip().lower() for line in lines)
+    hosts.discard("")
+    return hosts
+
+
+def check_fetch(url):
+    parts = urllib.parse.urlsplit(url or "")
+    host = (parts.hostname or "").lower().rstrip(".")
+    if not any(host == d or host.endswith("." + d) for d in fetch_hosts()):
+        deny("fetching %s, which is not on the reading list" % (host or "an unreadable URL"))
+    if len(parts.query) > FETCH_MAX_QUERY or len(url) > FETCH_MAX_URL:
+        deny("a fetch URL longer than the guard allows")
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -756,6 +792,8 @@ def main():
     try:
         if tool == "Bash":
             decide(tin.get("command", ""))
+        elif tool == "WebFetch":
+            check_fetch(tin.get("url", ""))
         elif MCP_WRITE.match(tool):
             deny(tool)
         elif tool.count("__") >= 2 and BROWSER_SERVER.search(tool.split("__")[1]):
