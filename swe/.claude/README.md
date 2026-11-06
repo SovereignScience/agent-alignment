@@ -119,9 +119,11 @@ server still binds, inside the sandbox's own network namespace.
 
 Keep git worktrees inside the checkout, at .worktrees/<name> with
 /.worktrees/ in .git/info/exclude (../LATTICE_ONBOARDING.md). This policy
-makes the sandbox admin-required, so Claude Code ignores allowWrite and
-additionalDirectories in a repository's own .claude settings, and a grant in
-~/.claude/settings.json would open the folder to every session.
+makes the sandbox admin-required, so for sandboxed commands Claude Code
+ignores allowWrite and additionalDirectories in a repository's own .claude
+settings. The file tools still follow them, so a session can read a folder
+its shell cannot reach. A grant in ~/.claude/settings.json would open the
+folder to every session.
 
 Sessions meet these limits by design. When one blocks a step, the agent hands
 the owner the exact command instead of working around it:

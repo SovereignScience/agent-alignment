@@ -123,6 +123,19 @@ class Installer(unittest.TestCase):
         config = tomllib.loads((self.home / ".codex/config.toml").read_text())
         self.assertEqual(config["default_permissions"], "alignment_workstation")
 
+    def test_a_reopen_never_overrides_a_denial(self):
+        (self.home / ".config/git").mkdir(parents=True)
+        (self.home / ".config/git/credentials").write_text("made-up")
+        code, out = self.run_installer(local={"sandbox": {"filesystem": {"denyRead": ["~/.config", "/etc"]}}},
+                                       apply=True)
+        self.assertEqual(code, 0, out)
+        fs = self.requirements()["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertEqual(fs["~/.config"], "deny")
+        self.assertNotIn("~/.config/git", fs)
+        self.assertEqual(fs["/etc"], "deny")
+        self.assertIn("~/.config/git (at or under a denied path)", out)
+        self.assertIn("/etc (at or under a denied path)", out)
+
     def test_unsafe_targets_or_managed_directories_stop_the_preview(self):
         real = self.home / "settings-real.json"
         real.write_text("{}")
