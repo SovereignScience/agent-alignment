@@ -11,7 +11,7 @@ this file, then act.
   [PERFORMANCE_PROTOCOL.md](PERFORMANCE_PROTOCOL.md),
   [SECURITY_PROTOCOL.md](SECURITY_PROTOCOL.md),
   [SKEPTIC_ARBITER.md](SKEPTIC_ARBITER.md)): drop-in system prompts.
-- Twelve specialist subagents in [.claude/agents/](.claude/agents/).
+- Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
 - Fourteen slash commands in [.claude/commands/](.claude/commands/).
 - Hooks in [.claude/scripts/](.claude/scripts/): `guard_outward.py`
   runs on PreToolUse for Bash and MCP tools and denies outward
@@ -75,6 +75,7 @@ gaps. Otherwise read the repository directly within the task scope.
 | Plan a refactor | `refactoring-planner` | `/swe-refactor` |
 | Browser-verify a UI fix | `dashboard-probe` | `/swe-probe` |
 | Update a README or runbook | `docs-writer` | `/swe-docs` |
+| Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
 | Five-specialist review | (orchestrator) | `/swe-swarm-review` |
 | Install the protocols in another repo | (orchestrator) | `/swe-init` |
@@ -137,6 +138,10 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Print canonical protocol hashes | `bash scripts/check_drift.sh` |
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
+| Test the guard's WebFetch check | `python3 -m unittest discover -s .claude/scripts -p 'test_*.py'` |
+| Test the installer and the probe | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
+| Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
+| Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
 There is no test suite for these protocols (they're prose). The

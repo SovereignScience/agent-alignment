@@ -1,0 +1,94 @@
+# Hosts WebFetch may read. WebFetch runs outside the sandbox and its network
+# allowlist, so guard_outward.py refuses every other host, and any URL long
+# enough to carry data out. A host also covers its subdomains.
+#
+# Add hosts for one machine in fetch_allow.local.txt next to the installed
+# guard (sudoedit /etc/claude-code/hooks/fetch_allow.local.txt); the installer
+# never writes that file. Leave out hosts that serve anyone's content under
+# one name, such as github.io or readthedocs.io: a page there can be written
+# to steer an agent.
+
+# Agent tools and their docs
+anthropic.com
+claude.com
+code.claude.com
+docs.claude.com
+support.claude.com
+developers.openai.com
+platform.openai.com
+learn.chatgpt.com
+modelcontextprotocol.io
+code.visualstudio.com
+learn.microsoft.com
+developer.1password.com
+docs.gitbutler.com
+sublimemerge.com
+schemastore.org
+
+# Source hosting and release assets. A release download raises a counter the
+# repository owner can see, so a fetch of a chosen asset can signal a bit.
+github.com
+docs.github.com
+raw.githubusercontent.com
+objects.githubusercontent.com
+release-assets.githubusercontent.com
+
+# Advisories and vulnerability data
+nvd.nist.gov
+nist.gov
+cve.org
+osv.dev
+cisa.gov
+ncsc.gov.uk
+first.org
+cert.org
+owasp.org
+security.snyk.io
+endoflife.date
+msrc.microsoft.com
+
+# Languages, package indexes and distributions
+python.org
+pypi.org
+npmjs.com
+nodejs.org
+go.dev
+rust-lang.org
+docs.rs
+php.net
+debian.org
+ubuntu.com
+launchpad.net
+kernel.org
+
+# Software this workspace runs
+nextcloud.com
+mariadb.org
+mariadb.com
+redis.io
+nginx.org
+openssl.org
+tailscale.com
+headscale.net
+restic.net
+ansible.com
+hashicorp.com
+terraform.io
+digitalocean.com
+docker.com
+letsencrypt.org
+onlyoffice.com
+ghostscript.com
+imagemagick.org
+mozilla.org
+chromium.org
+chromereleases.googleblog.com
+
+# Security research
+simonwillison.net
+arxiv.org
+invariantlabs.ai
+trailofbits.com
+wiz.io
+research.checkpoint.com
+cloudsecurityalliance.org
