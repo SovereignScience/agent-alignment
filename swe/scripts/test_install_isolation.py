@@ -105,6 +105,9 @@ class Installer(unittest.TestCase):
         req = self.requirements()
         self.assertEqual(req["default_permissions"], "alignment_workstation")
         self.assertEqual(req["allowed_permission_profiles"], {"alignment_workstation": True})
+        self.assertIs(req["allow_managed_hooks_only"], True)
+        self.assertEqual(req["mcp_servers"], {})
+        self.assertEqual(req["features"], {"plugins": False, "apps": False})
         fs = req["permissions"]["alignment_workstation"]["filesystem"]
         self.assertEqual(fs["~/.ssh"], "deny")
         self.assertEqual(fs[str(self.home / "elsewhere")], "deny")
@@ -213,6 +216,13 @@ class Installer(unittest.TestCase):
             with self.subTest(local=local):
                 code, out = self.preview(local=local)
                 self.assertNotEqual(code, 0, out)
+
+    def test_every_managed_hook_starts_with_an_absolute_interpreter(self):
+        managed = json.loads((SCRIPT.parent.parent / ".claude/managed-settings.example.json").read_text())
+        commands = [h["command"] for event in managed["hooks"].values() for entry in event for h in entry["hooks"]]
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertTrue(command.startswith("/"), command)
 
     def test_the_preview_never_prints_setting_values(self):
         user = {"env": {"EXAMPLE_API_KEY": "made-up-user-value"},

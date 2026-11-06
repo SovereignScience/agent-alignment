@@ -258,8 +258,10 @@ if codex.exists():
     q = json.dumps
     lines = [MARK,
              "# so Full Access and the built-in profiles are refused. Written by install_isolation.sh.",
-             "default_permissions = %s" % q(PROFILE), "",
+             "default_permissions = %s" % q(PROFILE), "allow_managed_hooks_only = true", "",
              "[allowed_permission_profiles]", "%s = true" % PROFILE, "",
+             "[mcp_servers]", "",
+             "[features]", "plugins = false", "apps = false", "",
              "[permissions.%s]" % PROFILE, "extends = %s" % q(body["extends"]), "",
              "[permissions.%s.filesystem]" % PROFILE,
              "glob_scan_max_depth = %d" % snippet_fs["glob_scan_max_depth"]]

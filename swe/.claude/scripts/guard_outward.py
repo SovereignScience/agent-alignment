@@ -796,7 +796,7 @@ def main():
     tool = data.get("tool_name", "")
     tin = data.get("tool_input") or {}
     try:
-        if tool == "Bash":
+        if tool in ("Bash", "Monitor"):
             decide(tin.get("command", ""))
         elif tool == "WebFetch":
             check_fetch(tin.get("url", ""))

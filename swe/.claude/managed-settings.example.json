@@ -422,11 +422,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|WebFetch|mcp__.*",
+        "matcher": "Bash|Monitor|WebFetch|mcp__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /etc/claude-code/hooks/guard_outward.py",
+            "command": "/usr/bin/python3 -I /etc/claude-code/hooks/guard_outward.py",
             "timeout": 10,
             "onFailure": "block",
             "statusMessage": "Checking outward-action guard"
@@ -440,7 +440,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /etc/claude-code/hooks/tells_check.py",
+            "command": "/usr/bin/python3 -I /etc/claude-code/hooks/tells_check.py",
             "timeout": 10
           }
         ]
@@ -452,7 +452,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh /etc/claude-code/hooks/after_summary.sh",
+            "command": "/bin/sh /etc/claude-code/hooks/after_summary.sh",
             "timeout": 5
           }
         ]
