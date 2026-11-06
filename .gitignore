@@ -14,3 +14,6 @@ build/
 **/.claude/settings.local.json
 **/.claude/cache/
 **/.claude/projects/
+
+# Private task boards stay local
+.lattice/
