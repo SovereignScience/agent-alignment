@@ -181,7 +181,10 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   and records the result when delegated work ends.
 - One task, one branch, one worktree. Before its first edit a task gets
   branch feature/<CODE>-<n>-<slug> from <branch> in its own worktree at
-  <worktree root>/<CODE>-<n>, linked with lattice branch-link. All edits,
+  .worktrees/<CODE>-<n>, linked with lattice branch-link. .worktrees/ stays
+  inside the checkout and in .git/info/exclude: the sandbox reaches only the
+  session's own project folder, so a worktree elsewhere is out of reach. The
+  project's test, lint and build tools ignore .worktrees/. All edits,
   tests and dev servers for it run there, on its own ports, with
   LATTICE_ROOT=<board directory> set. The main checkout stays on <branch>
   for the owner's merges and board writes; no session edits files there.
@@ -276,7 +279,8 @@ must hold from the first edit in AGENTS.md as well:
 - Never edit files in this checkout for task work. It stays on <branch>
   for the owner's merges and for board writes.
 - Before the first edit for <CODE>-<n>:
-    git worktree add <worktree root>/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
+    grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
+    git worktree add .worktrees/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
     LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n> feature/<CODE>-<n>-<slug> --actor agent:<tool>
   Then edit, test and run servers only there, with
   LATTICE_ROOT=<board directory>.
@@ -339,7 +343,7 @@ task records remain private unless the owner asks to share them.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
 3. Before the first edit, the task's worktree and branch:
-   `git worktree add <worktree root>/<ID> -b feature/<ID>-<slug> <branch>`
+   `git worktree add .worktrees/<ID> -b feature/<ID>-<slug> <branch>`
    and `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <ID>
    feature/<ID>-<slug> --actor agent:<tool>`. Edit, test and run
    dev servers only there. Lattice finds the board by walking up from the
