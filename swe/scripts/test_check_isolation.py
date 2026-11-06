@@ -87,6 +87,20 @@ class Probe(unittest.TestCase):
         self.assertIn("Incomplete", out)
         self.assertNotIn("All checks passed", out)
 
+    def test_a_writable_home_on_tmpfs_waits_on_an_outside_check(self):
+        (self.bin / "stat").write_text("#!/bin/sh\necho tmpfs\n")
+        (self.bin / "stat").chmod(0o755)
+        (self.home / ".cache-agent").mkdir()
+        self.sentinel.unlink(missing_ok=True)
+        self.sentinel.symlink_to("/dev/null")
+        code, out = self.probe("claude", sentinel=None, FAKE_PYPI="0")
+        self.assertEqual(code, 2, out)
+        self.assertNotIn("All checks passed", out)
+        check = [line.strip() for line in out.splitlines() if "reached your home" in line]
+        self.assertEqual(len(check), 1, out)
+        run = subprocess.run([BASH, "-c", check[0]], capture_output=True, text=True)
+        self.assertEqual(run.stdout.strip(), "present", run.stderr)
+
     def test_network_expectations_follow_the_client(self):
         code, out = self.probe("codex", sentinel="")
         self.assertIn("info  pypi.org not reached", out)
