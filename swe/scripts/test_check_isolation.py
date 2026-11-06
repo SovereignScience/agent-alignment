@@ -16,7 +16,8 @@ FAKE_CURL = '#!/bin/sh\ncase "$*" in *example.com*) exit "${FAKE_EXAMPLE:-7}" ;;
 FAKE_PYTHON = ('#!/bin/sh\ncase "$3" in *AF_UNIX*) printf "%s" "$FAKE_PY_OUT"; exit "${FAKE_PY_EXIT:-0}" ;;\n'
                '*tomllib*) exec "$REAL_PY" "$@" ;; esac\nexit 0\n')
 REQUIREMENTS = ('default_permissions = "alignment_workstation"\n\n[allowed_permission_profiles]\n'
-                'alignment_workstation = true\n\n[permissions.alignment_workstation]\nextends = ":workspace"\n')
+                'alignment_workstation = true\n\n[permissions.alignment_workstation]\nextends = ":workspace"\n\n'
+                '[permissions.alignment_workstation.filesystem]\n":root" = "deny"\n')
 TOOLS = ("cmp", "dirname", "grep", "head", "ls", "rm")
 BASH = shutil.which("bash")
 
@@ -127,10 +128,14 @@ class Probe(unittest.TestCase):
         _, out = self.probe("codex", sentinel="")
         self.assertIn("ok    installed hook matches this checkout: guard_outward.py", out)
         self.assertIn("ok    installed Codex requirements allow only the alignment_workstation profile", out)
+        self.assertIn("ok    installed Codex profile denies reads outside the paths it reopens", out)
         (self.etc / "codex/requirements.toml").write_text(
             REQUIREMENTS.replace("alignment_workstation = true", "alignment_workstation = true\n\":workspace\" = true"))
         _, out = self.probe("codex", sentinel="")
         self.assertIn("FAIL  installed Codex requirements are missing or allow more", out)
+        (self.etc / "codex/requirements.toml").write_text(REQUIREMENTS.replace('":root" = "deny"\n', ""))
+        _, out = self.probe("codex", sentinel="")
+        self.assertIn("FAIL  installed Codex profile does not deny reads by default", out)
         _, out = self.probe("claude", sentinel="")
         self.assertNotIn("Codex requirements", out)
 

@@ -131,6 +131,13 @@ sys.exit(0 if r.get("default_permissions") == p and r.get("allowed_permission_pr
     else
         bad "installed Codex requirements are missing or allow more than alignment_workstation: $codex_etc/requirements.toml"
     fi
+    if python3 -I -c 'import sys, tomllib
+fs = tomllib.load(open(sys.argv[1], "rb")).get("permissions", {}).get("alignment_workstation", {}).get("filesystem", {})
+sys.exit(0 if fs.get(":root") == "deny" else 1)' "$codex_etc/requirements.toml" 2>/dev/null; then
+        ok "installed Codex profile denies reads outside the paths it reopens"
+    else
+        bad "installed Codex profile does not deny reads by default (\":root\" = \"deny\"): $codex_etc/requirements.toml"
+    fi
 fi
 
 # Import first, then classify only the error from creating the socket.

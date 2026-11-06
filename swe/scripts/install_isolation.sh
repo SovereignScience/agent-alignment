@@ -189,7 +189,8 @@ if codex.exists():
     body = snippet["permissions"]["workstation"]
     snippet_fs = body["filesystem"]
     ROOTS = ":workspace_roots"
-    wanted = [p for p, v in snippet_fs.items() if v == "deny"]
+    special = {k: v for k, v in snippet_fs.items() if k.startswith(":") and k != ROOTS}
+    wanted = [p for p, v in snippet_fs.items() if v == "deny" and not p.startswith(":")]
     wanted += local.get("sandbox", {}).get("filesystem", {}).get("denyRead", [])
     wanted += [e["path"] for e in local.get("sandbox", {}).get("credentials", {}).get("files", [])]
     wanted = list(dict.fromkeys(wanted))
@@ -215,6 +216,15 @@ if codex.exists():
         else:
             denies.append(p)
     denies = list(dict.fromkeys(denies))
+    reads = []
+    for p in (p for p, v in snippet_fs.items() if v == "read" and not p.startswith(":")):
+        q = ex(p)
+        if os.path.islink(q) and os.path.exists(q):
+            reads.append(os.path.realpath(q))
+        elif os.path.exists(q) and not os.path.islink(q):
+            reads.append(p)
+        else:
+            skipped.append("%s (does not exist)" % p)
     if skipped:
         notes.append("note: the Codex profile leaves out " + "; ".join(skipped))
 
@@ -249,6 +259,8 @@ if codex.exists():
              "[permissions.%s]" % PROFILE, "extends = %s" % q(body["extends"]), "",
              "[permissions.%s.filesystem]" % PROFILE,
              "glob_scan_max_depth = %d" % snippet_fs["glob_scan_max_depth"]]
+    lines += ["%s = %s" % (q(k), q(v)) for k, v in special.items()]
+    lines += ["%s = \"read\"" % q(p) for p in reads]
     lines += ["%s = \"deny\"" % q(p) for p in denies]
     roots = snippet_fs.get(ROOTS, {})
     if roots:

@@ -38,6 +38,16 @@ extends = ":workspace"
 # until the next process starts. Raise the depth if your checkouts nest
 # deeper; check enforcement on your client with throwaway sentinel files.
 glob_scan_max_depth = 8
+# Reads are denied everywhere by default and reopened only where commands
+# need them, as in the documented workspace-only profile; the workspace roots
+# stay writable. The named denials below stay as a second layer.
+":root" = "deny"
+":minimal" = "read"
+"/etc" = "read"
+"/usr/local" = "read"
+"/opt/lattice" = "read"
+"~/.gitconfig" = "read"
+"~/.config/git" = "read"
 "~/.ssh" = "deny"
 "~/.kube" = "deny"
 "~/.config/gh" = "deny"
