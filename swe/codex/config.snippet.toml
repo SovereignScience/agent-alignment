@@ -48,6 +48,8 @@ glob_scan_max_depth = 8
 "/opt/lattice" = "read"
 "~/.gitconfig" = "read"
 "~/.config/git" = "read"
+# bwrap starts Codex's sandbox helper from the VS Code extension folder.
+"~/.vscode-server/extensions" = "read"
 "~/.ssh" = "deny"
 "~/.kube" = "deny"
 "~/.config/gh" = "deny"
