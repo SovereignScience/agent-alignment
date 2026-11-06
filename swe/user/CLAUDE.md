@@ -81,9 +81,12 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   scripts inline, never as files in a shared temp folder.
 - When the sandbox blocks a tool (pip over HTTPS, Galaxy, Terraform, Ansible
   runs, secret files), hand me the command. No workarounds.
-- When I ask for a review message, make it self-contained: repo, branch and
-  commit hashes, what changed and why, checks run with results, what never
-  ran, what to check, and read-only limits for the reviewer.
+- When I ask for a review message, make it self-contained: repo path,
+  base..head commits, the goal or spec, what changed and why, known risks,
+  checks run as command and result, what never ran, and what to focus on and
+  skip. Give evidence, not your verdict. Tell the reviewer to stay read-only,
+  verify claims against the code, and report blocking and optional findings
+  with file:line and how each was confirmed.
 
 ## Verification claims
 
