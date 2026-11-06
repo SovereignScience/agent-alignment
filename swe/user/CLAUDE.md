@@ -10,7 +10,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 - Nothing leaves this machine from a session. No push. No PR or issue
   create, merge, close, edit, review or comment. No Slack, email or chat
   post. No change to a live system: kubectl writes, helm, Argo CD sync,
-  ansible, ssh, tofu or terraform apply, Vault, DNS, cloud consoles.
+  ansible, ssh, tofu or terraform apply, Vault, DNS, cloud consoles, access
+  changes, credential rotation, restarts of shared services.
   Prepare the change locally and ask me to confirm the specific action; I
   push and post it myself.
 - Shell commands run in a sandbox with no route to GitHub, the cluster or
@@ -25,6 +26,10 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 - Never read secret values with any tool: .env files, tfvars, terraform
   state, age files, kubeconfigs, private keys, KeePass files, password
   stores, Kubernetes Secret data, Vault data. Use names and paths only.
+- Keep secret values out of command arguments, logs, commits and chat; use
+  protected files and hidden prompts. Never weaken TLS or SSH verification.
+  Say which kind a secret is: password, token, SSH passphrase or recovery
+  share.
 
 ## Scope
 
@@ -176,6 +181,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 - No error handling, fallbacks or validation for cases that cannot happen.
 - Default to no comments; add one only when the why is not obvious.
+- Never hand-edit generated files; regenerate them with the repository's own
+  build. Match each file type's indentation, line endings and whitespace.
 - For robotics, WebGL, real-time dashboards, language standards and test
   conventions, read <engineering notes file> when the task is in that area
   and the repository has no convention of its own.
