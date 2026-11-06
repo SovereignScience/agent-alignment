@@ -241,7 +241,10 @@ themselves. Codex accepts an allowlist only of profiles defined in the
 requirements file, so install_isolation.sh writes that body, plus the local
 file's denials, into /etc/codex/requirements.toml as alignment_workstation,
 the default and the only profile allowed (Codex 0.138.0 or later), and points
-default_permissions in ~/.codex/config.toml at it.
+default_permissions in ~/.codex/config.toml at it. As in Codex's documented
+workspace-only profile, it denies every read (":root") and reopens only
+Codex's runtime set (":minimal") and the paths the snippet lists, so files in
+other projects stay unreadable; the named denials remain a second layer.
 
 Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
 replaced by its target, or left out when the target is already denied, and
