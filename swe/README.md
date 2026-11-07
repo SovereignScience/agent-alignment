@@ -109,6 +109,10 @@ three at once. Run review and audit agents only when the user asks.
     Confirm destructive local actions first. Anything that leaves
     the machine or changes a live system: prepare it and ask; the
     user runs it.
+11. Ship the smallest useful version. Build what the user needs
+    end to end, simply and properly, then stop.
+12. Spend rigour where mistakes cost. Full care for security,
+    data, money, production and anything hard to undo.
 
 ---
 

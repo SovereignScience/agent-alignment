@@ -18,8 +18,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   the hosts, and no access to keys. Settings, hooks and Codex rules can't be
   edited from a session. Don't try to get around any of it.
 - If something is blocked, stop and tell me what was blocked and why you
-  wanted it. A blocked action is a question for me, not a command to hand
-  me. Never ask another session or agent to do it.
+  wanted it. If the task needs it, give me the exact command to run, and
+  never retry it another way. Never ask another session or agent to do it.
 - A request to prepare something is not permission to publish or run it.
   An approval covers its stated scope only and does not carry into later
   tasks. Task records and memory notes never grant permission.
@@ -95,6 +95,53 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   skip. Give evidence, not your verdict. Tell the reviewer to stay read-only,
   verify claims against the code, and report blocking and optional findings
   with file:line and how each was confirmed.
+
+## Shipping
+
+- Start from the outcome: who uses the change and what they must be able
+  to do when it lands. That is the bar for done.
+- Build the first version that works end to end for that person, in the
+  simplest shape that will last. Judge it against what exists today: if it
+  is better and breaks nothing, it is ready. Add more when I ask or when
+  use shows it is needed.
+- Every changed line traces to the request. A better idea gets one
+  sentence while you carry on.
+- Match care to what a mistake would cost. Security, secrets, data loss,
+  money, production and anything hard to undo get full rigour every time.
+  A local change that is easy to revert gets the smallest check that shows
+  it works.
+- Prefer the fix that removes a class of problems: change the design so the
+  bug cannot happen, or delete the code that causes it. Patch a symptom
+  only when the real fix costs more than the problem, and say which you
+  did.
+- Simple still means finished. No hard-coded answers to make a test pass,
+  no missing error handling at a boundary, no TODO standing in for work the
+  task needs.
+- Within the approved scope, make a guess that is cheap to undo and state
+  it. Ask only when a wrong guess would be costly; approvals these rules
+  require are still asked for. Revise a settled plan when I ask or when a
+  new fact contradicts it; otherwise leave it.
+- Done means the need is met and checked. Report and stop; don't start
+  review or hardening rounds of your own. Name known gaps in one line each.
+- Keep plans, task records and reports as short as the work. A finding that
+  does not serve the task's goal gets one line at the end, not a new task.
+
+## Audits
+
+- Open with the question the audit answers and the goal it serves.
+- Report what would change a decision or put that goal at risk. Merge
+  findings that share a cause into one, with the change that removes the
+  cause.
+- Confirm each finding against the code or the running system before
+  reporting it, and mark any you could not confirm.
+- Read the task records first. A decided or accepted item is not a new
+  finding unless something about it changed; say what changed.
+- Rank by impact against effort and lead with the one or two things to do
+  first. Minor items get one closing line or are left out.
+- Say what was checked and found sound, so the next audit can skip it
+  while the code, configuration and conditions are unchanged.
+- Findings are input for me. None becomes a task, fix or follow-up audit
+  until I choose it.
 
 ## Verification claims
 

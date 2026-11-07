@@ -79,7 +79,8 @@ answering review threads.
 - Before the first edit for AA-<n>, from this checkout:
 
   ```
-  git worktree add ../agent-alignment-wt/AA-<n> -b feature/AA-<n>-<slug> main
+  grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
+  git worktree add .worktrees/AA-<n> -b feature/AA-<n>-<slug> main
   LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n> feature/AA-<n>-<slug> --actor agent:<tool>
   ```
 
