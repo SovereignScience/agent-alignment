@@ -163,7 +163,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   proposed deviation is a needs_human on the owning task. Run lattice
   doctor after a reconciliation round.
 - Plan before code. For a task that changes behaviour, the session writes
-  the plan to the file `lattice plan <ID>` names, sets
+  the plan in the plan shape below to the file `lattice plan <ID>` names, sets
   `needs-human <ID> "Need: approve plan"` and stops, in todo. The owner
   reviews it with "Plannotator: review the plan" in the task's review
   section, or comments on the task; a question is not an approval. Notes
@@ -265,6 +265,43 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
     (lattice attach), not in the comment.
   - A question gives the options and your recommendation.
 - The board is not committed until asked.
+
+## Plan shape
+
+A plan for a task that changes behaviour has these parts, in this
+order. Size it to the task: a one-line fix or a spike needs only Need,
+Acceptance criteria, Steps and Coverage boundary.
+
+- Need: who needs the change, what they are trying to do and what goes
+  wrong today. No solution yet.
+- Behaviour: one item per case the change must handle, most important
+  first, with the cases the first usable version needs marked. Each gives
+  the situation, what happens, the expected result and how a reviewer can
+  see it. Include the failure cases, such as bad input or a step that
+  stops part way.
+- Acceptance criteria: the outcomes the owner will check, each added
+  with lattice criterion add and checkable without reading the code.
+- Out of scope: what the task leaves alone, and the task that owns it.
+- Assumptions: guesses made instead of asking, one sentence each, so the
+  owner can reject any of them.
+- Decisions for <owner>: at most three, one per line, each with the
+  options and a recommendation, answered when the owner reviews the
+  plan.
+- Approach: the files, commands and dependencies the change touches, and
+  how it follows the project's engineering and testing rules. Name any
+  departure from them and say why.
+- Steps: in order, the first usable version first. Each names the files
+  it touches and the check that shows it worked, with the result
+  expected. For a bug fix, prefer a test that fails before the step and
+  passes after it.
+- Coverage boundary: what local checks will prove, what is mocked, and
+  what stays unverified until the owner installs or deploys it.
+
+Before setting the approval flag, read the plan back against itself.
+Every behaviour case has a criterion and a step. Every step serves a
+case. Every criterion can be checked from outside the code. The plan
+uses the task's own terms. No open question sits in Approach or Steps;
+it belongs in Assumptions or Decisions.
 ```
 
 ### 3a. Agent instructions
