@@ -24,6 +24,9 @@ left edge to resize it (the width is remembered in the browser) and
 double-click the edge to reset it. Each panel section is drawn as a card
 one step lighter than the panel, with a quiet hue by kind, and the
 dropdown menus and the review section follow the theme's color scheme.
+Comments show the newest three, with one line above them that shows or
+hides the earlier ones, and a comment longer than six lines shows
+"More". Replies stay with their comment.
 
 Everything stays on the machine. The server binds to 127.0.0.1 only,
 answers only requests whose Host names this machine and refuses POSTs
@@ -197,6 +200,11 @@ itself is not gated, so agents never run it (`lattice complete` only
 works with a status literally named `review`). A Plannotator run that exits with an error or
 without a decision is shown as an error and records nothing. Board
 writes that fail are shown in the section, never reported as done.
+
+Above Mark done, a short summary gives the plan and code review rounds,
+the threads resolved, whether the commits are merged into main and
+pushed to its upstream, and the first sentence of the newest agent note,
+where agents record installs and deploys.
 
 Annotations typed in Plannotator stay in that session until Send
 Feedback or Approve; only then do they land on the task, where every
