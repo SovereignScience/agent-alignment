@@ -6,8 +6,8 @@ effect of another task. Words in angle brackets are placeholders.
 
 ## What you end up with
 
-- A `.lattice/` board in the project root, left uncommitted until the
-  owner asks for it.
+- A `.lattice/` board in the project root, versioned in its own private
+  repository and ignored by the source repository.
 - A backlog with one task per open item, acceptance criteria on the ones
   that can be checked, and decisions flagged `needs_human`.
 - The Lattice dashboard run by the review server
@@ -246,6 +246,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
+- The board is versioned separately from source, in its own private
+  repository at .lattice/. A board checkpoint requires an explicit request;
+  remote creation and pushing remain the owner's.
 - Writing on the board: every comment, flag, description and plan is
   written for the owner, who did not watch the work. Use plain words and full
   sentences.
@@ -276,10 +279,11 @@ must hold from the first edit in AGENTS.md as well:
 ```
 ## Working a task (every agent)
 
-Tasks are on the owner's Lattice board in .lattice/ (not committed). Read
-.lattice/context.md before working a task: it holds the plan-first step,
-the branch and worktree per task, the Task: <CODE>-<n> commit trailer, the
-review flow, and the reply shape and rules for answering review threads.
+Tasks are on the owner's Lattice board in .lattice/ (a separate private
+repository, ignored by source Git). Read .lattice/context.md before working
+a task: it holds the plan-first step, the branch and worktree per task,
+the Task: <CODE>-<n> commit trailer, the review flow, and the reply shape
+and rules for answering review threads.
 
 - Never edit files in this checkout for task work. It stays on <branch>
   for the owner's merges and for board writes.
@@ -308,6 +312,39 @@ review flow, and the reply shape and rules for answering review threads.
 - Never run lattice status <ID> done, lattice complete or lattice next;
   completion is the owner's, through the review section.
 ```
+
+### 3b. Private board history
+
+Keep the board in its existing `<project>/.lattice/` directory and initialize
+that directory as a separate Git repository. Keep .lattice/ ignored by the
+source repository. No submodule, symlink or shared checkout is needed.
+
+The owner runs this once, after reviewing the board contents:
+
+```bash
+(
+  set -euo pipefail
+  cd <project>
+  test -d .lattice
+  test ! -e .lattice/.git
+  git check-ignore --quiet .lattice/config.json
+  git init --initial-branch=main .lattice
+  git -C .lattice status --short
+)
+```
+
+Keep tasks, events, plans, notes, configuration, archives and sanitized
+attachments together. Preserve the board's .gitignore for locks and other
+runtime files. Stage named paths and inspect the staged diff before a
+requested checkpoint. The owner creates a private remote and checks its
+visibility before pushing; source repository visibility is independent.
+
+Set LATTICE_ROOT to the main project checkout, not its .lattice/ directory.
+Source task worktrees share that board. Run source Git commands from the
+source checkout and board Git commands with git -C <project>/.lattice.
+Both repositories stay under the existing project workspace grant; no
+additional project access is needed. If protected Git metadata blocks a
+necessary step, give the owner its exact command without widening policy.
 
 ### 4. Backlog
 
