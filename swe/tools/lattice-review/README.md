@@ -25,15 +25,54 @@ double-click the edge to reset it. Each panel section is drawn as a card
 one step lighter than the panel, with a quiet hue by kind, and the
 dropdown menus and the review section follow the theme's color scheme.
 
-Everything stays on the machine. The server binds to 127.0.0.1 only,
-answers only requests whose Host names this machine and refuses POSTs
-from another origin, starts Plannotator with its AI and sharing features
-disabled, and feeds it every review as a static patch, so Plannotator runs
-no git of its own. Git here runs with the programs a repository's config can
-name switched off (fsmonitor, hooks, external diff, diff drivers, text
-converters), and refuses a repository whose config names a diff or filter
-program. Git cannot switch off a filter's clean program, which runs when it
-reads a working copy, so the server reviews commits only and never reads one.
+The owner needs to inspect a committed change and return feedback without
+starting a program selected by the repository's contents or Git config.
+The listener binds to 127.0.0.1, checks Host and Origin, and starts
+Plannotator with AI and sharing disabled. Those request checks do not
+constrain a Git subprocess, so every custom and inherited dashboard Git
+read uses the same controlled runner. It disables fsmonitor, hooks,
+external diff, diff drivers, text converters and signature display.
+All Git transports are refused, including lazy fetch of missing objects;
+missing objects produce an error instead of an incomplete review. Native
+Git endpoint failures return JSON with GIT_READ_ERROR and HTTP 409. This
+also works with Git versions that do not implement GIT_NO_LAZY_FETCH.
+Repositories naming a diff or filter program are refused before each read.
+
+Code review exports a static patch between resolved commit IDs to
+Plannotator. It never asks Git to compare the working copy, where clean
+filters could run, and Plannotator performs no Git reads of its own.
+Only committed changes can be reviewed. Actor labels remain workflow
+records, not authentication; they do not protect the board from an agent
+that can edit its files.
+
+The inherited Git endpoints use Lattice's installed git_reader module,
+with its subprocess runner replaced in this server process. Startup
+checks the source fingerprints of both the dashboard server and Git
+reader against the inspected Lattice 0.2.1 files, with and without this
+repository's dashboard patch. A different version is refused until its
+Git call paths are reviewed and the fingerprints updated. No installed
+package file is changed. This compatibility check covers the inspected
+Git read paths; it is not containment of the owner's account.
+
+## Review flow
+
+The task states the need, harm, scope and acceptance before the plan is
+reviewed. The shared plan shape is in
+[the onboarding guide](../../LATTICE_ONBOARDING.md#3-context).
+
+```text
+Task: need, harm, expected result and acceptance
+Plan: [Plannotator: review the plan] [Open the plan in VS Code]
+Code: Base <commit>  Head <commit>
+      [Plannotator: the whole range] [diff] [open]
+Threads: file and line | owner note | agent reply | [Reply] [Resolve]
+```
+
+The owner sends plan feedback, the agent answers and revises, and the
+owner approves the revised plan. After implementation, the owner reviews
+the committed patch. Feedback returns to task threads automatically.
+Changed commits require another approval; only the owner resolves threads
+and completes the task. Merging and publishing remain owner actions.
 
 ## How a task's work is found
 
@@ -291,7 +330,21 @@ python3 -m unittest test_lattice_review
 <python with lattice installed> -m unittest test_lattice_review
 ```
 
-The first run covers the review logic against a stand-in dashboard; the
+Non-socket checks can run separately:
+
+```
+<python with lattice installed> -m unittest test_lattice_review.PureTests test_lattice_review.NativeGitTests
+```
+
+They cover the signature-helper and missing-object regressions with
+harmless marker programs, real disposable Git repositories and the
+installed native Git reader. The native handler error check invokes the
+handler directly, without binding a socket. The full suite above still
+requires loopback sockets. A fake Plannotator checks patch handoff and
+feedback handling; it does not verify the real browser or binary. The
+owner checks that round trip after installation.
+
+The first full run covers the review logic against a stand-in dashboard; the
 second, with the interpreter the `lattice` command uses (its shebang
 names it), also runs Lattice's real dashboard handler in process. The
 tests build a temporary git repository and board, a stand-in
