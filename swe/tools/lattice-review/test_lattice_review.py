@@ -642,39 +642,6 @@ class PureTests(RepoFixture):
             self.assertFalse(lr.same_origin(value, "127.0.0.1:8798"), value)
 
 
-class ClosingTests(RepoFixture):
-    def summary(self, sid, comments=(), threads=(), plan_state=None):
-        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, sid), "main")
-        return lr.closing_summary(self.repo, "main", rng, list(comments), list(threads), plan_state)
-
-    def test_says_where_the_commits_are(self):
-        self.assertIn("not merged into main yet: Mark done, then merge and push.", self.summary("AB-4"))
-        self.assertIn("merged into main, which has no upstream.", self.summary("AB-2"))
-        git(self.repo, "update-ref", "refs/remotes/origin/main", self.b)
-        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
-        git(self.repo, "config", "branch.main.remote", "origin")
-        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
-        self.assertIn("merged into main but not pushed: Mark done, then push main.", self.summary("AB-2"))
-        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
-        self.assertIn("1 commit, merged into main and pushed. Nothing left to merge or push.", self.summary("AB-2"))
-
-    def test_counts_review_rounds_and_quotes_the_latest_agent_note(self):
-        comments = [
-            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-01T00:00:00Z", "body": "Plannotator plan annotated (plan of AB-2), s\n"},
-            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
-            {"role": "plan-review", "author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
-            {"role": "review", "author": "human:t", "created_at": "2026-01-03T00:00:00Z", "body": self.approved(self.b, self.c)},
-            {"author": "agent:x", "created_at": "2026-01-04T00:00:00Z", "body": "Installed and checked at <main>. Details follow."},
-            {"author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Older note."},
-            {"author": "human:t", "created_at": "2026-01-05T00:00:00Z", "body": "Owner aside."},
-        ]
-        text = self.summary("AB-2", comments, [{"state": "resolved"}, {"state": "resolved"}], "approved")
-        self.assertIn("Plan approved after 2 reviews. Code approved after 1 review, 2 threads resolved.", text)
-        self.assertIn("Latest note, agent:x 2026-01-04: Installed and checked at &lt;main&gt;.", text)
-        self.assertNotIn("Details follow", text)
-        self.assertIn("Code approved after 1 review, no threads.", self.summary("AB-2", comments[3:4]))
-
-
 class SectionTests(RepoFixture):
     def setUp(self):
         super().setUp()
@@ -921,6 +888,39 @@ class SectionTests(RepoFixture):
         self.ctx.board_write = lambda key, *args: self.calls.append(args) or True
         call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body="not lost"))
         self.assertIn("></textarea>", call(self.base + "/review/t/AB-2")[1])
+
+
+class ClosingTests(RepoFixture):
+    def summary(self, sid, comments=(), threads=(), plan_state=None):
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, sid), "main")
+        return lr.closing_summary(self.repo, "main", rng, list(comments), list(threads), plan_state)
+
+    def test_says_where_the_commits_are(self):
+        self.assertIn("not merged into main yet: Mark done, then merge and push.", self.summary("AB-4"))
+        self.assertIn("merged into main, which has no upstream.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.b)
+        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+        self.assertIn("merged into main but not pushed: Mark done, then push main.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
+        self.assertIn("1 commit, merged into main and pushed. Nothing left to merge or push.", self.summary("AB-2"))
+
+    def test_counts_review_rounds_and_quotes_the_latest_agent_note(self):
+        comments = [
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-01T00:00:00Z", "body": "Plannotator plan annotated (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "review", "author": "human:t", "created_at": "2026-01-03T00:00:00Z", "body": self.approved(self.b, self.c)},
+            {"author": "agent:x", "created_at": "2026-01-04T00:00:00Z", "body": "Installed and checked at <main>. Details follow."},
+            {"author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Older note."},
+            {"author": "human:t", "created_at": "2026-01-05T00:00:00Z", "body": "Owner aside."},
+        ]
+        text = self.summary("AB-2", comments, [{"state": "resolved"}, {"state": "resolved"}], "approved")
+        self.assertIn("Plan approved after 2 reviews. Code approved after 1 review, 2 threads resolved.", text)
+        self.assertIn("Latest note, agent:x 2026-01-04: Installed and checked at &lt;main&gt;.", text)
+        self.assertNotIn("Details follow", text)
+        self.assertIn("Code approved after 1 review, no threads.", self.summary("AB-2", comments[3:4]))
 
 
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
