@@ -74,6 +74,10 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   The smaller one wins unless I say otherwise.
 - Keep docs and changes proportionate to the request. Match nearby files
   and cut unnecessary detail.
+- State the owner or customer requirement and its reason instead of
+  recounting who requested it. Use roles in reusable guidance and name
+  people only when their identity matters. Credit sources with links and
+  preserve required provenance.
 - Before you say something is safe, harmless or done, say what you checked.
   If you did not check it, say "not verified". Keep prepared, tested,
   reviewed, installed and deployed distinct. Stop when the task is done.
