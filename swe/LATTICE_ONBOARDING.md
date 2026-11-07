@@ -142,7 +142,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   in_review means prepared locally and waiting to be read, pushed and
   deployed by the owner. Nothing leaves the machine from a session.
 - needs_human holds one question for the board owner, starting with
-  "Need:". Other decisions go in the plan under "Decisions for <owner>",
+  "Need:". Other decisions go in the plan under "Owner decisions",
   one per line, so each can be answered as its own Plannotator note. A
   session clears a flag only when the owner tells it to, and quotes the
   owner's words in the note; being told to start work does not approve a
@@ -249,6 +249,10 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - Writing on the board: every comment, flag, description and plan is
   written for the owner, who did not watch the work. Use plain words and full
   sentences.
+  - State the owner or customer requirement and its reason instead of
+    recounting who requested it. Use roles in reusable guidance and name
+    people only when their identity matters. Credit sources with links
+    and preserve required provenance.
   - Start with one or two sentences that say what happened and what you
     need from the owner, if anything. Someone who reads only that much should
     know where things stand.
@@ -268,9 +272,25 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 
 ## Plan shape
 
-A plan for a task that changes behaviour has these parts, in this
-order. Size it to the task: a one-line fix or a spike needs only Need,
-Acceptance criteria, Steps and Coverage boundary.
+Use this plan shape on every board created or updated from this guide.
+Update existing boards through authorized work in their own projects.
+
+For a small fix with no unresolved design choice, write only Need,
+Acceptance criteria, Steps and Coverage boundary. State the problem,
+expected result, change and check. For example:
+
+    ## Need
+    Empty input causes an exception instead of a validation response.
+    ## Acceptance criteria
+    Empty input receives the documented validation response.
+    ## Steps
+    Fix the input check; the focused empty-input test fails before
+    the fix and passes afterwards.
+    ## Coverage boundary
+    The local handler test runs; the browser path is unverified.
+
+Use the full shape below for work with multiple cases, open decisions or
+wider consequences. Either form keeps every required plan approval.
 
 - Need: who needs the change, what they are trying to do and what goes
   wrong today. No solution yet.
@@ -284,7 +304,7 @@ Acceptance criteria, Steps and Coverage boundary.
 - Out of scope: what the task leaves alone, and the task that owns it.
 - Assumptions: guesses made instead of asking, one sentence each, so the
   owner can reject any of them.
-- Decisions for <owner>: at most three, one per line, each with the
+- Owner decisions: at most three, one per line, each with the
   options and a recommendation, answered when the owner reviews the
   plan.
 - Approach: the files, commands and dependencies the change touches, and
