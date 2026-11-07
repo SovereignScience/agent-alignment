@@ -17,8 +17,9 @@ REASON = (
     "Blocked by the user's standing rule: agents never act outside this machine "
     "(push, PR, review, comment, merge, cluster, hosts, cloud, Slack, email) and "
     "never read secret values. Stop. Tell the user what was blocked and why you "
-    "wanted it, and let the user decide whether it should happen at all. Do not hand "
-    "it over as a routine step to run, and do not retry it another way."
+    "wanted it. If the task needs it, give the exact command for the user to run, "
+    "and let the user decide whether it should happen at all. Do not retry it "
+    "another way."
 )
 
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
@@ -81,11 +82,15 @@ def deny(what):
     raise Blocked(what)
 
 
+# The managed hook runs python3 -I, which leaves this folder off the import
+# path, so load the sibling from here. A missing checker refuses any text
+# rather than letting it through unchecked.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 try:
     from tells_check import find_tells
 except ImportError:
     def find_tells(text):
-        return []
+        return ["tell checker missing"] if text else []
 
 
 def heredocs(cmd):
