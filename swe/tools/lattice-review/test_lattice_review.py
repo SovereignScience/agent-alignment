@@ -13,6 +13,8 @@ import urllib.request
 from argparse import Namespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import lattice_review as lr
 
@@ -294,6 +296,66 @@ class PureTests(RepoFixture):
         finally:
             lr.git_env = checked
         self.assertIn("+d", outputs[0])
+        self.assertFalse(marker.exists())
+
+    def test_invalid_repository_config_is_refused(self):
+        with (self.repo / ".git" / "config").open("a") as config:
+            config.write("\n[invalid config\n")
+        with self.assertRaises(RuntimeError):
+            lr.run_git(self.repo, "log", "-1")
+
+    def test_git_errors_are_visible_on_the_review_page(self):
+        ctx = self.context()
+        handler = object.__new__(lr.make_handler(ctx, base=StubDashboard))
+        handler.path, handler.headers = "/review/t/AB-2", {"Host": "localhost"}
+        handler.send_page = mock.Mock()
+        with (self.repo / ".git" / "config").open("a") as config:
+            config.write("\n[invalid config\n")
+        handler.do_GET()
+        body, status = handler.send_page.call_args.args
+        self.assertEqual(status, 409)
+        self.assertIn(b"bad config", body)
+
+    def signed_commit(self):
+        raw = subprocess.check_output(["git", "-C", str(self.repo), "cat-file", "commit", self.c])
+        headers, message = raw.split(b"\n\n", 1)
+        raw = headers + b"\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\n\n" + message
+        return subprocess.check_output(["git", "-C", str(self.repo), "hash-object", "-t", "commit", "-w", "--stdin"],
+                                       input=raw).decode().strip()
+
+    def test_signature_helpers_do_not_run_even_if_config_changes_after_the_check(self):
+        signed = self.signed_commit()
+        marker = self.tools / "signature-ran"
+        probe = self.tools / "signature"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        checked = lr.git_env
+
+        def check_then_change(repo):
+            env = checked(repo)
+            git(self.repo, "config", "log.showSignature", "true")
+            git(self.repo, "config", "gpg.program", str(probe))
+            return env
+
+        lr.git_env = check_then_change
+        try:
+            self.assertEqual(lr.log_commits(self.repo, signed)[-1]["hash"], signed)
+        finally:
+            lr.git_env = checked
+        self.assertFalse(marker.exists())
+
+    def test_missing_promisor_objects_fail_without_starting_a_transport(self):
+        marker = self.tools / "transport-ran"
+        probe = self.tools / "transport"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        blob = git(self.repo, "rev-parse", self.c + ":c")
+        git(self.repo, "config", "remote.origin.promisor", "true")
+        git(self.repo, "config", "remote.origin.url", "ext::" + str(probe))
+        git(self.repo, "config", "protocol.ext.allow", "always")
+        (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+        with self.assertRaises(RuntimeError):
+            lr.run_git(self.repo, "show", self.c + ":c")
         self.assertFalse(marker.exists())
 
     def test_plannotator_args(self):
@@ -664,6 +726,83 @@ class PureTests(RepoFixture):
         self.assertTrue(lr.same_origin("http://127.0.0.1:8798", "127.0.0.1:8798"))
         for value in ("http://127.0.0.1:1", "https://127.0.0.1:8798", "http://localhost:8798", "null", ""):
             self.assertFalse(lr.same_origin(value, "127.0.0.1:8798"), value)
+
+
+@unittest.skipUnless(HAVE_MODULE, "lattice not importable; use the Python that has lattice installed")
+class NativeGitTests(RepoFixture):
+    signed_commit = PureTests.signed_commit
+
+    def setUp(self):
+        super().setUp()
+        from lattice.dashboard import server, git_reader
+        self.dashboard, self.reader = server, git_reader
+        original = git_reader._run_git
+        self.addCleanup(setattr, git_reader, "_run_git", original)
+        self.addCleanup(git_reader.invalidate_cache)
+
+    def test_native_dashboard_reads_share_the_controlled_runner(self):
+        lr.protect_dashboard_git(self.dashboard, self.reader)
+        signed = self.signed_commit()
+        git(self.repo, "branch", "signed", signed)
+        marker = self.tools / "native-signature-ran"
+        probe = self.tools / "native-signature"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        git(self.repo, "config", "log.showSignature", "true")
+        git(self.repo, "config", "gpg.program", str(probe))
+        with mock.patch.object(lr, "git_result", wraps=lr.git_result) as runner:
+            summary, etag = self.reader.get_git_summary(self.repo / ".lattice")
+            commits = self.reader.get_recent_commits(self.repo, "signed")
+        self.assertTrue(summary["available"] and etag)
+        self.assertEqual(commits[0]["hash"], signed)
+        self.assertEqual({c.args[1][0] for c in runner.call_args_list},
+                         {"rev-parse", "for-each-ref", "rev-list", "remote", "log"})
+        self.assertFalse(marker.exists())
+
+    def test_unknown_installed_git_paths_refuse_startup(self):
+        changed = self.tools / "changed.py"
+        changed.write_text("# an unreviewed dashboard change\n")
+        for dashboard, reader in ((SimpleNamespace(__file__=str(changed)), self.reader),
+                                  (self.dashboard, SimpleNamespace(__file__=str(changed)))):
+            with self.assertRaisesRegex(RuntimeError, "unsupported Lattice dashboard"):
+                lr.protect_dashboard_git(dashboard, reader)
+
+    def test_documented_dashboard_patch_remains_supported(self):
+        server = self.tools / "server.py"
+        source = Path(self.dashboard.__file__).read_bytes()
+        before = b'                info["type"] = meta.get("type")\n'
+        added = b'                info["url"] = (meta.get("custom_fields") or {}).get("url")\n'
+        if added in source:
+            source = source.replace(added, b"")
+        self.assertEqual(source.count(before), 1)
+        for contents in (source, source.replace(before, before + added)):
+            server.write_bytes(contents)
+            lr.protect_dashboard_git(SimpleNamespace(__file__=str(server)), self.reader)
+
+    def test_native_missing_objects_are_explicit_without_starting_transport(self):
+        lr.protect_dashboard_git(self.dashboard, self.reader)
+        marker = self.tools / "native-transport-ran"
+        probe = self.tools / "native-transport"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        git(self.repo, "config", "remote.origin.promisor", "true")
+        git(self.repo, "config", "remote.origin.url", "ext::" + str(probe))
+        git(self.repo, "config", "protocol.ext.allow", "always")
+        (self.repo / ".git" / "objects" / self.b[:2] / self.b[2:]).unlink()
+        with self.assertRaises(RuntimeError):
+            self.reader.get_recent_commits(self.repo, "main")
+        self.assertFalse(marker.exists())
+
+    def test_native_git_errors_return_a_json_failure(self):
+        ctx = self.context()
+        handler = object.__new__(lr.make_handler(ctx))
+        handler.path, handler.headers = "/api/git", {"Host": "localhost"}
+        handler.send_json = mock.Mock()
+        with mock.patch.object(self.reader, "get_git_summary", side_effect=RuntimeError("missing object")):
+            handler.do_GET()
+        status, payload = handler.send_json.call_args.args
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["error"], {"code": "GIT_READ_ERROR", "message": "missing object"})
 
 
 class SectionTests(RepoFixture):

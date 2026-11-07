@@ -135,9 +135,12 @@ INSTALL_HINT = ("Install Plannotator by downloading its installer, reading it, t
 # server never reads one: it reviews commits only. Plannotator is only ever given
 # a patch, so it runs no git of its own. A repository whose config names a diff
 # or filter program is also refused before each call.
-SAFE_GIT = {"GIT_CONFIG_COUNT": "3", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
+SAFE_GIT = {"GIT_CONFIG_COUNT": "4", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
             "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": "/dev/null",
-            "GIT_CONFIG_KEY_2": "diff.external", "GIT_CONFIG_VALUE_2": "", "GIT_OPTIONAL_LOCKS": "0"}
+            "GIT_CONFIG_KEY_2": "diff.external", "GIT_CONFIG_VALUE_2": "",
+            "GIT_CONFIG_KEY_3": "log.showSignature", "GIT_CONFIG_VALUE_3": "false",
+            "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_ALLOW_PROTOCOL": "",
+            "GIT_TERMINAL_PROMPT": "0"}
 RUNS_PROGRAM = re.compile(r"^(?:local|worktree)\t(diff\.external|diff\..+\.(?:command|textconv)|"
                           r"filter\..+\.(?:clean|smudge|process))=", re.IGNORECASE | re.MULTILINE)
 NO_DIFF_PROGRAMS = ("diff", "log", "show")
@@ -145,22 +148,56 @@ NO_DIFF_PROGRAMS = ("diff", "log", "show")
 
 def git_env(repo):
     env = dict(os.environ, **SAFE_GIT)
+    env.pop("GIT_CONFIG_PARAMETERS", None)
     scoped = subprocess.run(["git", "-C", str(repo), "config", "--list", "--show-scope", "--includes"],
-                            capture_output=True, text=True, env=env).stdout
-    hit = RUNS_PROGRAM.search(scoped)
+                            capture_output=True, text=True, env=env)
+    if scoped.returncode:
+        raise RuntimeError(scoped.stderr.strip() or "cannot read repository config")
+    hit = RUNS_PROGRAM.search(scoped.stdout)
     if hit:
         raise RuntimeError("git refused in %s: the repository's own config runs a program (%s)" % (repo, hit.group(1)))
     return env
 
 
-def run_git(repo, *args, check=True, binary=False):
+def git_result(repo, args, *, binary=False, timeout=None):
     if args and args[0] in NO_DIFF_PROGRAMS:
-        args = (args[0], "--no-ext-diff", "--no-textconv") + args[1:]
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=not binary, env=git_env(repo))
-    if check and result.returncode != 0:
-        err = result.stderr if not binary else result.stderr.decode(errors="replace")
+        args = (args[0], "--no-ext-diff", "--no-textconv") + tuple(args[1:])
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                          text=not binary, env=git_env(repo), timeout=timeout)
+
+
+def run_git(repo, *args, check=True, binary=False):
+    result = git_result(repo, args, binary=binary)
+    err = result.stderr if not binary else result.stderr.decode(errors="replace")
+    if result.returncode and (check or (args[0] == "rev-parse" and err.strip())):
         raise RuntimeError(err.strip() or "git " + " ".join(args) + " failed")
     return result.stdout
+
+
+# These are the inspected Lattice 0.2.1 modules, with and without our dashboard
+# patch. Recheck their Git call paths before accepting a different version.
+DASHBOARD_GIT_SOURCES = {
+    "server": {"a89969900fbba13c653ae0de2c4773a938dde708b7365cecccab8cd50024093b",
+               "9997fd6df2d7594cdf970fe495730a31305fbda0c88a69aea564d9f77a5937d5"},
+    "git_reader": {"fcde975b3f9557a532d855c482d37ae62c3a978e096f89e62c1ff44003fa9afc"},
+}
+
+
+def protect_dashboard_git(dashboard, reader):
+    for name, module in (("server", dashboard), ("git_reader", reader)):
+        digest = hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
+        if digest not in DASHBOARD_GIT_SOURCES[name]:
+            raise RuntimeError("unsupported Lattice dashboard %s: review its Git paths before starting" % name)
+
+    def protected(args, cwd, *, timeout=reader.GIT_COMMAND_TIMEOUT):
+        result = git_result(cwd, args, timeout=timeout)
+        if result.returncode and tuple(args) not in (("rev-parse", "--show-toplevel"),
+                                                     ("remote", "get-url", "origin")):
+            raise RuntimeError(result.stderr.strip() or "dashboard Git read failed")
+        return result
+
+    reader._run_git = protected
+    reader.invalidate_cache()
 
 
 def rev(repo, ref):
@@ -185,7 +222,7 @@ def find_task(board, short_id):
 
 
 def log_commits(repo, *args):
-    out = run_git(repo, "log", "--reverse", "--format=%H%x1f%s%x1f%cs", *args, check=False)
+    out = run_git(repo, "log", "--reverse", "--format=%H%x1f%s%x1f%cs", *args)
     commits = []
     for line in out.splitlines():
         parts = line.split("\x1f")
@@ -256,7 +293,7 @@ def changed_files(repo, base, head):
 
 
 def current_branch(repo):
-    return run_git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False).strip()
+    return run_git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
 
 def plannotator_args(plannotator, base, head):
@@ -602,7 +639,7 @@ def commit_mentions(repo, short_id, exclude):
     """Commits on any branch whose message mentions the task ID, other than
     the task's own (GitHub's referenced events)."""
     out = []
-    log = run_git(repo, "log", "--all", "-E", "--grep=%s([^0-9]|$)" % short_id, "--format=%H%x1f%cI%x1f%an%x1f%s", check=False)
+    log = run_git(repo, "log", "--all", "-E", "--grep=%s([^0-9]|$)" % short_id, "--format=%H%x1f%cI%x1f%an%x1f%s")
     for line in log.splitlines():
         parts = line.split("\x1f")
         if len(parts) == 4 and parts[0] not in exclude:
@@ -661,7 +698,7 @@ def commit_details(repo, hashes):
     if not hashes:
         return []
     out = []
-    for line in run_git(repo, "show", "-s", "--format=%H%x1f%cI%x1f%an%x1f%s", *hashes, check=False).splitlines():
+    for line in run_git(repo, "show", "-s", "--format=%H%x1f%cI%x1f%an%x1f%s", *hashes).splitlines():
         parts = line.split("\x1f")
         if len(parts) == 4:
             out.append({"hash": parts[0], "when": parts[1], "author": parts[2], "subject": parts[3]})
@@ -1591,7 +1628,8 @@ def make_handler(ctx, base=None, static_dir=None):
 
     base and static_dir default to Lattice's own; the tests pass a stand-in."""
     if base is None:
-        from lattice.dashboard import server as dashboard
+        from lattice.dashboard import server as dashboard, git_reader
+        protect_dashboard_git(dashboard, git_reader)
         base = dashboard._make_handler_class(ctx.board / ".lattice")
         static_dir = dashboard.STATIC_DIR
 
@@ -1626,15 +1664,21 @@ def make_handler(ctx, base=None, static_dir=None):
                 task = find_task(ctx.board, parts[1])
                 return self.redirect("/#/task/" + task["id"]) if task else self.send_page(page("not found", "<p>not found</p>"), 404)
             if parts[:1] != [REVIEW_PATH.strip("/")]:
-                return super().do_GET()
+                try:
+                    return super().do_GET()
+                except RuntimeError as exc:
+                    return self.send_json(409, {"ok": False, "error": {"code": "GIT_READ_ERROR", "message": str(exc)}})
             if parts[1:2] == ["t"] and len(parts) in (3, 4):
                 task = find_task(ctx.board, parts[2])
-                if task and len(parts) == 3:
-                    return self.send_page(render_review(ctx, task))
-                if task and parts[3] == "history":
-                    entries = task_history(ctx, task)
-                    return self.send_page(page(task["short_id"] + " history", render_history(ctx, task["short_id"], entries)
-                                               or "<p class='muted'>Nothing has happened on this task yet.</p>"))
+                try:
+                    if task and len(parts) == 3:
+                        return self.send_page(render_review(ctx, task))
+                    if task and parts[3] == "history":
+                        entries = task_history(ctx, task)
+                        return self.send_page(page(task["short_id"] + " history", render_history(ctx, task["short_id"], entries)
+                                                   or "<p class='muted'>Nothing has happened on this task yet.</p>"))
+                except RuntimeError as exc:
+                    return self.send_page(page("Git read refused", "<p class='err'>%s</p>" % e(exc)), 409)
             if len(parts) == 1:
                 return self.redirect("/")
             self.send_page(page("not found", "<p>not found</p>"), 404)
