@@ -94,19 +94,21 @@ f.style.height=(f.classList.contains("history-frame")?Math.min(h,Math.round(inne
 function refit(){document.querySelectorAll("iframe.review-frame").forEach(fit)}
 var KEEP=3,shown={},opened={};
 function meta(c){var m=c.querySelector(".dp-comment-meta,.comment-meta");return m?m.textContent:""}
-function clamp(c){var body=c.querySelector(".comment-body")||c.lastElementChild;if(!body||body.className.indexOf("meta")>=0)return;
+function stamp(g){var m=meta(g[0]).match(/\\d{4}-\\d\\d-\\d\\dT[\\d:]+/);return m?m[0]:""}
+function clip(c){var body=c.querySelector(".comment-body")||c.lastElementChild;if(!body||body.className.indexOf("meta")>=0)return;
 body.classList.add("lr-clamp");if(body.scrollHeight<=body.clientHeight+2){body.classList.remove("lr-clamp");return}
 var k=meta(c),b=document.createElement("button");b.type="button";b.className="lr-more";
-function set(open){opened[k]=open;body.classList.toggle("lr-clamp",!open);b.textContent=open?"Less":"More"}
-b.onclick=function(){set(!opened[k])};body.insertAdjacentElement("afterend",b);set(!!opened[k])}
+function setMore(open){opened[k]=open;body.classList.toggle("lr-clamp",!open);b.textContent=open?"Less":"More"}
+b.onclick=function(){setMore(!opened[k])};body.insertAdjacentElement("afterend",b);setMore(!!opened[k])}
 function fold(s){if(s.dataset.lrFold)return;s.dataset.lrFold="1";
 var items=[].slice.call(s.querySelectorAll(".dp-comment,.comment-item")),groups=[];
-items.forEach(function(c){clamp(c);if(groups.length&&c.style.marginLeft)groups[groups.length-1].push(c);else groups.push([c])});
+items.forEach(function(c){clip(c);if(groups.length&&c.style.marginLeft)groups[groups.length-1].push(c);else groups.push([c])});
 if(groups.length<=KEEP)return;
-var old=[].concat.apply([],groups.slice(0,-KEEP)),k=meta(items[0]),b=document.createElement("button");b.type="button";b.className="lr-earlier";
-function set(open){shown[k]=open;old.forEach(function(c){c.classList.toggle("lr-fold",!open)});
+var newestFirst=stamp(groups[0])>stamp(groups[groups.length-1]);
+var old=[].concat.apply([],newestFirst?groups.slice(KEEP):groups.slice(0,-KEEP)),k=meta(items[0]),b=document.createElement("button");b.type="button";b.className="lr-earlier";
+function setEarlier(open){shown[k]=open;old.forEach(function(c){c.classList.toggle("lr-fold",!open)});
 b.textContent=open?"Hide earlier comments":"Show "+old.length+" earlier comment"+(old.length>1?"s":"")}
-b.onclick=function(){set(!shown[k])};old[0].parentNode.insertBefore(b,old[0]);set(!!shown[k])}
+b.onclick=function(){setEarlier(!shown[k])};old[0].parentNode.insertBefore(b,old[0]);setEarlier(!!shown[k])}
 apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
 var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments",history:"history"};

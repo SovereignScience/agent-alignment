@@ -844,6 +844,11 @@ class SectionTests(RepoFixture):
         self.assertIn("history-frame", lr.PANEL)
         self.assertIn("Nothing has happened", call(self.base + "/review/t/AB-9/history")[1])
 
+    def test_panel_script_declares_each_top_level_function_once(self):
+        import re
+        names = re.findall(r"(?m)^function (\w+)\(", lr.PANEL)
+        self.assertEqual(sorted({n for n in names if names.count(n) > 1}), [])
+
     def test_in_progress_work_without_its_own_branch_is_flagged(self):
         record = json.loads((self.repo / ".lattice" / "tasks" / "task_AB1.json").read_text())
         record["status"] = "in_progress"
