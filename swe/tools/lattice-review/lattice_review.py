@@ -944,7 +944,7 @@ class Context:
         self.lock = threading.Lock()
 
     def lattice_cmd(self, *args):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
         result = subprocess.run([self.lattice, *args, "--actor", self.actor], cwd=self.board, env=env,
                                 capture_output=True, text=True)
         return result.returncode, (result.stdout + result.stderr).strip()
@@ -961,7 +961,7 @@ class Context:
         return [line for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
 
     def comments(self, short_id):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
         result = subprocess.run([self.lattice, "comments", short_id, "--json"], cwd=self.board, env=env, capture_output=True, text=True)
         try:
             return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []

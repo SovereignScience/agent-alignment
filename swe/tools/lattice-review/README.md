@@ -227,6 +227,8 @@ directory, `--port` (default: the board's `dashboard_port`, else
 threads and approve plans), `--state` (review output, Plannotator logs
 and temp files for diffs, default
 `~/.local/state/lattice-review/<project code>/`).
+The server reads and writes only the board it serves, even when
+`LATTICE_ROOT` names another.
 
 ## The dashboard patch
 
@@ -308,3 +310,5 @@ tests build a temporary git repository and board, a stand-in
 that logs what it was asked to open; they do not need the real
 Plannotator or VS Code. Tests that record on a board run only when
 `lattice` is on PATH.
+They ignore `LATTICE_ROOT`, so a session that has it set never writes
+test tasks to a real board.
