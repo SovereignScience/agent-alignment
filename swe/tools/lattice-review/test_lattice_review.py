@@ -16,6 +16,7 @@ from pathlib import Path
 
 import lattice_review as lr
 
+os.environ.pop("LATTICE_ROOT", None)
 ENV = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
 HAVE_CLI = bool(shutil.which("lattice"))
 try:
@@ -925,6 +926,19 @@ class ClosingTests(RepoFixture):
 
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
 class CliTests(RepoFixture):
+    def test_board_writes_go_to_the_served_board_whatever_lattice_root_says(self):
+        board = init_board(self.repo)
+        decoy = Path(self.tmp.name) / "decoy"
+        decoy.mkdir()
+        init_board(decoy, "DC")
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        ctx = self.context(board=board, repo=self.repo)
+        os.environ["LATTICE_ROOT"] = str(decoy / "board")
+        self.addCleanup(os.environ.pop, "LATTICE_ROOT", None)
+        code, out = ctx.lattice_cmd("comment", sid, "a note")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([c["body"] for c in ctx.comments(sid)], ["a note"])
+
     def test_review_lands_on_the_task_and_completes_it_through_the_cli(self):
         board = init_board(self.repo)
         sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
