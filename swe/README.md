@@ -151,6 +151,7 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Test the installer and the probe | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
+| Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
 There is no test suite for these protocols (they're prose). The
