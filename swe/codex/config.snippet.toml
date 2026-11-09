@@ -34,7 +34,7 @@ extends = ":workspace"
 
 [permissions.workstation.network]
 enabled = true
-allow_local_binding = true
+allow_local_binding = false
 enable_socks5 = false
 enable_socks5_udp = false
 

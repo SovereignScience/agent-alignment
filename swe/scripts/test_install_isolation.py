@@ -118,17 +118,21 @@ class Installer(unittest.TestCase):
         req = self.requirements()
         network = req["permissions"]["alignment_workstation"]["network"]
         self.assertTrue(network["enabled"])
-        self.assertTrue(network["allow_local_binding"])
+        self.assertIs(network["allow_local_binding"], False)
         self.assertFalse(network["enable_socks5"])
         self.assertFalse(network["enable_socks5_udp"])
         self.assertTrue(req["experimental_network"]["enabled"])
         self.assertTrue(req["experimental_network"]["managed_allowed_domains_only"])
+        self.assertIs(req["experimental_network"]["allow_local_binding"], False)
         managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
         domains = managed["sandbox"]["network"]["allowedDomains"]
+        self.assertNotIn("allowLocalBinding", managed["sandbox"]["network"])
         self.assertEqual(req["experimental_network"]["domains"], dict.fromkeys(domains, "allow"))
         self.assertIn("pypi.org", domains)
         self.assertIn("127.0.0.1", domains)
-        for host in ("*", "github.com", "api.github.com", "api.githubcopilot.com"):
+        self.assertIn("localhost", domains)
+        for host in ("*", "github.com", "api.github.com", "api.githubcopilot.com",
+                     "127.0.0.2", "0.0.0.0", "::1", "10.0.0.1", "169.254.169.254"):
             self.assertNotIn(host, domains)
         endpoint = "https://api.githubcopilot.com/mcp/readonly"
         self.assertEqual(req["mcp_servers"], {"github_read": {"identity": {"url": endpoint}}})
