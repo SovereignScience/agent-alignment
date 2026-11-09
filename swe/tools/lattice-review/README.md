@@ -25,11 +25,54 @@ double-click the edge to reset it. Each panel section is drawn as a card
 one step lighter than the panel, with a quiet hue by kind, and the
 dropdown menus and the review section follow the theme's color scheme.
 
-Everything stays on the machine. The server binds to 127.0.0.1 only,
-answers only requests whose Host names this machine and refuses POSTs
-from another origin, starts Plannotator with its AI and sharing features
-disabled, feeds committed ranges to it as a static patch, and passes
-`--no-git-remote-check` to reviews of uncommitted changes.
+The owner needs to inspect a committed change and return feedback without
+starting a program selected by the repository's contents or Git config.
+The listener binds to 127.0.0.1, checks Host and Origin, and starts
+Plannotator with AI and sharing disabled. Those request checks do not
+constrain a Git subprocess, so every custom and inherited dashboard Git
+read uses the same controlled runner. It disables fsmonitor, hooks,
+external diff, diff drivers, text converters and signature display.
+All Git transports are refused, including lazy fetch of missing objects;
+missing objects produce an error instead of an incomplete review. Native
+Git endpoint failures return JSON with GIT_READ_ERROR and HTTP 409. This
+also works with Git versions that do not implement GIT_NO_LAZY_FETCH.
+Repositories naming a diff or filter program are refused before each read.
+
+Code review exports a static patch between resolved commit IDs to
+Plannotator. It never asks Git to compare the working copy, where clean
+filters could run, and Plannotator performs no Git reads of its own.
+Only committed changes can be reviewed. Actor labels remain workflow
+records, not authentication; they do not protect the board from an agent
+that can edit its files.
+
+The inherited Git endpoints use Lattice's installed git_reader module,
+with its subprocess runner replaced in this server process. Startup
+checks the source fingerprints of both the dashboard server and Git
+reader against the inspected Lattice 0.2.1 files, with and without this
+repository's dashboard patch. A different version is refused until its
+Git call paths are reviewed and the fingerprints updated. No installed
+package file is changed. This compatibility check covers the inspected
+Git read paths; it is not containment of the owner's account.
+
+## Review flow
+
+The task states the need, harm, scope and acceptance before the plan is
+reviewed. The shared plan shape is in
+[the onboarding guide](../../LATTICE_ONBOARDING.md#3-context).
+
+```text
+Task: need, harm, expected result and acceptance
+Plan: [Plannotator: review the plan] [Open the plan in VS Code]
+Code: Base <commit>  Head <commit>
+      [Plannotator: the whole range] [diff] [open]
+Threads: file and line | owner note | agent reply | [Reply] [Resolve]
+```
+
+The owner sends plan feedback, the agent answers and revises, and the
+owner approves the revised plan. After implementation, the owner reviews
+the committed patch. Feedback returns to task threads automatically.
+Changed commits require another approval; only the owner resolves threads
+and completes the task. Merging and publishing remain owner actions.
 
 ## How a task's work is found
 
@@ -48,13 +91,8 @@ disabled, feeds committed ranges to it as a static patch, and passes
 Plannotator gets the task's range as a static patch (`git diff base
 head` on stdin) of the commit IDs resolved at the moment the button is
 pressed, and the recorded review names those same IDs. The per-commit
-buttons do the same for one commit. Uncommitted work is reviewed where
-it is: in the checkout that has the task's linked branch checked out
-(the repository itself or a `git worktree`), or, for a task without a
-branch, in this checkout when its commits end at HEAD or it has none.
-When that checkout has uncommitted changes, a second button names it and
-reviews them from the task's base; such reviews are recorded as feedback
-and never complete a task. Every file of the range has `diff` (VS
+buttons do the same for one commit. Uncommitted work is not reviewed
+here: the agent commits it first. Every file of the range has `diff` (VS
 Code's two-file diff through `code --diff`, with the old path on the
 base side for renames), and `open` (the file in VS Code) when the range
 ends at this checkout's HEAD and the file exists there.
@@ -188,7 +226,7 @@ decides. "Mark done" appears only when that review is an approval, its
 commit IDs are the task's current work, every one of its notes was
 recorded as a thread and every review thread is resolved; a later
 annotated review, a deleted review, a moved branch, a new trailer
-commit, a live-tree review, a note whose recording failed or an open
+commit, a review of uncommitted changes from an older version, a note whose recording failed or an open
 code or plan thread all withdraw it, and the section says why. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
 spikes) are not gated. Completion is `lattice status <ID> done
@@ -263,7 +301,7 @@ notes and plans handlers), written against Lattice 0.2.
 |---|---|
 | `/`, `/api/...`, `/static/...` | the Lattice dashboard; `/` carries the hook that renders the review section |
 | `/review/t/<ID>` | the review section for one task (what the iframe shows) |
-| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range, or `--git --base` in the checkout that holds the task's uncommitted work; redirects to the session; the JSON decision becomes a review comment |
+| `POST /review/t/<ID>/plannotator` | `plannotator review --patch-file -` with the range; redirects to the session; the JSON decision becomes a review comment |
 | `POST /review/t/<ID>/close` | ends the task's open session, recording nothing |
 | `POST /review/t/<ID>/open`, `/filediff` | `code` on one file of the range, or `code --diff` |
 | `/review/t/<ID>/history` | the task's history, shown in the dashboard's History section |
@@ -292,7 +330,21 @@ python3 -m unittest test_lattice_review
 <python with lattice installed> -m unittest test_lattice_review
 ```
 
-The first run covers the review logic against a stand-in dashboard; the
+Non-socket checks can run separately:
+
+```
+<python with lattice installed> -m unittest test_lattice_review.PureTests test_lattice_review.NativeGitTests
+```
+
+They cover the signature-helper and missing-object regressions with
+harmless marker programs, real disposable Git repositories and the
+installed native Git reader. The native handler error check invokes the
+handler directly, without binding a socket. The full suite above still
+requires loopback sockets. A fake Plannotator checks patch handoff and
+feedback handling; it does not verify the real browser or binary. The
+owner checks that round trip after installation.
+
+The first full run covers the review logic against a stand-in dashboard; the
 second, with the interpreter the `lattice` command uses (its shebang
 names it), also runs Lattice's real dashboard handler in process. The
 tests build a temporary git repository and board, a stand-in
