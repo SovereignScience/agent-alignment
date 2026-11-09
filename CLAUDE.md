@@ -65,10 +65,10 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 ## Working a task (every agent)
 
 Tasks for this repository are on the owner's Lattice board in `.lattice/`
-(not committed). Read `.lattice/context.md` before working a task: it holds
-the plan-first step, the branch and worktree per task, the `Task: AA-<n>`
-commit trailer, the review flow, and the reply shape and rules for
-answering review threads.
+(kept out of source Git history). Read `.lattice/context.md` before working
+a task: it holds the plan-first step, the branch and worktree per task,
+the `Task: AA-<n>` commit trailer, the review flow, and the reply shape
+and rules for answering review threads.
 
 - Never edit files in this checkout for task work. It stays on main for
   the owner's merges and for board writes.
@@ -76,15 +76,27 @@ answering review threads.
   the file `lattice plan AA-<n>` names, set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
   owner approves it.
+- If source Git metadata is read-only, the owner runs worktree setup and
+  source Git writes. Agents edit and test allowed files in the created
+  worktree and keep Lattice updated. Give the owner named-path staging
+  and commit commands; never widen Git access or use another Git directory
+  to bypass a refusal.
 - Before the first edit for AA-<n>, from this checkout:
 
   ```
-  git worktree add ../agent-alignment-wt/AA-<n> -b feature/AA-<n>-<slug> main
+  grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
+  git worktree add .worktrees/AA-<n> -b feature/AA-<n>-<slug> main
   LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n> feature/AA-<n>-<slug> --actor agent:<tool>
   ```
 
   Then edit, test and run servers only there, with `LATTICE_ROOT` set to
   this checkout.
+- The board has its own private Git repository at `.lattice/`. Use source
+  Git from the task checkout and board Git with `git -C .lattice` from the
+  main checkout. Keep `LATTICE_ROOT` at the main checkout; its workspace
+  covers both repos.
+  Board checkpoints require an explicit request; remote creation and
+  pushing remain the owner's.
 - End every commit for a task with the trailer line `Task: AA-<n>`, so the
   review section can find it.
 - Reviewing a diff or giving a verdict: load `swe/SKEPTIC_ARBITER.md`.

@@ -96,5 +96,27 @@ class WebFetchTests(unittest.TestCase):
         self.assertEqual(decision("Bash", {"command": "git push origin main"}), "deny")
 
 
+class TellsTests(unittest.TestCase):
+    """The commit-message check, run the way the managed hook runs the guard."""
+
+    def managed(self, guard, command):
+        with tempfile.TemporaryDirectory() as cwd:
+            run = subprocess.run(["/usr/bin/python3", "-I", str(guard)], input=json.dumps(
+                {"tool_name": "Bash", "tool_input": {"command": command}}), capture_output=True, text=True,
+                check=True, cwd=cwd)
+        return json.loads(run.stdout)["hookSpecificOutput"]["permissionDecision"] if run.stdout.strip() else None
+
+    def test_commit_message_tells_are_refused_under_the_managed_invocation(self):
+        self.assertEqual(self.managed(GUARD, "git commit -m 'feat: delve into the parser'"), "deny")
+        self.assertIsNone(self.managed(GUARD, "git commit -m 'fix: parse empty headers'"))
+
+    def test_a_missing_checker_refuses_commit_messages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lone = pathlib.Path(tmp, "guard_outward.py")
+            shutil.copy(GUARD, lone)
+            shutil.copy(GUARD.with_name("fetch_allow.txt"), tmp)
+            self.assertEqual(self.managed(lone, "git commit -m 'fix: parse empty headers'"), "deny")
+
+
 if __name__ == "__main__":
     unittest.main()
