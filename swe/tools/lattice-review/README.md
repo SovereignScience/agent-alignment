@@ -24,6 +24,9 @@ left edge to resize it (the width is remembered in the browser) and
 double-click the edge to reset it. Each panel section is drawn as a card
 one step lighter than the panel, with a quiet hue by kind, and the
 dropdown menus and the review section follow the theme's color scheme.
+Comments show the newest three, with one line above them that shows or
+hides the earlier ones, and a comment longer than six lines shows
+"More". Replies stay with their comment.
 
 The owner needs to inspect a committed change and return feedback without
 starting a program selected by the repository's contents or Git config.
@@ -236,6 +239,11 @@ works with a status literally named `review`). A Plannotator run that exits with
 without a decision is shown as an error and records nothing. Board
 writes that fail are shown in the section, never reported as done.
 
+Above Mark done, a short summary gives the plan and code review rounds,
+the threads resolved, whether the commits are merged into main and
+pushed to its upstream, and the first sentence of the newest agent note,
+where agents record installs and deploys.
+
 Annotations typed in Plannotator stay in that session until Send
 Feedback or Approve; only then do they land on the task, where every
 browser and every agent sees them.
@@ -257,6 +265,8 @@ directory, `--port` (default: the board's `dashboard_port`, else
 threads and approve plans), `--state` (review output, Plannotator logs
 and temp files for diffs, default
 `~/.local/state/lattice-review/<project code>/`).
+The server reads and writes only the board it serves, even when
+`LATTICE_ROOT` names another.
 
 ## The dashboard patch
 
@@ -352,3 +362,5 @@ tests build a temporary git repository and board, a stand-in
 that logs what it was asked to open; they do not need the real
 Plannotator or VS Code. Tests that record on a board run only when
 `lattice` is on PATH.
+They ignore `LATTICE_ROOT`, so a session that has it set never writes
+test tasks to a real board.
