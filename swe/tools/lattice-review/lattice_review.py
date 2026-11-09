@@ -79,6 +79,10 @@ select option{background-color:var(--bg-base,#111);color:var(--text-primary)}
 .detail-panel.open+.lr-resize{display:block}
 .lr-resize:hover,.lr-resize.dragging{background:var(--accent-primary,#2b6cb0);opacity:.5}
 body.lr-dragging{cursor:col-resize;user-select:none}body.lr-dragging iframe{pointer-events:none}
+.lr-fold{display:none!important}.lr-clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:6;overflow:hidden}
+.lr-earlier{display:block;width:100%;margin:0 0 .375rem;padding:.3rem;border:1px dashed color-mix(in srgb,var(--lr-hue,#38bdf8) 40%,transparent);border-radius:var(--radius-sm,4px);background:none;color:var(--text-muted);font:inherit;font-size:.78rem;cursor:pointer}
+.lr-more{display:block;background:none;border:0;padding:.15rem 0 0;color:var(--accent-primary,#2b6cb0);font:inherit;font-size:.78rem;cursor:pointer}
+.lr-earlier:hover,.lr-more:hover{color:var(--text-primary)}
 </style><script>(function(){
 var KEY="lattice-review.panel-width",MIN=360,root=document.documentElement;
 function clamp(w){return Math.round(Math.max(MIN,Math.min(w,root.clientWidth*0.96)))}
@@ -87,12 +91,30 @@ function apply(w){root.style.setProperty("--lr-panel-w",clamp(w)+"px")}
 function fit(f){f.style.height="1px";var h=f.contentDocument.documentElement.scrollHeight+4;
 f.style.height=(f.classList.contains("history-frame")?Math.min(h,Math.round(innerHeight*0.6)):h)+"px"}
 function refit(){document.querySelectorAll("iframe.review-frame").forEach(fit)}
+var KEEP=3,shown={},opened={};
+function meta(c){var m=c.querySelector(".dp-comment-meta,.comment-meta");return m?m.textContent:""}
+function stamp(g){var m=meta(g[0]).match(/\\d{4}-\\d\\d-\\d\\dT[\\d:]+/);return m?m[0]:""}
+function clip(c){var body=c.querySelector(".comment-body")||c.lastElementChild;if(!body||body.className.indexOf("meta")>=0)return;
+body.classList.add("lr-clamp");if(body.scrollHeight<=body.clientHeight+2){body.classList.remove("lr-clamp");return}
+var k=meta(c),b=document.createElement("button");b.type="button";b.className="lr-more";
+function setMore(open){opened[k]=open;body.classList.toggle("lr-clamp",!open);b.textContent=open?"Less":"More"}
+b.onclick=function(){setMore(!opened[k])};body.insertAdjacentElement("afterend",b);setMore(!!opened[k])}
+function fold(s){if(s.dataset.lrFold)return;s.dataset.lrFold="1";
+var items=[].slice.call(s.querySelectorAll(".dp-comment,.comment-item")),groups=[];
+items.forEach(function(c){clip(c);if(groups.length&&c.style.marginLeft)groups[groups.length-1].push(c);else groups.push([c])});
+if(groups.length<=KEEP)return;
+var newestFirst=stamp(groups[0])>stamp(groups[groups.length-1]);
+var old=[].concat.apply([],newestFirst?groups.slice(KEEP):groups.slice(0,-KEEP)),k=meta(items[0]),b=document.createElement("button");b.type="button";b.className="lr-earlier";
+function setEarlier(open){shown[k]=open;old.forEach(function(c){c.classList.toggle("lr-fold",!open)});
+b.textContent=open?"Hide earlier comments":"Show "+old.length+" earlier comment"+(old.length>1?"s":"")}
+b.onclick=function(){setEarlier(!shown[k])};old[0].parentNode.insertBefore(b,old[0]);setEarlier(!!shown[k])}
 apply(wanted());
 window.addEventListener("resize",function(){apply(wanted())});
 var KINDS={description:"description",acceptance:"criteria",plan:"plans",plans:"plans",comments:"comments",history:"history"};
 function tag(){document.querySelectorAll(".dp-section,.detail-section").forEach(function(s){
 var h=s.querySelector("h3"),k=s.querySelector("iframe.review-frame:not(.history-frame)")?"review":s.querySelector("#dp-comment-text,.comment-item,.dp-comment")?"comments":
 KINDS[((h&&h.textContent)||"").trim().split(/\\s+/)[0].toLowerCase()];if(k&&s.dataset.lr!==k)s.dataset.lr=k;
+if(k==="comments")fold(s);
 if(k==="plans"&&s.parentNode&&s.parentNode.querySelector("iframe.review-frame")){
 s.querySelectorAll("button[onclick*='openPlans(']").forEach(function(b){b.hidden=true});
 s.hidden=!s.querySelector("button:not([hidden])")}
@@ -951,7 +973,7 @@ class Context:
         self.lock = threading.Lock()
 
     def lattice_cmd(self, *args):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
         result = subprocess.run([self.lattice, *args, "--actor", self.actor], cwd=self.board, env=env,
                                 capture_output=True, text=True)
         return result.returncode, (result.stdout + result.stderr).strip()
@@ -968,7 +990,7 @@ class Context:
         return [line for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
 
     def comments(self, short_id):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
+        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
         result = subprocess.run([self.lattice, "comments", short_id, "--json"], cwd=self.board, env=env, capture_output=True, text=True)
         try:
             return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
@@ -1482,7 +1504,7 @@ def next_step(ctx, task, rng, review, threads, running, block, plan_state):
     elif not review:
         text = "Open Plannotator on the range below. Each note you send becomes its own thread on this task."
     elif block is None:
-        text = "Approved and every thread resolved: Mark done below, then merge and push."
+        text = "Approved and every thread resolved. The summary above Mark done below says what was reviewed and whether anything is left to merge or push."
     else:
         text = "Not ready to complete: %s." % block
     return "<p class='next'>%s</p>" % e(text)
@@ -1500,6 +1522,46 @@ def tool_notes(ctx):
 def notice(ctx, key):
     kind, text = ctx.notices.pop(key, (None, None))
     return "<p class='%s'>%s</p>" % (kind, e(text)) if kind else ""
+
+
+def contains(repo, ref, sha):
+    """Whether commit sha is in the history of ref."""
+    try:
+        run_git(repo, "merge-base", "--is-ancestor", sha, ref)
+    except RuntimeError:
+        return False
+    return True
+
+
+def closing_summary(repo, main, rng, comments, threads, plan_state):
+    """What the owner needs before closing an approved task: the review rounds,
+    the threads resolved, whether the commits are merged and pushed, and the
+    newest agent note, since agents record installs and deploys there."""
+    def count(n, word):
+        return "%d %s%s" % (n, word, "" if n == 1 else "s")
+    people = [c for c in comments if (c.get("author") or "").startswith("human:") and not c.get("deleted")]
+    plans = sum(1 for c in people if c.get("role") == "plan-review" and PLAN_DECISION.match(c.get("body") or ""))
+    reviews = sum(1 for c in people if c.get("role") == "review" and reviewed_revision(c.get("body") or "")[1])
+    resolved = sum(1 for t in threads if t["state"] == "resolved")
+    facts = "Plan approved after %s. " % count(plans, "review") if plan_state == "approved" else ""
+    facts += "Code approved after %s, %s." % (count(reviews, "review"), count(resolved, "thread") + " resolved" if resolved else "no threads")
+    head, upstream = rng["head_sha"], rev(repo, main + "@{upstream}")
+    where = count(len(rng["commits"]), "commit") + ", "
+    if upstream and contains(repo, upstream, head):
+        where += "merged into %s and pushed. Nothing left to merge or push." % main
+    elif not contains(repo, main, head):
+        where += "not merged into %s yet: Mark done, then merge and push." % main
+    elif upstream:
+        where += "merged into %s but not pushed: Mark done, then push %s." % (main, main)
+    else:
+        where += "merged into %s, which has no upstream." % main
+    lines = [facts, where]
+    notes = [c for c in comments if (c.get("author") or "").startswith("agent:") and not c.get("deleted") and (c.get("body") or "").strip()]
+    if notes:
+        note = max(notes, key=lambda c: c.get("created_at") or "")
+        first = re.split(r"(?<=[.!?])\s", note["body"].strip(), maxsplit=1)[0]
+        lines.append("Latest note, %s %s: %s" % (note["author"], (note.get("created_at") or "")[:10], first[:300]))
+    return "<p>%s</p>" % "<br>".join(e(line) for line in lines)
 
 
 def range_summary(task, rng):
@@ -1607,6 +1669,7 @@ def render_review(ctx, task):
         if block:
             code.append("<p class='muted'>Completion: %s.</p>" % e(block))
         else:
+            code.append(closing_summary(ctx.repo, ctx.main, rng, comments, threads, plan_state))
             code.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
     code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads"))
 

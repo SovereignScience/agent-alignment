@@ -18,6 +18,7 @@ from unittest import mock
 
 import lattice_review as lr
 
+os.environ.pop("LATTICE_ROOT", None)
 ENV = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
 HAVE_CLI = bool(shutil.which("lattice"))
 try:
@@ -1004,6 +1005,11 @@ class SectionTests(RepoFixture):
         self.assertIn("history-frame", lr.PANEL)
         self.assertIn("Nothing has happened", call(self.base + "/review/t/AB-9/history")[1])
 
+    def test_panel_script_declares_each_top_level_function_once(self):
+        import re
+        names = re.findall(r"(?m)^function (\w+)\(", lr.PANEL)
+        self.assertEqual(sorted({n for n in names if names.count(n) > 1}), [])
+
     def test_in_progress_work_without_its_own_branch_is_flagged(self):
         record = json.loads((self.repo / ".lattice" / "tasks" / "task_AB1.json").read_text())
         record["status"] = "in_progress"
@@ -1051,8 +1057,54 @@ class SectionTests(RepoFixture):
         self.assertIn("></textarea>", call(self.base + "/review/t/AB-2")[1])
 
 
+class ClosingTests(RepoFixture):
+    def summary(self, sid, comments=(), threads=(), plan_state=None):
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, sid), "main")
+        return lr.closing_summary(self.repo, "main", rng, list(comments), list(threads), plan_state)
+
+    def test_says_where_the_commits_are(self):
+        self.assertIn("not merged into main yet: Mark done, then merge and push.", self.summary("AB-4"))
+        self.assertIn("merged into main, which has no upstream.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.b)
+        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+        self.assertIn("merged into main but not pushed: Mark done, then push main.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
+        self.assertIn("1 commit, merged into main and pushed. Nothing left to merge or push.", self.summary("AB-2"))
+
+    def test_counts_review_rounds_and_quotes_the_latest_agent_note(self):
+        comments = [
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-01T00:00:00Z", "body": "Plannotator plan annotated (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "review", "author": "human:t", "created_at": "2026-01-03T00:00:00Z", "body": self.approved(self.b, self.c)},
+            {"author": "agent:x", "created_at": "2026-01-04T00:00:00Z", "body": "Installed and checked at <main>. Details follow."},
+            {"author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Older note."},
+            {"author": "human:t", "created_at": "2026-01-05T00:00:00Z", "body": "Owner aside."},
+        ]
+        text = self.summary("AB-2", comments, [{"state": "resolved"}, {"state": "resolved"}], "approved")
+        self.assertIn("Plan approved after 2 reviews. Code approved after 1 review, 2 threads resolved.", text)
+        self.assertIn("Latest note, agent:x 2026-01-04: Installed and checked at &lt;main&gt;.", text)
+        self.assertNotIn("Details follow", text)
+        self.assertIn("Code approved after 1 review, no threads.", self.summary("AB-2", comments[3:4]))
+
+
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
 class CliTests(RepoFixture):
+    def test_board_writes_go_to_the_served_board_whatever_lattice_root_says(self):
+        board = init_board(self.repo)
+        decoy = Path(self.tmp.name) / "decoy"
+        decoy.mkdir()
+        init_board(decoy, "DC")
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        ctx = self.context(board=board, repo=self.repo)
+        os.environ["LATTICE_ROOT"] = str(decoy / "board")
+        self.addCleanup(os.environ.pop, "LATTICE_ROOT", None)
+        code, out = ctx.lattice_cmd("comment", sid, "a note")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([c["body"] for c in ctx.comments(sid)], ["a note"])
+
     def test_review_lands_on_the_task_and_completes_it_through_the_cli(self):
         board = init_board(self.repo)
         sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
