@@ -50,6 +50,8 @@ class Installer(unittest.TestCase):
         (self.home / "projects").mkdir(parents=True)
         (self.home / ".claude").mkdir()
         (self.home / ".codex").mkdir()
+        (self.home / ".codex/attachments").mkdir()
+        (self.home / ".codex/skills/openai-docs").mkdir(parents=True)
         self.etc = root / "etc"
         (self.etc / "claude-code").mkdir(parents=True)
         self.local = root / "managed-local.json"
@@ -138,6 +140,97 @@ class Installer(unittest.TestCase):
         self.assertEqual(fs["/etc"], "deny")
         self.assertIn("~/.config/git (at or under a denied path)", out)
         self.assertIn("/etc (at or under a denied path)", out)
+
+    def test_codex_inputs_are_read_only_without_opening_codex_home(self):
+        (self.home / ".codex/auth.json").write_text("made-up")
+        (self.home / ".codex/sessions").mkdir()
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        req = self.requirements()
+        fs = req["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertEqual(fs["~/.codex/attachments"], "read")
+        self.assertEqual(fs["~/.codex/skills/openai-docs"], "read")
+        self.assertNotIn("~/.codex", fs)
+        self.assertNotIn(str(self.home), fs)
+        self.assertEqual(fs["~/.codex/auth.json"], "deny")
+        self.assertEqual(fs["~/.codex/sessions"], "deny")
+        self.assertEqual(fs[":root"], "deny")
+        self.assertNotIn("network", req["permissions"]["alignment_workstation"])
+        self.assertEqual(req["allowed_permission_profiles"], {"alignment_workstation": True})
+        self.assertEqual(req["mcp_servers"], {})
+
+    def test_codex_input_reopens_preserve_explicit_denials(self):
+        for path in ("~/.codex", "~/.codex/attachments", "~/.codex/skills/openai-docs"):
+            with self.subTest(path=path):
+                code, out = self.run_installer(
+                    local={"sandbox": {"filesystem": {"denyRead": [path]}}}, apply=True)
+                self.assertEqual(code, 0, out)
+                fs = self.requirements()["permissions"]["alignment_workstation"]["filesystem"]
+                self.assertEqual(fs[path], "deny")
+                for read in ("~/.codex/attachments", "~/.codex/skills/openai-docs"):
+                    if read == path or read.startswith(path + "/"):
+                        self.assertNotEqual(fs.get(read), "read")
+
+    def test_printed_undo_restores_requirements_without_input_grants(self):
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        path = self.etc / "codex/requirements.toml"
+        before = path.read_text().replace('"~/.codex/attachments" = "read"\n', "").replace(
+            '"~/.codex/skills/openai-docs" = "read"\n', "")
+        path.write_text(before)
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.requirements()["permissions"]["alignment_workstation"]
+                         ["filesystem"]["~/.codex/attachments"], "read")
+        undo = [line.strip() for line in out.split("To undo, run:\n", 1)[1].splitlines()
+                if line.startswith("  sudo cp -a ") and line.endswith(" " + str(path))]
+        self.assertEqual(len(undo), 1, out)
+        subprocess.run(["bash", "-c", undo[0]], env=self.env(), check=True)
+        self.assertEqual(path.read_text(), before)
+
+    def test_missing_optional_codex_inputs_are_reported_without_a_grant(self):
+        for path in ("attachments", "skills/openai-docs"):
+            (self.home / ".codex" / path).rmdir()
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertIn("~/.codex/attachments (does not exist)", out)
+        self.assertIn("~/.codex/skills/openai-docs (does not exist)", out)
+        fs = self.requirements()["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertNotIn("~/.codex/attachments", fs)
+        self.assertNotIn("~/.codex/skills/openai-docs", fs)
+
+    def test_unsafe_codex_input_roots_stop_before_policy_writes(self):
+        for name in ("attachments", "skills/openai-docs"):
+            path = self.home / ".codex" / name
+            for kind in ("file", "symlink", "broken_symlink"):
+                with self.subTest(name=name, kind=kind):
+                    path.rmdir()
+                    if kind == "file":
+                        path.write_text("made-up")
+                    elif kind == "symlink":
+                        path.symlink_to(self.home)
+                    else:
+                        path.symlink_to(self.home / "missing")
+                    try:
+                        code, out = self.run_installer(apply=True)
+                        self.assertNotEqual(code, 0, out)
+                        self.assertIn("must be an existing directory without symlink components", out)
+                        self.assertIn("Nothing was written", out)
+                        self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                    finally:
+                        path.unlink()
+                        path.mkdir()
+
+    def test_aliased_codex_input_parent_is_not_reopened(self):
+        parent = self.home / ".codex/skills"
+        shutil.rmtree(parent)
+        other = self.home / "other-skills"
+        (other / "openai-docs").mkdir(parents=True)
+        parent.symlink_to(other)
+        code, out = self.run_installer(apply=True)
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("must be an existing directory without symlink components", out)
+        self.assertFalse((self.etc / "codex/requirements.toml").exists())
 
     def test_a_reopen_under_a_symlinked_denial_is_left_out(self):
         (self.home / "protected/git").mkdir(parents=True)
