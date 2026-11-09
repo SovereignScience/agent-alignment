@@ -291,7 +291,14 @@ When the repository has a `.lattice/` board and `lattice` is installed:
   change never starts a review, an agent or a command.
 - Leave prepared work in the review state with what remains for me. Done
   is not deployed. Don't use `lattice complete`.
-- Don't commit or publish `.lattice/` unless I ask. Stop when the selected
+- Keep each board in its own private Git repository at the project's
+  .lattice/ directory, ignored by source Git. Set LATTICE_ROOT to the main
+  project checkout; source task worktrees share that board.
+- Run source Git commands from the source checkout and board Git commands
+  with git -C .lattice from the main checkout. The existing project
+  workspace covers both; never widen access to other projects.
+- Commit a board only when I ask. Private-remote creation and pushing are
+  mine; never include board data in a source commit. Stop when the selected
   task is complete.
 
 If there is no board or no `lattice`, do the task and say tracking was
