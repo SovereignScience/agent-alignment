@@ -30,7 +30,7 @@ authoring. It is independent. You can ignore it.)
 
 | File | Purpose |
 |---|---|
-| [SWE_CORE.md](SWE_CORE.md) | Read first; root cause; delete dead code; verify before claiming done; execute with care. |
+| [SWE_CORE.md](SWE_CORE.md) | Read first; root cause; delete dead code; verify before claiming done; execute with care; ship the smallest useful version; rigour where mistakes cost. |
 | [TESTING_PROTOCOL.md](TESTING_PROTOCOL.md) | Reproduce bugs with a focused test; smallest useful check; deterministic; check ordering. |
 | [PERFORMANCE_PROTOCOL.md](PERFORMANCE_PROTOCOL.md) | Measure first; name the budget; tail latency; idle costs nothing. |
 | [SECURITY_PROTOCOL.md](SECURITY_PROTOCOL.md) | Trust-boundary discipline; OWASP top-10 quick-check; least privilege; fail closed. |

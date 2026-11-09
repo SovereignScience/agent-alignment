@@ -81,6 +81,7 @@
       "Edit(~/projects/CLAUDE.md)",
       "Edit(~/.claude/projects/**/memory/**)",
       "Read(~/.codex/auth.json)",
+      "Read(~/.codex/config.toml)",
       "Read(~/.claude/.credentials.json)",
       "Read(~/.git-credentials)",
       "Edit(~/.claude/settings.json)",
@@ -146,6 +147,8 @@
     "allowUnsandboxedCommands": false,
     "network": {
       "allowedDomains": [
+        "localhost",
+        "127.0.0.1",
         "pypi.org",
         "files.pythonhosted.org",
         "registry.npmjs.org",
@@ -188,6 +191,7 @@
         "~/.password-store",
         "~/.docker/config.json",
         "~/.codex/auth.json",
+        "~/.codex/config.toml",
         "~/.codex/sessions",
         "~/.claude/.credentials.json",
         "~/.claude/projects",
@@ -287,6 +291,10 @@
         }
       ],
       "envVars": [
+        {
+          "name": "AGENT_GITHUB_READ_TOKEN",
+          "mode": "deny"
+        },
         {
           "name": "GH_TOKEN",
           "mode": "deny"
@@ -418,7 +426,9 @@
   },
   "allowManagedHooksOnly": true,
   "allowManagedMcpServersOnly": true,
-  "allowedMcpServers": [],
+  "allowedMcpServers": [
+    {"serverUrl": "https://api.githubcopilot.com/mcp/readonly"}
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -477,7 +487,7 @@
     ],
     "environment": [
       "$defaults",
-      "This is a personal workstation. Repositories under ~/projects may belong to other teams or clients. Nothing leaves this machine from a session; the user pushes, posts and changes live systems in their own terminal."
+      "This is a personal workstation. Repositories under ~/projects may belong to other teams or clients. Agents may research public sources and read approved services. Never disclose secrets or send private project data to unrelated destinations. The user pushes, posts and changes live systems in their own terminal."
     ]
   },
   "isolatePeerMachines": true,

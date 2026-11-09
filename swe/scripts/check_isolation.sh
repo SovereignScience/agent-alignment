@@ -6,7 +6,7 @@
 #
 # The clients differ on purpose: Claude's sandbox reaches the package
 # registries and, with its seccomp filter installed, refuses Unix sockets;
-# Codex's alignment_workstation profile runs commands without network.
+# Codex's alignment_workstation profile uses a managed host-filtering proxy.
 #
 # Read access is tested only on sentinel files with made-up content: the
 # installer writes ~/.config/agent-alignment/sentinel, and --sentinel adds files
@@ -17,8 +17,7 @@
 #
 # Exit status: 0 when every check passed, 1 when one failed, 2 when the result
 # is incomplete until you run the outside checks it prints: a sentinel the
-# sandbox did not show, a marker it wrote to a home directory on tmpfs, and
-# under Codex whether the machine was online.
+# sandbox did not show or a marker it wrote to a home directory on tmpfs.
 #
 # The other PATHs, and the built-in list of credential stores, are reported by
 # metadata only: whether the sandbox shows the path at all. That is information,
@@ -138,6 +137,19 @@ sys.exit(0 if fs.get(":root") == "deny" else 1)' "$codex_etc/requirements.toml" 
     else
         bad "installed Codex profile does not deny reads by default (\":root\" = \"deny\"): $codex_etc/requirements.toml"
     fi
+    if python3 -I -c 'import sys, tomllib
+r = tomllib.load(open(sys.argv[1], "rb"))
+n = r.get("experimental_network", {})
+p = r.get("permissions", {}).get("alignment_workstation", {}).get("network", {})
+m = r.get("mcp_servers", {}).get("github_read", {}).get("identity", {})
+sys.exit(0 if n.get("enabled") is True and n.get("managed_allowed_domains_only") is True
+         and n.get("allow_local_binding") is False and p.get("allow_local_binding") is False
+         and n.get("domains", {}).get("pypi.org") == "allow" and p.get("enabled") is True
+         and m.get("url") == "https://api.githubcopilot.com/mcp/readonly" else 1)' "$codex_etc/requirements.toml" 2>/dev/null; then
+        ok "installed Codex policy requires the managed proxy and the GitHub read-only endpoint"
+    else
+        bad "installed Codex network or GitHub read policy differs from this checkout"
+    fi
 fi
 
 # Import first, then classify only the error from creating the socket.
@@ -174,12 +186,9 @@ else
         ok "example.com not reached"
     fi
     if curl -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
-        if [ "$client" = claude ]; then ok "pypi.org reachable"; else bad "pypi.org reachable, but Codex commands should have no network"; fi
-    elif [ "$client" = claude ]; then
-        bad "pypi.org not reached"
+        ok "pypi.org reachable"
     else
-        info "pypi.org not reached"
-        confirm+=("curl -sS -m 8 -o /dev/null https://pypi.org/simple/ && echo online   # an offline machine also reaches nothing")
+        bad "pypi.org not reached; approved network access is not verified"
     fi
 fi
 
