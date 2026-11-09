@@ -319,7 +319,8 @@ if codex.exists():
     lines += ["", "[permissions.%s.network]" % PROFILE]
     lines += ["%s = %s" % (key, q(value)) for key, value in body["network"].items()]
     lines += ["", "[experimental_network]", "enabled = true",
-              "managed_allowed_domains_only = true", "", "[experimental_network.domains]"]
+              "managed_allowed_domains_only = true", "allow_local_binding = false",
+              "", "[experimental_network.domains]"]
     lines += ["%s = \"allow\"" % q(host) for host in managed["sandbox"]["network"]["allowedDomains"]]
     requirements = "\n".join(lines) + "\n"
     parsed = tomllib.loads(requirements)

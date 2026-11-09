@@ -18,8 +18,8 @@ FAKE_PYTHON = ('#!/bin/sh\ncase "$3" in *AF_UNIX*) printf "%s" "$FAKE_PY_OUT"; e
 REQUIREMENTS = ('default_permissions = "alignment_workstation"\n\n[allowed_permission_profiles]\n'
                 'alignment_workstation = true\n\n[permissions.alignment_workstation]\nextends = ":workspace"\n\n'
                 '[permissions.alignment_workstation.filesystem]\n":root" = "deny"\n'
-                '[permissions.alignment_workstation.network]\nenabled = true\n'
-                '[experimental_network]\nenabled = true\nmanaged_allowed_domains_only = true\n'
+                '[permissions.alignment_workstation.network]\nenabled = true\nallow_local_binding = false\n'
+                '[experimental_network]\nenabled = true\nmanaged_allowed_domains_only = true\nallow_local_binding = false\n'
                 '[experimental_network.domains]\n"pypi.org" = "allow"\n'
                 '[mcp_servers.github_read.identity]\nurl = "https://api.githubcopilot.com/mcp/readonly"\n')
 TOOLS = ("cmp", "dirname", "grep", "head", "ls", "rm")
@@ -136,6 +136,14 @@ class Probe(unittest.TestCase):
         self.assertIn("ok    installed Codex requirements allow only the alignment_workstation profile", out)
         self.assertIn("ok    installed Codex profile denies reads outside the paths it reopens", out)
         self.assertIn("ok    installed Codex policy requires the managed proxy", out)
+        path = self.etc / "codex/requirements.toml"
+        for old in ('[permissions.alignment_workstation.network]\nenabled = true\nallow_local_binding = false',
+                    '[experimental_network]\nenabled = true\nmanaged_allowed_domains_only = true\nallow_local_binding = false'):
+            with self.subTest(local_binding=old.splitlines()[0]):
+                path.write_text(REQUIREMENTS.replace(old, old.replace("allow_local_binding = false", "allow_local_binding = true")))
+                _, guarded = self.probe("codex", sentinel="")
+                self.assertIn("FAIL  installed Codex network or GitHub read policy", guarded)
+        path.write_text(REQUIREMENTS)
         (self.etc / "codex/requirements.toml").write_text(
             REQUIREMENTS.replace("alignment_workstation = true", "alignment_workstation = true\n\":workspace\" = true"))
         _, out = self.probe("codex", sentinel="")

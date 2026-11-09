@@ -282,6 +282,30 @@ managed-settings.example.json; do not keep a second list. GitHub remains
 unreachable from shell commands. Hosted web search and MCP connections use
 separate controls, not that proxy.
 
+Shared development apps may use localhost or 127.0.0.1 through the proxy.
+Codex keeps allow_local_binding false in both the permission profile and the
+managed network constraint; explicitly allowed loopback hosts still work
+through the proxy while its local/private-network guard remains on for
+other destinations. Host rules identify endpoints, not the session or agent
+that started a service. Codex strips ports from domain rules, so a loopback
+grant covers every port there. Do not describe it as per-app isolation.
+
+On mirrored WSL networking, 127.0.0.1 can reach Windows services too. Secret
+file denials do not restrict what a local service can do on your behalf.
+Use development apps and seeded data for the selected task; do not use local
+admin interfaces, forwarded services or authentication bypasses. A server
+inside another command's private network namespace is not automatically
+published on host loopback. Verify cross-session access before claiming it.
+
+Keep the existing app-and-browser-in-one-command recipe for isolated tests.
+Shared app screenshots also need an actual client check of proxy routing,
+redirects, WebSockets and service-worker restrictions; a successful HTTP
+request alone does not establish browser containment. Claude's
+allowLocalBinding setting has no effect on Linux or WSL and is omitted.
+See the [Codex network rules](https://developers.openai.com/codex/permissions/),
+[Claude loopback behavior](https://code.claude.com/docs/en/sandboxing#a-command-fails-to-reach-a-server-on-localhost)
+and [WSL mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking).
+
 Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
 replaced by its target, or left out when the target is already denied, and
 missing paths are left out; the preview lists both. Rerun the installer after

@@ -146,7 +146,6 @@
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
     "network": {
-      "allowLocalBinding": true,
       "allowedDomains": [
         "localhost",
         "127.0.0.1",
@@ -264,10 +263,6 @@
         },
         {
           "path": "~/.codex/auth.json",
-          "mode": "deny"
-        },
-        {
-          "path": "~/.codex/config.toml",
           "mode": "deny"
         },
         {

@@ -143,6 +143,7 @@ n = r.get("experimental_network", {})
 p = r.get("permissions", {}).get("alignment_workstation", {}).get("network", {})
 m = r.get("mcp_servers", {}).get("github_read", {}).get("identity", {})
 sys.exit(0 if n.get("enabled") is True and n.get("managed_allowed_domains_only") is True
+         and n.get("allow_local_binding") is False and p.get("allow_local_binding") is False
          and n.get("domains", {}).get("pypi.org") == "allow" and p.get("enabled") is True
          and m.get("url") == "https://api.githubcopilot.com/mcp/readonly" else 1)' "$codex_etc/requirements.toml" 2>/dev/null; then
         ok "installed Codex policy requires the managed proxy and the GitHub read-only endpoint"
