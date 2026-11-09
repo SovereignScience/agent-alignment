@@ -46,6 +46,9 @@ glob_scan_max_depth = 8
 "/etc" = "read"
 "/usr/local" = "read"
 "/opt/lattice" = "read"
+# Shared input cache and the installed documentation skill are read-only.
+"~/.codex/attachments" = "read"
+"~/.codex/skills/openai-docs" = "read"
 "~/.gitconfig" = "read"
 "~/.config/git" = "read"
 # bwrap starts Codex's sandbox helper from the VS Code extension folder.

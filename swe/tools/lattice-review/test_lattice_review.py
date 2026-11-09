@@ -13,9 +13,12 @@ import urllib.request
 from argparse import Namespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import lattice_review as lr
 
+os.environ.pop("LATTICE_ROOT", None)
 ENV = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1")
 HAVE_CLI = bool(shutil.which("lattice"))
 try:
@@ -239,27 +242,6 @@ class PureTests(RepoFixture):
         with self.assertRaisesRegex(RuntimeError, "is empty"):
             ctx.start_plannotator("AB-9", record_on="AB-9", base="main", head="main")
 
-    def test_uncommitted_work_is_reviewed_in_the_checkout_of_the_task_branch(self):
-        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-4"), "main")
-        self.assertIsNone(lr.live_tree(self.repo, rng))
-        wt = Path(self.tmp.name) / "wt-ab-4"
-        git(self.repo, "worktree", "add", "-q", str(wt), "task/ab-4")
-        (wt / "e").write_text("changed in the worktree\n")
-        tree, base = lr.live_tree(self.repo, rng)
-        self.assertEqual((tree.resolve(), base), (wt.resolve(), rng["base"]))
-        git(self.repo, "branch", "task/ab-9", "main")
-        task(self.repo, "AB-9", "in_review", "work only in a worktree", branch="task/ab-9")
-        wt9 = Path(self.tmp.name) / "wt-ab-9"
-        git(self.repo, "worktree", "add", "-q", str(wt9), "task/ab-9")
-        empty = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
-        self.assertEqual(lr.live_tree(self.repo, empty), (Path(str(wt9)), lr.rev(self.repo, "task/ab-9")))
-        ctx = self.context()
-        ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
-        job = ctx.start_plannotator("AB-4", record_on=None, base=base, live=True, tree=tree)
-        wait_for(job)
-        self.assertTrue(job.what.startswith("uncommitted changes in "), job.what)
-        self.assertIn("wt-ab-4", job.what)
-
     def test_commits_that_mention_a_task_are_referenced_except_its_own(self):
         mention = commit(self.repo, "m", "docs: follow-up for AB-2 in the runbook")
         refs = lr.commit_mentions(self.repo, "AB-2", {self.c})
@@ -269,12 +251,117 @@ class PureTests(RepoFixture):
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
+    def test_repository_config_cannot_make_git_run_a_program(self):
+        marker = self.tools / "ran"
+        probe = self.tools / "probe"
+        probe.write_text("#!/bin/sh\ntouch '%s'\n" % marker)
+        probe.chmod(0o755)
+        shutil.copy(probe, self.repo / ".git" / "hooks" / "post-index-change")
+        git(self.repo, "config", "core.fsmonitor", str(probe))
+        (self.repo / "a").write_text("changed\n")
+        lr.run_git(self.repo, "status", "--porcelain")
+        self.assertFalse(marker.exists())
+        git(self.repo, "config", "--unset", "core.fsmonitor")
+        (self.tools / "included").write_text('[diff "x"]\n\ttextconv = %s\n' % probe)
+        for key, value in (("diff.external", str(probe)), ("filter.x.clean", str(probe)),
+                           ("include.path", str(self.tools / "included"))):
+            git(self.repo, "config", key, value)
+            with self.assertRaises(RuntimeError):
+                lr.changed_files(self.repo, self.a, self.d)
+            git(self.repo, "config", "--unset", key)
+        self.assertEqual(len(lr.changed_files(self.repo, self.a, self.d)), 3)
+        self.assertFalse(marker.exists())
+
+    def test_config_written_after_the_check_does_not_run_a_program(self):
+        marker = self.tools / "ran"
+        probe = self.tools / "probe"
+        probe.write_text("#!/bin/sh\ntouch '%s'\n" % marker)
+        probe.chmod(0o755)
+        (self.repo / ".git" / "info" / "attributes").write_text("* diff=x\n")
+        keys = ("diff.external", "diff.x.command", "diff.x.textconv")
+        checked = lr.git_env
+
+        def check_then_change(repo):
+            env = checked(repo)
+            for key in keys:
+                git(self.repo, "config", key, str(probe))
+            return env
+
+        lr.git_env = check_then_change
+        outputs = []
+        try:
+            for args in (("diff", self.a, self.d), ("log", "-p", "-1", self.d), ("show", self.d + ":d")):
+                outputs.append(lr.run_git(self.repo, *args))
+                for key in keys:
+                    git(self.repo, "config", "--unset", key)
+        finally:
+            lr.git_env = checked
+        self.assertIn("+d", outputs[0])
+        self.assertFalse(marker.exists())
+
+    def test_invalid_repository_config_is_refused(self):
+        with (self.repo / ".git" / "config").open("a") as config:
+            config.write("\n[invalid config\n")
+        with self.assertRaises(RuntimeError):
+            lr.run_git(self.repo, "log", "-1")
+
+    def test_git_errors_are_visible_on_the_review_page(self):
+        ctx = self.context()
+        handler = object.__new__(lr.make_handler(ctx, base=StubDashboard))
+        handler.path, handler.headers = "/review/t/AB-2", {"Host": "localhost"}
+        handler.send_page = mock.Mock()
+        with (self.repo / ".git" / "config").open("a") as config:
+            config.write("\n[invalid config\n")
+        handler.do_GET()
+        body, status = handler.send_page.call_args.args
+        self.assertEqual(status, 409)
+        self.assertIn(b"bad config", body)
+
+    def signed_commit(self):
+        raw = subprocess.check_output(["git", "-C", str(self.repo), "cat-file", "commit", self.c])
+        headers, message = raw.split(b"\n\n", 1)
+        raw = headers + b"\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\n\n" + message
+        return subprocess.check_output(["git", "-C", str(self.repo), "hash-object", "-t", "commit", "-w", "--stdin"],
+                                       input=raw).decode().strip()
+
+    def test_signature_helpers_do_not_run_even_if_config_changes_after_the_check(self):
+        signed = self.signed_commit()
+        marker = self.tools / "signature-ran"
+        probe = self.tools / "signature"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        checked = lr.git_env
+
+        def check_then_change(repo):
+            env = checked(repo)
+            git(self.repo, "config", "log.showSignature", "true")
+            git(self.repo, "config", "gpg.program", str(probe))
+            return env
+
+        lr.git_env = check_then_change
+        try:
+            self.assertEqual(lr.log_commits(self.repo, signed)[-1]["hash"], signed)
+        finally:
+            lr.git_env = checked
+        self.assertFalse(marker.exists())
+
+    def test_missing_promisor_objects_fail_without_starting_a_transport(self):
+        marker = self.tools / "transport-ran"
+        probe = self.tools / "transport"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        blob = git(self.repo, "rev-parse", self.c + ":c")
+        git(self.repo, "config", "remote.origin.promisor", "true")
+        git(self.repo, "config", "remote.origin.url", "ext::" + str(probe))
+        git(self.repo, "config", "protocol.ext.allow", "always")
+        (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+        with self.assertRaises(RuntimeError):
+            lr.run_git(self.repo, "show", self.c + ":c")
+        self.assertFalse(marker.exists())
+
     def test_plannotator_args(self):
-        live, patch = lr.plannotator_args("pl", base="abc", live=True)
-        self.assertEqual((live, patch), (["pl", "--browser", "none", "review", "--git", "--no-git-remote-check", "--json", "--base", "abc"], None))
         args, patch = lr.plannotator_args("pl", base="abc^", head="abc")
         self.assertEqual((args, patch), (["pl", "--browser", "none", "review", "--patch-file", "-", "--json"], ["diff", "abc^", "abc"]))
-        self.assertEqual(lr.plannotator_args("pl", base="abc", head=lr.WORKTREE)[1], ["diff", "abc"])
 
     def test_parse_review_and_decision(self):
         self.assertEqual(lr.parse_review('noise\n{"decision": "annotated", "message": "fix line 3"}\n'), ("annotated", "fix line 3"))
@@ -642,6 +729,83 @@ class PureTests(RepoFixture):
             self.assertFalse(lr.same_origin(value, "127.0.0.1:8798"), value)
 
 
+@unittest.skipUnless(HAVE_MODULE, "lattice not importable; use the Python that has lattice installed")
+class NativeGitTests(RepoFixture):
+    signed_commit = PureTests.signed_commit
+
+    def setUp(self):
+        super().setUp()
+        from lattice.dashboard import server, git_reader
+        self.dashboard, self.reader = server, git_reader
+        original = git_reader._run_git
+        self.addCleanup(setattr, git_reader, "_run_git", original)
+        self.addCleanup(git_reader.invalidate_cache)
+
+    def test_native_dashboard_reads_share_the_controlled_runner(self):
+        lr.protect_dashboard_git(self.dashboard, self.reader)
+        signed = self.signed_commit()
+        git(self.repo, "branch", "signed", signed)
+        marker = self.tools / "native-signature-ran"
+        probe = self.tools / "native-signature"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        git(self.repo, "config", "log.showSignature", "true")
+        git(self.repo, "config", "gpg.program", str(probe))
+        with mock.patch.object(lr, "git_result", wraps=lr.git_result) as runner:
+            summary, etag = self.reader.get_git_summary(self.repo / ".lattice")
+            commits = self.reader.get_recent_commits(self.repo, "signed")
+        self.assertTrue(summary["available"] and etag)
+        self.assertEqual(commits[0]["hash"], signed)
+        self.assertEqual({c.args[1][0] for c in runner.call_args_list},
+                         {"rev-parse", "for-each-ref", "rev-list", "remote", "log"})
+        self.assertFalse(marker.exists())
+
+    def test_unknown_installed_git_paths_refuse_startup(self):
+        changed = self.tools / "changed.py"
+        changed.write_text("# an unreviewed dashboard change\n")
+        for dashboard, reader in ((SimpleNamespace(__file__=str(changed)), self.reader),
+                                  (self.dashboard, SimpleNamespace(__file__=str(changed)))):
+            with self.assertRaisesRegex(RuntimeError, "unsupported Lattice dashboard"):
+                lr.protect_dashboard_git(dashboard, reader)
+
+    def test_documented_dashboard_patch_remains_supported(self):
+        server = self.tools / "server.py"
+        source = Path(self.dashboard.__file__).read_bytes()
+        before = b'                info["type"] = meta.get("type")\n'
+        added = b'                info["url"] = (meta.get("custom_fields") or {}).get("url")\n'
+        if added in source:
+            source = source.replace(added, b"")
+        self.assertEqual(source.count(before), 1)
+        for contents in (source, source.replace(before, before + added)):
+            server.write_bytes(contents)
+            lr.protect_dashboard_git(SimpleNamespace(__file__=str(server)), self.reader)
+
+    def test_native_missing_objects_are_explicit_without_starting_transport(self):
+        lr.protect_dashboard_git(self.dashboard, self.reader)
+        marker = self.tools / "native-transport-ran"
+        probe = self.tools / "native-transport"
+        probe.write_text("#!/bin/sh\ntouch '%s'\nexit 1\n" % marker)
+        probe.chmod(0o755)
+        git(self.repo, "config", "remote.origin.promisor", "true")
+        git(self.repo, "config", "remote.origin.url", "ext::" + str(probe))
+        git(self.repo, "config", "protocol.ext.allow", "always")
+        (self.repo / ".git" / "objects" / self.b[:2] / self.b[2:]).unlink()
+        with self.assertRaises(RuntimeError):
+            self.reader.get_recent_commits(self.repo, "main")
+        self.assertFalse(marker.exists())
+
+    def test_native_git_errors_return_a_json_failure(self):
+        ctx = self.context()
+        handler = object.__new__(lr.make_handler(ctx))
+        handler.path, handler.headers = "/api/git", {"Host": "localhost"}
+        handler.send_json = mock.Mock()
+        with mock.patch.object(self.reader, "get_git_summary", side_effect=RuntimeError("missing object")):
+            handler.do_GET()
+        status, payload = handler.send_json.call_args.args
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["error"], {"code": "GIT_READ_ERROR", "message": "missing object"})
+
+
 class SectionTests(RepoFixture):
     def setUp(self):
         super().setUp()
@@ -732,10 +896,8 @@ class SectionTests(RepoFixture):
         self.assertIn(">Write the plan in VS Code</button>", none)
         self.assertNotIn("Completion", none)
         (self.repo / "scratch").write_text("x\n")
-        here = lr.home_short(self.repo)
-        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-9")[1])
-        self.assertIn("uncommitted changes in %s, feedback only" % here, call(self.base + "/review/t/AB-10")[1])
-        self.assertNotIn("uncommitted changes in", call(self.base + "/review/t/AB-2")[1])
+        for sid in ("AB-2", "AB-9", "AB-10"):
+            self.assertNotIn("uncommitted changes in", call(self.base + "/review/t/" + sid)[1])
         self.reviews["AB-2"] = [{"id": "ev_r1", "role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
                                  "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nDo not accept; fix this first.\n" % (lr.REVIEWED, self.b, self.c)}]
         page = call(self.base + "/review/t/AB-2")[1]
@@ -843,6 +1005,11 @@ class SectionTests(RepoFixture):
         self.assertIn("history-frame", lr.PANEL)
         self.assertIn("Nothing has happened", call(self.base + "/review/t/AB-9/history")[1])
 
+    def test_panel_script_declares_each_top_level_function_once(self):
+        import re
+        names = re.findall(r"(?m)^function (\w+)\(", lr.PANEL)
+        self.assertEqual(sorted({n for n in names if names.count(n) > 1}), [])
+
     def test_in_progress_work_without_its_own_branch_is_flagged(self):
         record = json.loads((self.repo / ".lattice" / "tasks" / "task_AB1.json").read_text())
         record["status"] = "in_progress"
@@ -890,8 +1057,54 @@ class SectionTests(RepoFixture):
         self.assertIn("></textarea>", call(self.base + "/review/t/AB-2")[1])
 
 
+class ClosingTests(RepoFixture):
+    def summary(self, sid, comments=(), threads=(), plan_state=None):
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, sid), "main")
+        return lr.closing_summary(self.repo, "main", rng, list(comments), list(threads), plan_state)
+
+    def test_says_where_the_commits_are(self):
+        self.assertIn("not merged into main yet: Mark done, then merge and push.", self.summary("AB-4"))
+        self.assertIn("merged into main, which has no upstream.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.b)
+        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+        self.assertIn("merged into main but not pushed: Mark done, then push main.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
+        self.assertIn("1 commit, merged into main and pushed. Nothing left to merge or push.", self.summary("AB-2"))
+
+    def test_counts_review_rounds_and_quotes_the_latest_agent_note(self):
+        comments = [
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-01T00:00:00Z", "body": "Plannotator plan annotated (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "human:t", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "plan-review", "author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Plannotator plan approved (plan of AB-2), s\n"},
+            {"role": "review", "author": "human:t", "created_at": "2026-01-03T00:00:00Z", "body": self.approved(self.b, self.c)},
+            {"author": "agent:x", "created_at": "2026-01-04T00:00:00Z", "body": "Installed and checked at <main>. Details follow."},
+            {"author": "agent:x", "created_at": "2026-01-02T00:00:00Z", "body": "Older note."},
+            {"author": "human:t", "created_at": "2026-01-05T00:00:00Z", "body": "Owner aside."},
+        ]
+        text = self.summary("AB-2", comments, [{"state": "resolved"}, {"state": "resolved"}], "approved")
+        self.assertIn("Plan approved after 2 reviews. Code approved after 1 review, 2 threads resolved.", text)
+        self.assertIn("Latest note, agent:x 2026-01-04: Installed and checked at &lt;main&gt;.", text)
+        self.assertNotIn("Details follow", text)
+        self.assertIn("Code approved after 1 review, no threads.", self.summary("AB-2", comments[3:4]))
+
+
 @unittest.skipUnless(HAVE_CLI, "lattice not on PATH")
 class CliTests(RepoFixture):
+    def test_board_writes_go_to_the_served_board_whatever_lattice_root_says(self):
+        board = init_board(self.repo)
+        decoy = Path(self.tmp.name) / "decoy"
+        decoy.mkdir()
+        init_board(decoy, "DC")
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        ctx = self.context(board=board, repo=self.repo)
+        os.environ["LATTICE_ROOT"] = str(decoy / "board")
+        self.addCleanup(os.environ.pop, "LATTICE_ROOT", None)
+        code, out = ctx.lattice_cmd("comment", sid, "a note")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([c["body"] for c in ctx.comments(sid)], ["a note"])
+
     def test_review_lands_on_the_task_and_completes_it_through_the_cli(self):
         board = init_board(self.repo)
         sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
