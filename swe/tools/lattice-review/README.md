@@ -250,8 +250,37 @@ browser and every agent sees them.
 
 ## Run
 
-From a VS Code integrated terminal (so `code` reaches that window),
-inside the board directory:
+The short way is `board`, a bash function in [board.bash](board.bash).
+In any folder of a repository with a board, including a linked worktree,
+it prints the URL when the board's port already answers, and otherwise
+starts the server in the foreground (Ctrl-C stops it). It fails when the
+repository has no board. Install or update it from the main checkout,
+then open a new terminal:
+
+```
+(
+set -euo pipefail
+f="$HOME/SOFTWARE/agent-alignment/swe/tools/lattice-review/board.bash"
+start=$(head -n 1 "$f"); end=$(tail -n 1 "$f")
+touch ~/.bashrc
+awk -v s="$start" -v e="$end" '$0 == s {skip = 1} !skip {print} $0 == e {skip = 0}' ~/.bashrc > ~/.bashrc.board.new
+cat "$f" >> ~/.bashrc.board.new
+cat ~/.bashrc.board.new > ~/.bashrc
+rm ~/.bashrc.board.new
+)
+```
+
+This copies the function into `~/.bashrc` in place of any earlier copy,
+so a later change in the checkout runs only after you install it again.
+The base branch is the repository's `lattice-review.base`, else `main`.
+Set it once where reviews run against another branch:
+
+```
+git -C ~/SOFTWARE/lilly-backend-and-frontend config lattice-review.base develop
+```
+
+The long way, from a VS Code integrated terminal (so `code` reaches that
+window), inside the board directory:
 
 ```
 python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name>
