@@ -76,6 +76,11 @@ answering review threads.
   the file `lattice plan AA-<n>` names, set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
   owner approves it.
+- If source Git metadata is read-only, the owner runs worktree setup and
+  source Git writes. Agents edit and test allowed files in the created
+  worktree and keep Lattice updated. Give the owner named-path staging
+  and commit commands; never widen Git access or use another Git directory
+  to bypass a refusal.
 - Before the first edit for AA-<n>, from this checkout:
 
   ```

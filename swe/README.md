@@ -158,6 +158,94 @@ SWE protocols are validated by use.
 
 ---
 
+## Git writes under a managed profile
+
+Some managed profiles mount source Git metadata read-only. The owner
+creates the task branch and worktree, then the agent edits and tests
+allowed source files there. The owner stages named paths and makes any
+requested commit after inspecting the diff. Creating the worktree does
+not make its Git index writable to the agent.
+
+Lattice task updates are separate from source Git writes. An agent can
+keep the board current when the board is writable. If a Git write is
+refused, stop that action and give the owner its exact command. Keep
+source Git protected; do not switch Git directories to bypass the block.
+
+---
+
+## OpenAI documentation skill
+
+Install `openai-docs` once from your terminal with the
+[official installer](https://github.com/openai/skills/tree/main/skills/.system/skill-installer).
+The skill guides documentation lookups for Codex and OpenAI products.
+
+```bash
+(
+  set -euo pipefail
+  mkdir -p "$HOME/.cache"
+  docs_skill_src="$(mktemp -d "$HOME/.cache/openai-skills.XXXXXX")"
+  git clone --depth 1 https://github.com/openai/skills.git "$docs_skill_src"
+  /usr/bin/python3 \
+    "$docs_skill_src/skills/.system/skill-installer/scripts/install-skill-from-github.py" \
+    --repo openai/skills \
+    --path skills/.curated/openai-docs \
+    --ref "$(git -C "$docs_skill_src" rev-parse HEAD)" \
+    --method download
+  test -s "${CODEX_HOME:-$HOME/.codex}/skills/openai-docs/SKILL.md"
+)
+```
+
+The destination is `$CODEX_HOME/skills/openai-docs`, or
+`~/.codex/skills/openai-docs` when CODEX_HOME is unset. The installer stops
+if that skill directory already exists.
+
+Open a fresh Codex chat and ask it to use `$openai-docs` and report the
+`SKILL.md` path it loaded. A successful install does not establish that
+the agent can read the skill. If the file exists in your terminal but a
+fresh chat cannot read it, review the managed profile's read access to
+that exact skill directory. Do not reinstall or open the whole Codex home
+to fix a visibility problem.
+
+The skill does not register the OpenAI Docs MCP server. MCP registration
+and managed-policy changes require separate owner approval. Check which
+documentation tools the session actually exposes before claiming a lookup
+worked.
+
+The managed Codex profile grants read-only access to the attachment cache
+at `~/.codex/attachments` and this skill's directory. Cache access includes
+past uploads from other sessions. It does not open the rest of Codex home.
+Existing input roots must be real directories without symlink components;
+the installer refuses unsafe roots and reports missing optional ones.
+
+Before installing this access change, check that both directories exist.
+From the reviewed checkout, set SWE_WORKSPACE to the folder containing
+your checkouts and preview with the normal installer:
+
+```bash
+(
+  set -euo pipefail
+  test "${CODEX_HOME:-$HOME/.codex}" = "$HOME/.codex"
+  test -d "$HOME/.codex/attachments"
+  test -d "$HOME/.codex/skills/openai-docs"
+  if [ -f /etc/claude-code/managed-settings.d/50-local.json ]; then
+    test -f "$HOME/.config/agent-alignment/managed-local.json"
+  fi
+  env -u SWE_ETC -u SWE_CODEX_ETC PATH=/usr/bin:/bin:/usr/local/bin \
+    SWE_WORKSPACE="$HOME/projects" \
+    SWE_MANAGED_LOCAL="$HOME/.config/agent-alignment/managed-local.json" \
+    bash swe/scripts/install_isolation.sh
+)
+```
+
+Review the preview before repeating the installer command with `--apply`.
+Keep its printed backup and undo commands. Open a fresh Codex session to
+check an existing attachment, a new harmless upload and the skill. Check
+that the new roots are read-only and existing denials still hold. A passing
+installer test does not establish those live checks. To roll back, use the
+printed undo commands for changed files, then start another fresh session.
+
+---
+
 ## A note on the sibling track
 
 This repository has a sibling subtree at `../flourishing/` for
