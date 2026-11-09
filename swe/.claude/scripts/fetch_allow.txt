@@ -1,6 +1,5 @@
 # Hosts WebFetch may read. WebFetch runs outside the sandbox and its network
-# allowlist, so guard_outward.py refuses every other host, and any URL long
-# enough to carry data out. A host also covers its subdomains.
+# allowlist, so guard_outward.py refuses every other host, and URLs beyond its length limits. These limits do not prevent data disclosure. A host also covers its subdomains.
 #
 # Add hosts for one machine in fetch_allow.local.txt next to the installed
 # guard (sudoedit /etc/claude-code/hooks/fetch_allow.local.txt); the installer

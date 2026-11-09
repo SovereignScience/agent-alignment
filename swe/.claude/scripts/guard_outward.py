@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse guard: agents never act outside this machine and never read secrets.
+"""PreToolUse guard: remote writes are owner-run; agents never read secrets.
 
 Blocks pushes, GitHub writes, cluster and host changes, cloud writes, external
 posts, secret reads and shell writes to guardrail files. Sends back commit
@@ -14,7 +14,7 @@ import sys
 import urllib.parse
 
 REASON = (
-    "Blocked by the user's standing rule: agents never act outside this machine "
+    "Blocked by the user's standing rule: remote writes are owner-run "
     "(push, PR, review, comment, merge, cluster, hosts, cloud, Slack, email) and "
     "never read secret values. Stop. Tell the user what was blocked and why you "
     "wanted it. If the task needs it, give the exact command for the user to run, "
@@ -397,7 +397,7 @@ def check_gh(args):
             elif a.startswith("-X") and len(a) > 2:
                 method = a[2:].upper()
             elif a in ("-f", "-F", "--field", "--raw-field", "--input") or \
-                    a.startswith(("--field=", "--raw-field=", "--input=")):
+                    a.startswith(("-f", "-F", "--field=", "--raw-field=", "--input=")):
                 has_fields = True
         if method and method not in ("GET", "HEAD"):
             deny("gh api -X " + method)

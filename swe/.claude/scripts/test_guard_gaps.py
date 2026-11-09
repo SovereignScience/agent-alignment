@@ -2,6 +2,7 @@
 
 Gcloud syntax: https://cloud.google.com/sdk/gcloud/reference
 Project property read: https://cloud.google.com/sdk/gcloud/reference/config/get-value
+GitHub API methods and fields: https://cli.github.com/manual/gh_api
 """
 import json
 import pathlib
@@ -102,6 +103,21 @@ class GcloudCases(unittest.TestCase):
         for command in commands:
             with self.subTest(command=command):
                 self.assertEqual(decision(GUARD, command), "deny")
+
+
+class GithubCases(unittest.TestCase):
+    def test_rest_api_data_flags_do_not_hide_posts(self):
+        for command in ('gh api repos/example/issues -ftitle=example',
+                        'gh api repos/example/issues -Ftitle=example',
+                        'gh api repos/example/issues --method=POST',
+                        'gh api repos/example/issues -XPOST',
+                        'gh api repos/example/issues --raw-field=title=example'):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+        for command in ('gh api repos/example/issues',
+                        'gh api repos/example/issues -XGET -fq=example'):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
 
 
 class HarnessTests(unittest.TestCase):
