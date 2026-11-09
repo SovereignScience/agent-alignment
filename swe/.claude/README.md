@@ -111,7 +111,11 @@ VS Code extension's own, are not on that list and still run.
 
 Sandboxed commands and the file tools see only the session's working
 directories: blockReadsOutsideWorkingDirectories hides the rest of the home
-directory from both. To commands the rest of home is an empty throwaway
+directory from both. That includes the conda installs, ~/ros2_ws and
+nextcloud-auto's production evidence folder: opening one would mean making
+it a working directory, which is writable too. An agent that needs
+production evidence asks the owner for the lines it needs.
+To commands the rest of home is an empty throwaway
 folder, so writes there never reach the disk. The file also denies a named
 list of secret locations and /mnt/c, in case that setting changes. Commands
 write only to the working directory, the session's temporary directory and
