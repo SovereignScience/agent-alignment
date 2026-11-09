@@ -160,6 +160,17 @@ SWE protocols are validated by use.
 
 ---
 
+## sources
+
+The planning guidance draws on [GitHub Spec Kit](https://github.com/github/spec-kit)
+for user cases and acceptance checks, and
+[Anthropic's guidance on long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+for completing one feature through an end-to-end check. The shared plan
+shape combines those practices with this toolkit's approval and testing
+rules. Keep source links and required provenance when adapting guidance.
+
+---
+
 ## Git writes under a managed profile
 
 Some managed profiles mount source Git metadata read-only. The owner
