@@ -139,8 +139,11 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - backlog is captured. todo is selected by the owner; selected work that
   waits for plan approval stays todo with needs_human set. in_progress is
   active implementation, or a research deliverable the owner authorized.
-  in_review means prepared locally and waiting to be read, pushed and
-  deployed by the owner. Nothing leaves the machine from a session.
+  in_review means prepared and on its way into use: waiting for review,
+  merge, install or live checks. A task stays there, with one Need: flag
+  naming the owner's next step, until it is done. Remote writes and
+  administration are owner-run; approved reads follow the managed access
+  policy.
 - needs_human holds one question for the board owner, starting with
   "Need:". Other decisions go in the plan under "Owner decisions",
   one per line, so each can be answered as its own Plannotator note. A
@@ -219,7 +222,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   thread is open lands in that thread. Only the owner resolves a thread.
   A task with commits can be marked done only while its latest review
   approves exactly those commits and every code and plan thread is
-  resolved. Done is not deployed.
+  resolved. Mark it done only when the work is merged, installed where it
+  applies, and every acceptance criterion has recorded evidence. Done is
+  final.
 - Answering a review: read `lattice comments <ID> --json`, then reply
   once in every thread whose last message is the owner's (the section
   shows it as waiting on the agent), with
