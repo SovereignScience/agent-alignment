@@ -93,7 +93,7 @@ prefix_rule(
 )
 
 
-# Nothing leaves this machine from an agent. The user runs these in their own terminal.
+# Remote writes are owner-run. Approved read access is configured separately.
 prefix_rule(
     pattern = ["git", "push"],
     decision = "forbidden",
@@ -134,8 +134,8 @@ prefix_rule(
     decision = "forbidden",
     justification = "Agents never change the cluster.",
 )
-# ansible-playbook is left to the sandbox, which has no network, keys or vault
-# passwords, so syntax checks run and nothing reaches a host. An allow rule
+# ansible-playbook is left to the sandbox, which has only approved destinations
+# and no keys or vault passwords. An allow rule
 # would run it outside the sandbox; do not add one.
 prefix_rule(
     pattern = [["ssh", "scp", "sftp"]],

@@ -7,15 +7,20 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Hard limits
 
-- Nothing leaves this machine from a session. No push. No PR or issue
+- Agents may research public sources and read approved services, including
+  selected private repositories with read-only authorization. Never disclose
+  secrets or send private project data to unrelated destinations. Remote
+  writes and administration are owner-run. No push. No PR or issue
   create, merge, close, edit, review or comment. No Slack, email or chat
   post. No change to a live system: kubectl writes, helm, Argo CD sync,
   ansible, ssh, tofu or terraform apply, Vault, DNS, cloud consoles, access
   changes, credential rotation, restarts of shared services.
   Prepare the change locally and ask me to confirm the specific action; I
   push and post it myself.
-- Shell commands run in a sandbox with no route to GitHub, the cluster or
-  the hosts, and no access to keys. Settings, hooks and Codex rules can't be
+- Shell commands run in a sandbox with approved network destinations and
+  no access to keys or the owner's credentials. Private GitHub reads use the
+  approved read-only integration, not shell access. Cloud and cluster reads
+  need a named task and narrow permissions. Settings, hooks and Codex rules can't be
   edited from a session. Don't try to get around any of it.
 - If something is blocked, stop and tell me what was blocked and why you
   wanted it. If the task needs it, give me the exact command to run, and

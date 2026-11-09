@@ -106,9 +106,10 @@ three at once. Run review and audit agents only when the user asks.
 9. Cite evidence on every approval. File:line, test name, or
    measurement. No "looks good" without specifics.
 10. Execute with care. Local reversible actions: take freely.
-    Confirm destructive local actions first. Anything that leaves
-    the machine or changes a live system: prepare it and ask; the
-    user runs it.
+    Confirm destructive local actions first. Use approved services for
+    task-relevant reads. Remote writes and administration: prepare them;
+    the user runs them. Never disclose secrets or send private project
+    data to unrelated destinations.
 11. Ship the smallest useful version. Build what the user needs
     end to end, simply and properly, then stop.
 12. Spend rigour where mistakes cost. Full care for security,
