@@ -215,6 +215,9 @@ def unwrap(argv):
             argv = argv[1:]
             while argv and argv[0].startswith("-"):
                 flag, argv = argv[0], argv[1:]
+                if name == "env" and (flag.startswith("--split-string") or
+                        (flag.startswith("-") and not flag.startswith("--") and "S" in flag)):
+                    deny("env split-string is not checked; use the command directly")
                 if flag in takes and argv:
                     argv = argv[1:]
             if name == "timeout":
@@ -322,6 +325,35 @@ def commit_message(args):
         elif a.startswith("--message="):
             msgs.append(a.split("=", 1)[1])
     return "\n".join(msgs)
+
+
+
+def check_gcloud(args):
+    # --flags-file can inject options, so only these global flags are supported.
+    takes_value = {"--configuration", "--project", "--account", "--verbosity", "--format"}
+    words, i = [], 0
+    while i < len(args):
+        arg = args[i]
+        flag, equals, value = arg.partition("=")
+        if flag in takes_value:
+            if not equals:
+                i += 1
+                value = args[i] if i < len(args) else ""
+            if not value or value.startswith("-"):
+                deny("gcloud option without a value")
+        elif arg in ("--quiet", "-q"):
+            pass
+        elif arg in ("--help", "-h"):
+            words.append("help")
+        elif arg in ("--version", "-v"):
+            words.append("version")
+        elif arg.startswith("-"):
+            deny("unsupported gcloud option " + flag)
+        else:
+            words.append(arg)
+        i += 1
+    if tuple(words) not in (("version",), ("help",), ("config", "get-value", "project")):
+        deny("gcloud operation is not on the read list")
 
 
 def check_gh(args):
@@ -606,6 +638,8 @@ def check_argv(argv):
             deny("vault " + pos[0])
     elif name == "aws":
         check_aws(args)
+    elif name == "gcloud":
+        check_gcloud(args)
     elif name == "doctl":
         pos = positional(args)
         if pos and pos[0] != "version":
@@ -647,9 +681,74 @@ def check_argv(argv):
             deny("reading a secret file")
 
 
+
+def command_substitutions(text):
+    def end(start, closing, nesting):
+        if nesting > 32:
+            deny("command substitution nested too deeply")
+        quote, depth, i = None, 1, start
+        while i < len(text):
+            char = text[i]
+            if char == "\\" and quote != "'":
+                i += 2
+                continue
+            if quote == "'":
+                if char == quote:
+                    quote = None
+            elif text.startswith("$(", i):
+                i = end(i + 2, ")", nesting + 1)
+            elif char == "`":
+                if closing == "`":
+                    return i
+                i = end(i + 1, "`", nesting + 1)
+            elif char in ("'", '"'):
+                if quote is None:
+                    quote = char
+                elif char == quote:
+                    quote = None
+            elif quote is None:
+                if char == "(" and closing == ")":
+                    depth += 1
+                elif char == closing:
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            i += 1
+        deny("unterminated command substitution")
+
+    quote, i = None, 0
+    while i < len(text):
+        char = text[i]
+        if char == "\\" and quote != "'":
+            i += 2
+            continue
+        if quote == "'":
+            if char == quote:
+                quote = None
+        elif text.startswith("$(", i) or char == "`":
+            start, closing = (i + 2, ")") if char == "$" else (i + 1, "`")
+            stop = end(start, closing, 1)
+            yield text[start:stop]
+            i = stop
+        elif char in ("'", '"'):
+            if quote is None:
+                quote = char
+            elif char == quote:
+                quote = None
+        i += 1
+
+
 def check_command(cmd):
     text, shell_bodies = strip_heredocs(cmd)
     for part in [text] + shell_bodies:
+        for body in command_substitutions(strip_comments(part)):
+            if DEPTH[0] >= 32:
+                deny("command substitution nested too deeply")
+            DEPTH[0] += 1
+            try:
+                check_command(body)
+            finally:
+                DEPTH[0] -= 1
         if IRREVERSIBLE.search(code_view(part)):
             deny("irreversible command")
     for seg in segments(cmd):
