@@ -93,8 +93,9 @@ that don't validate become CVEs.
     own sandbox cannot start inside the agent sandbox. Keep the
     browser build current. For local origins, start the app and
     `chromium-headless-shell --no-sandbox` in the same command, with a
-    fresh profile and `--proxy-server=http://127.0.0.1:9`, which leaves
-    only localhost reachable. If the headless shell is missing, ask the
+    fresh profile and `--proxy-server=http://127.0.0.1:9`, which points
+    requests for other hosts at a closed port; the sandbox's network
+    limits stay the boundary. If the headless shell is missing, ask the
     user to install it; never fall back to another browser.
 
 ## When to surface
