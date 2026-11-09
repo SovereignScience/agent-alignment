@@ -69,7 +69,7 @@ class Installer(unittest.TestCase):
                     SWE_MANAGED_LOCAL=str(self.local), PATH="%s:%s" % (self.bin, os.environ["PATH"]),
                     **extra)
 
-    def run_installer(self, codex=PROFILE, local=None, user=None, apply=False, **extra):
+    def run_installer(self, codex=PROFILE, local=None, user=None, apply=False, cwd=None, **extra):
         if codex is None:
             (self.home / ".codex/config.toml").unlink(missing_ok=True)
         else:
@@ -79,13 +79,108 @@ class Installer(unittest.TestCase):
         if user is not None:
             (self.home / ".claude/settings.json").write_text(json.dumps(user))
         run = subprocess.run(["bash", str(SCRIPT)] + (["--apply"] if apply else []), env=self.env(**extra),
-                             input="y\n", capture_output=True, text=True, timeout=120)
+                             input="y\n", capture_output=True, text=True, timeout=120, cwd=cwd)
         return run.returncode, run.stdout + run.stderr
 
     preview = run_installer
 
     def requirements(self):
         return tomllib.loads((self.etc / "codex/requirements.toml").read_text())
+
+    def test_installer_ignores_planted_python_and_modules(self):
+        folder = self.home / "projects"
+        marker = self.home / "planted-ran"
+        module = folder / "json.py"
+        interpreter = self.bin / "python3"
+        for kind in ("cwd", "pythonpath", "path"):
+            with self.subTest(kind=kind):
+                try:
+                    extra = {}
+                    if kind == "path":
+                        interpreter.write_text("#!/bin/sh\nprintf ran > " + str(marker) + "\nexit 97\n")
+                        interpreter.chmod(0o755)
+                    else:
+                        module.write_text("from pathlib import Path\nPath(" + repr(str(marker)) +
+                                          ").write_text('ran')\nraise SystemExit(97)\n")
+                        if kind == "pythonpath":
+                            extra["PYTHONPATH"] = str(folder)
+                    code, out = self.run_installer(cwd=folder if kind == "cwd" else self.home, **extra)
+                    self.assertFalse(marker.exists(), out)
+                    self.assertEqual(code, 0, out)
+                finally:
+                    module.unlink(missing_ok=True)
+                    interpreter.unlink(missing_ok=True)
+                    marker.unlink(missing_ok=True)
+
+    def test_managed_read_access_keeps_shell_github_and_write_credentials_closed(self):
+        code, out = self.run_installer(apply=True, AGENT_GITHUB_READ_TOKEN="made-up-read-token")
+        self.assertEqual(code, 0, out)
+        req = self.requirements()
+        network = req["permissions"]["alignment_workstation"]["network"]
+        self.assertTrue(network["enabled"])
+        self.assertIs(network["allow_local_binding"], False)
+        self.assertFalse(network["enable_socks5"])
+        self.assertFalse(network["enable_socks5_udp"])
+        self.assertTrue(req["experimental_network"]["enabled"])
+        self.assertTrue(req["experimental_network"]["managed_allowed_domains_only"])
+        self.assertIs(req["experimental_network"]["allow_local_binding"], False)
+        managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
+        domains = managed["sandbox"]["network"]["allowedDomains"]
+        self.assertNotIn("allowLocalBinding", managed["sandbox"]["network"])
+        self.assertEqual(req["experimental_network"]["domains"], dict.fromkeys(domains, "allow"))
+        self.assertIn("pypi.org", domains)
+        self.assertIn("127.0.0.1", domains)
+        self.assertIn("localhost", domains)
+        for host in ("*", "github.com", "api.github.com", "api.githubcopilot.com",
+                     "127.0.0.2", "0.0.0.0", "::1", "10.0.0.1", "169.254.169.254"):
+            self.assertNotIn(host, domains)
+        endpoint = "https://api.githubcopilot.com/mcp/readonly"
+        self.assertEqual(req["mcp_servers"], {"github_read": {"identity": {"url": endpoint}}})
+        self.assertEqual(managed["allowedMcpServers"], [{"serverUrl": endpoint}])
+        self.assertTrue(managed["allowManagedMcpServersOnly"])
+        self.assertIn({"name": "AGENT_GITHUB_READ_TOKEN", "mode": "deny"},
+                      managed["sandbox"]["credentials"]["envVars"])
+        config = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(config["shell_environment_policy"]["filters"]["AGENT_GITHUB_READ_TOKEN"], "exclude")
+        self.assertNotIn("mcp_servers", config)
+        self.assertEqual(config["shell_environment_policy"]["inherit"], "core")
+        self.assertFalse(config["shell_environment_policy"]["ignore_default_excludes"])
+        self.assertNotIn("made-up-read-token", out)
+        fs = req["permissions"]["alignment_workstation"]["filesystem"]
+        self.assertEqual(fs["~/.codex/config.toml"], "deny")
+        self.assertIn("Read(~/.codex/config.toml)", managed["permissions"]["deny"])
+        self.assertIn("~/.codex/config.toml", managed["sandbox"]["filesystem"]["denyRead"])
+
+    def test_token_exclusion_preserves_other_shell_policy(self):
+        config = PROFILE + '\n[shell_environment_policy]\ninherit = "none"\n' + (
+            '\n[shell_environment_policy.filters]\n"EXAMPLE_TOKEN" = "exclude"\n')
+        code, out = self.run_installer(codex=config, apply=True)
+        self.assertEqual(code, 0, out)
+        updated = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(updated["shell_environment_policy"]["inherit"], "none")
+        self.assertEqual(updated["shell_environment_policy"]["filters"], {
+            "EXAMPLE_TOKEN": "exclude", "AGENT_GITHUB_READ_TOKEN": "exclude"})
+
+    def test_commented_filter_header_without_final_newline(self):
+        code, out = self.run_installer(codex=PROFILE + '\n[shell_environment_policy.filters] # keep', apply=True)
+        self.assertEqual(code, 0, out)
+        config = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(config["shell_environment_policy"]["filters"]["AGENT_GITHUB_READ_TOKEN"], "exclude")
+
+    def test_conflicting_token_filters_stop_before_writes(self):
+        for policy in ('[shell_environment_policy]\nexclude = ["OTHER"]\n',
+                       '[shell_environment_policy]\nfilters = { OTHER = "exclude" }\n',
+                       '[shell_environment_policy.filters]\n"AGENT_GITHUB_READ_TOKEN" = "include"\n',
+                       '[shell_environment_policy.filters]\n"agent_github_read_token" = "include"\n',
+                       '[shell_environment_policy]\nset = { AGENT_GITHUB_READ_TOKEN = "made-up-restored" }\n',
+                       '[shell_environment_policy]\ninherit = "all"\n',
+                       '[shell_environment_policy]\nignore_default_excludes = true\n'):
+            with self.subTest(policy=policy):
+                code, out = self.run_installer(codex=PROFILE + "\n" + policy, apply=True)
+                self.assertNotEqual(code, 0, out)
+                self.assertIn("Nothing was written", out)
+                self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                self.assertNotIn("made-up-restored", out)
 
     def test_a_codex_config_the_admin_profile_cannot_follow_stops_the_preview(self):
         for config in (PROFILE.replace('"workstation"', '":danger-full-access"', 1),
@@ -108,7 +203,7 @@ class Installer(unittest.TestCase):
         self.assertEqual(req["default_permissions"], "alignment_workstation")
         self.assertEqual(req["allowed_permission_profiles"], {"alignment_workstation": True})
         self.assertIs(req["allow_managed_hooks_only"], True)
-        self.assertEqual(req["mcp_servers"], {})
+        self.assertEqual(req["mcp_servers"], {"github_read": {"identity": {"url": "https://api.githubcopilot.com/mcp/readonly"}}})
         self.assertEqual(req["features"], {"plugins": False, "apps": False})
         fs = req["permissions"]["alignment_workstation"]["filesystem"]
         self.assertEqual(fs["~/.ssh"], "deny")
@@ -155,9 +250,9 @@ class Installer(unittest.TestCase):
         self.assertEqual(fs["~/.codex/auth.json"], "deny")
         self.assertEqual(fs["~/.codex/sessions"], "deny")
         self.assertEqual(fs[":root"], "deny")
-        self.assertNotIn("network", req["permissions"]["alignment_workstation"])
+        self.assertTrue(req["permissions"]["alignment_workstation"]["network"]["enabled"])
         self.assertEqual(req["allowed_permission_profiles"], {"alignment_workstation": True})
-        self.assertEqual(req["mcp_servers"], {})
+        self.assertEqual(req["mcp_servers"], {"github_read": {"identity": {"url": "https://api.githubcopilot.com/mcp/readonly"}}})
 
     def test_codex_input_reopens_preserve_explicit_denials(self):
         for path in ("~/.codex", "~/.codex/attachments", "~/.codex/skills/openai-docs"):

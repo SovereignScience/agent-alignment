@@ -22,6 +22,7 @@ use_memories = false
 generate_memories = false
 
 [features]
+network_proxy = true
 memories = false
 chronicle = false
 
@@ -30,6 +31,12 @@ chronicle = false
 # be in ~/.codex/config.toml.
 [permissions.workstation]
 extends = ":workspace"
+
+[permissions.workstation.network]
+enabled = true
+allow_local_binding = false
+enable_socks5 = false
+enable_socks5_udp = false
 
 [permissions.workstation.filesystem]
 # Deny-read globs below are expanded to a list of matching files before each
@@ -61,6 +68,7 @@ glob_scan_max_depth = 8
 "~/.password-store" = "deny"
 "~/.docker/config.json" = "deny"
 "~/.codex/auth.json" = "deny"
+"~/.codex/config.toml" = "deny"
 "~/.claude/.credentials.json" = "deny"
 # Recommended with network on: every allowed host becomes a write target, so
 # keep every credential store unreadable.
@@ -123,35 +131,10 @@ inherit = "core"
 ignore_default_excludes = false
 
 [shell_environment_policy.filters]
-# Name any client token your shell exports, for example:
+"AGENT_GITHUB_READ_TOKEN" = "exclude"
+# Name other client tokens your shell exports, for example:
 # "EXAMPLE_API_KEY" = "exclude"
 
-# Sandboxed commands have no network with the settings above. To allow fetches
-# to named hosts only, pick one of the two documented ways. Neither is applied
-# by this snippet. Validate enforcement on each supported client version.
-#
-# Option A, user config: the built-in proxy with a domain allowlist.
-# [features]
-# network_proxy = true
-#
-# [permissions.workstation.network]
-# enabled = true
-# Domain rules restrict destinations, not HTTP methods or browser actions.
-# allow_local_binding = false
-# enable_socks5 = false
-# enable_socks5_udp = false
-#
-# [permissions.workstation.network.domains]
-# Use the reviewed domain list in ../.claude/managed-settings.example.json
-# (sandbox.network.allowedDomains) for both tools; do not maintain another list.
-# "developers.openai.com" = "allow"  # syntax example
-#
-# Option B, admin-enforced /etc/codex/requirements.toml, which a session cannot
-# loosen because the rules forbid sudo:
-# [experimental_network]
-# enabled = true
-# managed_allowed_domains_only = true
-#
-# [experimental_network.domains]
-# "pypi.org" = "allow"
-# "github.com" = "allow"
+# The installer enforces the registry and loopback host list from the managed
+# Claude settings through Codex's native managed network proxy. Hosted search
+# and MCP have separate controls. Keep GitHub shell access closed.

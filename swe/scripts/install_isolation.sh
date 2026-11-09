@@ -55,7 +55,7 @@ test_dirs=no
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-python3 - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
+/usr/bin/python3 -I - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
 import json, os, pathlib, re, stat, sys, tomllib
 
 swe, workspace, local_file, stage, etc, codex_etc, test_dirs = sys.argv[1:]
@@ -254,17 +254,57 @@ if codex.exists():
         updated = want_line + "\n" + current
     else:
         updated = re.sub(r"^default_permissions[ \t]*=.*$", want_line, current, count=1, flags=re.MULTILINE)
-    if tomllib.loads(updated).get("default_permissions") != PROFILE:
-        stop("%s: could not set default_permissions; set it to \"%s\" by hand" % (codex, PROFILE))
+    policy = config.get("shell_environment_policy", {})
+    if any(key in policy for key in ("exclude", "include_only")):
+        stop("%s uses legacy shell environment filters; convert them to shell_environment_policy.filters first" % codex)
+    if policy.get("inherit", "core") not in ("core", "none") or policy.get("ignore_default_excludes", False):
+        stop("%s needs shell_environment_policy.inherit core or none and ignore_default_excludes false" % codex)
+    token = "AGENT_GITHUB_READ_TOKEN"
+    if any(name.casefold() == token.casefold() for name in policy.get("set", {})):
+        stop("%s must not restore the GitHub read token through shell_environment_policy.set" % codex)
+    filters = policy.get("filters", {})
+    token_keys = [name for name in filters if name.casefold() == token.casefold()]
+    if any(filters[name] != "exclude" for name in token_keys):
+        stop("%s must exclude the GitHub read token from shell environments" % codex)
+    changes = []
+    if config.get("default_permissions") != PROFILE:
+        changes.append("set " + want_line)
+
+    def add_entry(table, key, value):
+        global updated
+        header = "[" + table + "]"
+        entry = '%s = %s\n' % (json.dumps(key), json.dumps(value))
+        match = re.search(r"(?m)^[ \t]*\[" + re.escape(table) + r"\][ \t]*(?:#[^\n]*)?(?:\n|$)", updated)
+        if match:
+            end = match.end()
+            updated = updated[:end] + ("" if updated[:end].endswith("\n") else "\n") + entry + updated[end:]
+        else:
+            try:
+                updated = updated + "\n" + header + "\n" + entry
+                tomllib.loads(updated)
+            except tomllib.TOMLDecodeError:
+                stop("%s: use table form %s before installing" % (codex, header))
+        changes.append("set " + table + "." + key)
+
+    if "inherit" not in policy:
+        add_entry("shell_environment_policy", "inherit", "core")
+    if "ignore_default_excludes" not in policy:
+        add_entry("shell_environment_policy", "ignore_default_excludes", False)
+    if not token_keys:
+        add_entry("shell_environment_policy.filters", token, "exclude")
+    parsed = tomllib.loads(updated)
+    if parsed.get("default_permissions") != PROFILE:
+        stop("%s: could not set the managed profile" % codex)
     (stage / "config.toml").write_text(updated)
-    (stage / "config.toml.changes").write_text("" if updated == current else "set %s\n" % want_line)
+    (stage / "config.toml.changes").write_text("\n".join(changes) + ("\n" if changes else ""))
 
     q = json.dumps
     lines = [MARK,
              "# so Full Access and the built-in profiles are refused. Written by install_isolation.sh.",
              "default_permissions = %s" % q(PROFILE), "allow_managed_hooks_only = true", "",
              "[allowed_permission_profiles]", "%s = true" % PROFILE, "",
-             "[mcp_servers]", "",
+             "[mcp_servers.github_read.identity]",
+             "url = %s" % q(managed["allowedMcpServers"][0]["serverUrl"]), "",
              "[features]", "plugins = false", "apps = false", "",
              "[permissions.%s]" % PROFILE, "extends = %s" % q(body["extends"]), "",
              "[permissions.%s.filesystem]" % PROFILE,
@@ -276,6 +316,12 @@ if codex.exists():
     if roots:
         lines += ["", "[permissions.%s.filesystem.%s]" % (PROFILE, q(ROOTS))]
         lines += ["%s = %s" % (q(k), q(v)) for k, v in roots.items()]
+    lines += ["", "[permissions.%s.network]" % PROFILE]
+    lines += ["%s = %s" % (key, q(value)) for key, value in body["network"].items()]
+    lines += ["", "[experimental_network]", "enabled = true",
+              "managed_allowed_domains_only = true", "allow_local_binding = false",
+              "", "[experimental_network.domains]"]
+    lines += ["%s = \"allow\"" % q(host) for host in managed["sandbox"]["network"]["allowedDomains"]]
     requirements = "\n".join(lines) + "\n"
     parsed = tomllib.loads(requirements)
     if parsed["default_permissions"] != PROFILE or parsed["allowed_permission_profiles"] != {PROFILE: True}:
@@ -287,13 +333,13 @@ PY
 
 cp "$swe/.claude/scripts/guard_outward.py" "$swe/.claude/scripts/tells_check.py" \
    "$swe/.claude/scripts/after_summary.sh" "$swe/.claude/scripts/fetch_allow.txt" "$stage/"
-python3 -m py_compile "$stage/guard_outward.py" "$stage/tells_check.py"
+/usr/bin/python3 -I -m py_compile "$stage/guard_outward.py" "$stage/tells_check.py"
 rm -rf "$stage/__pycache__"
 
 # Managed settings for display only: text values outside permissions, sandbox
 # and hook matchers, such as env, helpers and headers, are masked.
 masked() {
-    python3 -c 'import json, sys
+    /usr/bin/python3 -I -c 'import json, sys
 def mask(node, path=()):
     if isinstance(node, dict):
         return {k: mask(v, path + (k,)) for k, v in node.items()}

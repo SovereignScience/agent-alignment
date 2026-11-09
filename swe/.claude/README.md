@@ -102,10 +102,11 @@ origin/main.
 
 managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
-unavailable, allows only package registries on the network, hides
-credential files and token variables, denies the outward commands, runs
-only managed hooks, allows only the MCP servers it lists (none by
-default) and disables bypass mode. Servers a client builds in, such as the
+unavailable, allows package registries and exact loopback hosts for shell
+commands, hides credential files and token variables, denies remote writes,
+runs only managed hooks and disables bypass mode. The MCP allowlist permits
+only GitHub's hosted read-only endpoint. No server is configured or connected
+by the installer; credential setup is owner-run. Servers a client builds in, such as the
 VS Code extension's own, are not on that list and still run.
 
 Sandboxed commands and the file tools see only the session's working
@@ -261,7 +262,8 @@ session runs on the alignment_workstation profile and refuses Full Access.
 ## Codex
 
 ../codex/config.snippet.toml holds the Codex settings and the permission
-profile body (filesystem denials, no network), and ../codex/default.rules the
+profile body (filesystem denials and restricted networking), and
+../codex/default.rules the
 commands Codex refuses in every mode. Codex reads AGENTS.md for the rules
 themselves. Codex accepts an allowlist only of profiles defined in the
 requirements file, so install_isolation.sh writes that body, plus the local
@@ -273,8 +275,36 @@ Codex's runtime set (":minimal") and the paths the snippet lists, so files in
 other projects stay unreadable; the named denials remain a second layer.
 Codex reads the profile and rules when a chat starts, so start a new chat after
 changing them; a resumed chat keeps the old ones.
-The requirements also turn off Codex's MCP servers, plugins and apps, and run
-only managed hooks, as the Claude layer does.
+The requirements keep plugins and apps off and run only managed hooks.
+They permit one MCP server identity: github_read at GitHub's exact hosted
+read-only URL. The managed network proxy uses the host list from
+managed-settings.example.json; do not keep a second list. GitHub remains
+unreachable from shell commands. Hosted web search and MCP connections use
+separate controls, not that proxy.
+
+Shared development apps may use localhost or 127.0.0.1 through the proxy.
+Codex keeps allow_local_binding false in both the permission profile and the
+managed network constraint; explicitly allowed loopback hosts still work
+through the proxy while its local/private-network guard remains on for
+other destinations. Host rules identify endpoints, not the session or agent
+that started a service. Codex strips ports from domain rules, so a loopback
+grant covers every port there. Do not describe it as per-app isolation.
+
+On mirrored WSL networking, 127.0.0.1 can reach Windows services too. Secret
+file denials do not restrict what a local service can do on your behalf.
+Use development apps and seeded data for the selected task; do not use local
+admin interfaces, forwarded services or authentication bypasses. A server
+inside another command's private network namespace is not automatically
+published on host loopback. Verify cross-session access before claiming it.
+
+Keep the existing app-and-browser-in-one-command recipe for isolated tests.
+Shared app screenshots also need an actual client check of proxy routing,
+redirects, WebSockets and service-worker restrictions; a successful HTTP
+request alone does not establish browser containment. Claude's
+allowLocalBinding setting has no effect on Linux or WSL and is omitted.
+See the [Codex network rules](https://developers.openai.com/codex/permissions/),
+[Claude loopback behavior](https://code.claude.com/docs/en/sandboxing#a-command-fails-to-reach-a-server-on-localhost)
+and [WSL mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking).
 
 Codex's sandbox cannot mask a symlink or a missing path. A symlinked denial is
 replaced by its target, or left out when the target is already denied, and
@@ -286,10 +316,105 @@ when /etc/codex/requirements.toml holds policy it did not write. Without
 that sessions start on alignment_workstation and that Full Access is refused.
 The profile is a deny list, not Claude's working-directory limit.
 
-default.rules does not forbid ansible-playbook: in the profile's sandbox it
-has no network, keys or vault passwords, so syntax checks run and nothing
-reaches a host. An allow rule would run a command outside the sandbox, so
-none is added. ssh, scp and sftp stay forbidden.
+default.rules does not forbid ansible-playbook: the sandbox restricts its
+destinations and denies keys and vault passwords. Do not add an allow rule
+that runs it outside the sandbox. ssh, scp and sftp stay forbidden.
+
+The Codex VS Code extension does not need a separate Codex CLI on PATH.
+Keep client executables outside the agent's tool PATH unless a task needs
+them. After installation, open a new chat and confirm that the client loaded
+the managed proxy and profile; an extension version alone does not prove
+that its bundled runtime enforces them.
+
+## Private GitHub reads
+
+Use the [official hosted server](https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md)
+at https://api.githubcopilot.com/mcp/readonly. Its read-only mode removes
+write tools. Repository access comes from a separate, expiring fine-grained
+token restricted to the selected repositories, not from the URL. Start with
+Contents, Issues and Pull requests read permissions. Add Checks or Commit
+statuses read only when the status tools need them. Keep Actions logs and
+write permissions out. Do not reuse the owner's normal GitHub token.
+
+Install the reviewed isolation changes before configuring the credential.
+Confirm that both clients refuse to read ~/.codex/config.toml, using made-up
+content first, and that the attachment and skill reads still work. The
+installer preserves existing MCP configuration; it does not create a
+connection or install credentials. A missing credential is not a successful
+anonymous private read.
+
+For Codex in VS Code, use MCP settings to open the WSL user's config.toml.
+Keep that file mode 0600. Add this native configuration, inserting the
+read-only token in the protected editor, never in chat or a command argument:
+
+```toml
+[mcp_servers.github_read]
+url = "https://api.githubcopilot.com/mcp/readonly"
+
+[mcp_servers.github_read.http_headers]
+Authorization = "Bearer <dedicated read-only token>"
+X-MCP-Toolsets = "repos,issues,pull_requests"
+```
+
+Do not also set bearer_token_env_var for this connection. Restart the
+extension after saving. The CLI and IDE share this
+[MCP configuration](https://developers.openai.com/codex/mcp/). Keep any backup
+containing the token private too; never attach it to a task.
+
+For Claude, the owner backs up any existing
+/etc/claude-code/managed-mcp.json, then uses sudoedit to configure the approved
+server. The file contains an environment reference, not a literal token:
+
+```json
+{
+  "mcpServers": {
+    "github_read": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/readonly",
+      "headers": {
+        "Authorization": "Bearer ${AGENT_GITHUB_READ_TOKEN}",
+        "X-MCP-Toolsets": "repos,issues,pull_requests"
+      }
+    }
+  }
+}
+```
+
+Start Claude from the desired track with a hidden prompt in the owner's
+terminal. The managed policy strips this variable from sandboxed commands:
+
+```bash
+(
+  set -euo pipefail
+  IFS= read -r -s -p 'Read-only GitHub token: ' AGENT_GITHUB_READ_TOKEN
+  printf '\n'
+  test -n "$AGENT_GITHUB_READ_TOKEN"
+  export AGENT_GITHUB_READ_TOKEN
+  claude
+)
+```
+
+An export in a VS Code integrated terminal does not set the extension host's
+environment. Do not add a global WSL server environment script for this
+setup. Claude's [managed MCP documentation](https://code.claude.com/docs/en/managed-mcp)
+describes the environment-reference flow; a missing variable leaves the
+connection unusable. No credential value belongs in the source repository.
+
+In fresh sessions of each client, from both tracks, check an approved
+public documentation read, a registry request and a local app screenshot.
+Then read a known private file and PR or issue from an approved repository.
+Confirm the selected-repository scope in GitHub and inspect the exposed
+server tools: no write tools. Use made-up sentinels for retained file denials,
+including the protected Codex config, and check token exclusion by presence
+only, never printing a value. A remote write test requires the owner's
+explicit approval and a disposable target; never test it on a real issue.
+Run check_isolation.sh too. Record each client and track separately.
+
+To undo credential setup, remove only github_read from Codex's configuration
+and restore the earlier managed-mcp.json, or remove that file if this setup
+created it. Revoke the dedicated token in GitHub. For the isolation files,
+use the exact undo commands the installer printed. Do not copy an entire
+old config over unrelated changes made since the backup.
 
 ## Adding a specialist
 
