@@ -91,7 +91,12 @@ that don't validate become CVEs.
     permits widening the sandbox's network access, turning on nested
     user namespaces or moving a browser outside the sandbox; Chromium's
     own sandbox cannot start inside the agent sandbox. Keep the
-    browser build current.
+    browser build current. For local origins, start the app and
+    `chromium-headless-shell --no-sandbox` in the same command, with a
+    fresh profile and `--proxy-server=http://127.0.0.1:9`, which points
+    requests for other hosts at a closed port; the sandbox's network
+    limits stay the boundary. If the headless shell is missing, ask the
+    user to install it; never fall back to another browser.
 
 ## When to surface
 
