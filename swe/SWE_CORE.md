@@ -81,8 +81,9 @@ on a whim, and refactors smuggled inside bug fixes.
 10. Execute with care. Local reversible actions: take freely.
     Destructive or hard-to-reverse local actions (hard reset,
     recursive delete, dependency removal, CI changes): confirm first.
-    Anything that leaves the machine or changes a live system:
-    prepare it and ask; the user runs it.
+    Task-relevant reads may use approved tools and services. Never disclose
+    secrets or send private project data to unrelated destinations. Remote
+    writes and administration: prepare them; the user runs them.
 
 11. Ship the smallest useful version. Find who uses the change and
     what they must be able to do. Build that end to end, simply and
