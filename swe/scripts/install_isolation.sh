@@ -218,12 +218,16 @@ if codex.exists():
     denies = list(dict.fromkeys(denies))
     denied = [os.path.realpath(ex(p)) for p in denies]
     reads = []
+    input_roots = {"~/.codex/attachments", "~/.codex/skills/openai-docs"}
     for p in (p for p, v in snippet_fs.items() if v == "read" and not p.startswith(":")):
         q = ex(p)
+        real = os.path.realpath(q)
+        if p in input_roots and (real != os.path.abspath(q)
+                                 or (os.path.lexists(q) and not os.path.isdir(q))):
+            stop("%s must be an existing directory without symlink components" % p)
         if not os.path.exists(q):
             skipped.append("%s (does not exist)" % p)
             continue
-        real = os.path.realpath(q)
         if any(real == d or real.startswith(d.rstrip("/") + "/") for d in denied):
             skipped.append("%s (at or under a denied path)" % p)
             continue

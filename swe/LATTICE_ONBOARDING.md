@@ -189,6 +189,11 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   LATTICE_ROOT=<board directory> set. The main checkout stays on <branch>
   for the owner's merges and board writes; no session edits files there.
   At most three sessions or workers at once.
+- If source Git metadata is read-only, the owner runs worktree setup and
+  source Git writes. Agents edit and test allowed files in the created
+  worktree and keep Lattice updated. Give the owner named-path staging
+  and commit commands; never widen Git access or use another Git directory
+  to bypass a refusal.
 - The comment roles review and plan-review are written by the review
   server for the owner's Plannotator decisions. Agents use validation for
   evidence and no role otherwise.
@@ -324,6 +329,11 @@ review flow, and the reply shape and rules for answering review threads.
   the file lattice plan <CODE>-<n> names, set
   lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
   owner approves it.
+- If source Git metadata is read-only, the owner runs worktree setup and
+  source Git writes. Agents edit and test allowed files in the created
+  worktree and keep Lattice updated. Give the owner named-path staging
+  and commit commands; never widen Git access or use another Git directory
+  to bypass a refusal.
 - Before the first edit for <CODE>-<n>:
     grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
     git worktree add .worktrees/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
