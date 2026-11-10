@@ -20,6 +20,12 @@ case "$*" in
         fi
         exit "${FAKE_EXAMPLE:-7}" ;;
     *)
+        if [ "${FAKE_PYPI_SMALL_PAGE_ONLY:-0}" = 1 ]; then
+            case "$*" in
+                *https://pypi.org/simple/pip/*) ;;
+                *) exit 28 ;;
+            esac
+        fi
         if [ "${FAKE_PYPI_HTTP_ERROR:-0}" = 1 ]; then
             for arg in "$@"; do
                 case "$arg" in -f|--fail) exit 22 ;; esac
@@ -151,6 +157,14 @@ class Probe(unittest.TestCase):
         self.assertNotIn("ok    example.com not reached", out)
         self.assertNotIn("Outside checks, for your own terminal:", out)
         self.assertNotIn("All checks passed", out)
+
+    def test_the_approved_read_uses_a_small_project_page(self):
+        for client in ("claude", "codex"):
+            with self.subTest(client=client):
+                _, out = self.probe(client, sentinel="", FAKE_PYPI="0",
+                                    FAKE_PYPI_SMALL_PAGE_ONLY="1")
+                self.assertIn("ok    pypi.org reachable", out)
+                self.assertNotIn("FAIL  pypi.org not reached", out)
 
     def test_an_http_error_does_not_verify_the_approved_read(self):
         for client in ("claude", "codex"):

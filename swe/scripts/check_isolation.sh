@@ -189,7 +189,7 @@ else
     else
         ok "example.com not reached"
     fi
-    if curl --fail -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
+    if curl --fail -sS -m 8 -o /dev/null https://pypi.org/simple/pip/ 2>/dev/null; then
         ok "pypi.org reachable"
     else
         bad "pypi.org not reached; approved network access is not verified"
