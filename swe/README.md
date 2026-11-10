@@ -189,10 +189,18 @@ it was started:
 
 The root `CLAUDE.md` is the one file every cloud session reads, so it
 tells the session to read [user/CLAUDE.md](user/CLAUDE.md) as its user
-rules. Where hooks are not loaded the written rules are the only guard.
-The cloud Git proxy refuses branch deletions and tag pushes but does not
-limit which branch a push updates, so protect `main` with a GitHub
-ruleset.
+rules. Where the root settings load, they also run the guard in
+[.claude/scripts/](.claude/scripts/) for a cloud session. Where hooks are
+not loaded the written rules are the only guard.
+
+You have no shell in a cloud session, so its work reaches you only if
+the session pushes. It does that when you ask, with
+`bash .claude/scripts/cloud_push.sh` from the repository root: the
+current `feature/<ID>-<slug>` branch, fast-forward only, or the board
+with `--board`. The cloud Git proxy refuses branch deletions and tag
+pushes but does not limit which branch a push updates, so protect `main`
+with a GitHub ruleset; that is the boundary, and the script is the
+routine path.
 
 One owner step per cloud environment, in its dialog at claude.ai/code: add
 these environment variables with your own values, so commits made there
