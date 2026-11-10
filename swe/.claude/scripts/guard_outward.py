@@ -26,10 +26,13 @@ SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 SHELL_WORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "}",
                "function", "coproc"}
 WRAPPERS = {"sudo", "env", "nohup", "time", "nice", "ionice", "stdbuf", "command",
-            "exec", "builtin", "watch", "unbuffer", "chronic", "doas"}
-ROOT_COMMANDS = {"sudo", "su", "doas", "pkexec"}
+            "exec", "builtin", "watch", "unbuffer", "chronic", "doas", "setsid", "busybox"}
+ROOT_COMMANDS = {"sudo", "sudoedit", "su", "doas", "pkexec"}
+SYSTEM_BIN = re.compile(r"^/(usr/)?(local/)?s?bin/")
 WRAPPER_ARGS = {"sudo": {"-u", "-g", "-h", "-C", "-p", "-U"}, "doas": {"-u", "-C"},
-                "nice": {"-n"}, "ionice": {"-c", "-n", "-p"}, "env": {"-u", "-C"},
+                "nice": {"-n"}, "ionice": {"-c", "-n", "-p"},
+                "env": {"-u", "-C", "--unset", "--chdir"}, "exec": {"-a"},
+                "watch": {"-n", "--interval"},
                 "timeout": {"-s", "-k", "--signal", "--kill-after"}}
 READERS = {"cat", "head", "tail", "less", "more", "sed", "awk", "gawk", "grep", "egrep",
            "rg", "cp", "base64", "xxd", "strings", "od", "vim", "vi", "nano", "jq", "yq",
@@ -174,7 +177,8 @@ def strip_comments(text):
 def segments(cmd):
     """Simple commands, plus redirect targets as pseudo-commands."""
     text, shell_bodies = strip_heredocs(cmd)
-    text = strip_comments(text).replace("\\\n", " ").replace("`", "\n").replace("\n", " ; ")
+    text = strip_comments(text).replace("\\\n", " ").replace("$'", "'")
+    text = text.replace("`", "\n").replace("\n", " ; ")
     lex = shlex.shlex(text, posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
@@ -190,7 +194,7 @@ def segments(cmd):
             pending = None
             continue
         if tok and set(tok) <= set(";&|()<>"):
-            if "<" in tok or ">" in tok:
+            if ("<" in tok or ">" in tok) and "(" not in tok:
                 # A redirect sits inside its command; drop the descriptor number before it.
                 if seg and seg[-1].isdigit():
                     seg.pop()
@@ -223,7 +227,7 @@ def unwrap(argv):
         if not argv:
             return argv
         name = os.path.basename(argv[0])
-        if name in ROOT_COMMANDS:
+        if name in ROOT_COMMANDS and ("/" not in argv[0] or SYSTEM_BIN.match(argv[0])):
             owner_only("running a command as root",
                        "Sessions have no root access. Give the owner the exact command and say "
                        "what it is for.")
@@ -384,7 +388,7 @@ def check_git(args):
     if not pos:
         return
     sub = pos[0]
-    if sub in ("push", "send-email", "request-pull"):
+    if sub in ("push", "send-pack", "send-email", "request-pull"):
         deny("git " + sub)
     if sub in ("commit", "merge", "rebase", "am") and any(NO_VERIFY.fullmatch(a) for a in rest):
         deny("git %s --no-verify" % sub)
@@ -671,6 +675,9 @@ def check_guardrail_writes(name, args):
 def check_argv(argv):
     if any(GIT_CONFIG_ENV.match(word) for word in argv):
         deny("Git configuration passed through the environment; use the repository's own settings")
+    if any(word.startswith("CLAUDE_CODE_REMOTE=") for word in argv):
+        owner_only("marking this session as a cloud session",
+                   "Only a real cloud session may use the cloud push script.")
     argv = unwrap(list(argv))
     if not argv:
         return
@@ -700,10 +707,13 @@ def check_argv(argv):
     if name in SHELLS or name == "eval":
         for i, a in enumerate(args):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:] and i + 1 < len(args):
-                check_command(args[i + 1])
+                rest = [b for b in args[i + 1:] if b != "--"]
+                check_command(rest[0] if rest else "")
                 return
         if name == "eval":
             check_command(" ".join(args))
+        elif all(a.startswith("-") for a in args) and not {"--version", "--help"} & set(args):
+            deny("a shell reading its commands from a pipe; run the command directly")
         return
     if name == "su" and "-c" in args:
         idx = args.index("-c")
