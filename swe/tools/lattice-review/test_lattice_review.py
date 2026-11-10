@@ -456,6 +456,25 @@ class PureTests(RepoFixture):
         self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [by_owner, later_by_agent, withdrawn]))
         self.assertIs(lr.latest_review([by_owner, dict(withdrawn, author="agent:x")]), by_owner)
 
+    def test_completion_waits_until_the_work_is_merged_pushed_and_evidenced(self):
+        branch_task = lr.find_task(self.repo, "AB-4")
+        approved = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.e)}]
+        self.assertIn("not merged into main yet", lr.completion_block(self.repo, branch_task, "main", approved))
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "merge", "-q", "--no-ff", "-m", "merge", "task/ab-4")
+        self.assertIsNone(lr.completion_block(self.repo, branch_task, "main", approved))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
+        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+        self.assertIn("main is not pushed yet", lr.completion_block(self.repo, branch_task, "main", approved))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", "main")
+        self.assertIsNone(lr.completion_block(self.repo, branch_task, "main", approved))
+        criteria = [{"id": "AC-1", "retired": False}, {"id": "AC-2", "retired": False}, {"id": "AC-3", "retired": True}]
+        open_work = dict(branch_task, acceptance_criteria=criteria, evidence_refs=[{"id": "ev_1", "criterion_ids": ["AC-2"]}])
+        self.assertIn("no evidence is recorded yet for AC-1;", lr.completion_block(self.repo, open_work, "main", approved))
+        evidenced = dict(open_work, evidence_refs=open_work["evidence_refs"] + [{"id": "ev_2", "criterion_ids": ["AC-1"]}])
+        self.assertIsNone(lr.completion_block(self.repo, evidenced, "main", approved))
+
     def test_review_notes_are_split_by_file_and_line_without_the_appended_instructions(self):
         message = ("# Code Review Feedback\n\n**Diff:** static-patch\n\n## README.md\n\n### Line 239 (new)\n"
                    "why do we need this change?\n\nsecond paragraph\n\n### File Comment\nwhere are the replies?\n\n"
@@ -877,6 +896,11 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB2/status", done, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1][1]["status"], "done")
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", done, headers)[0], 200)
+        path = self.repo / ".lattice" / "tasks" / "task_AB9.json"
+        path.write_text(json.dumps(dict(json.loads(path.read_text()), acceptance_criteria=[{"id": "AC-1", "retired": False}])))
+        status, body, _ = call(self.base + "/api/tasks/task_AB9/status", done, headers)
+        self.assertEqual(status, 409)
+        self.assertIn("no evidence is recorded yet for AC-1", json.loads(body)["error"]["message"])
 
     def test_review_section_offers_only_what_the_task_allows(self):
         split = call(self.base + "/review/t/AB-1")[1]
@@ -916,6 +940,10 @@ class SectionTests(RepoFixture):
         page = call(self.base + "/review/t/AB-2")[1]
         self.assertIn("Mark done: approved at " + self.c[:12], page)
         self.assertIn(">Reopen</button>", page)
+        self.reviews["AB-4"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.e)}]
+        page = call(self.base + "/review/t/AB-4")[1]
+        self.assertIn("Not ready to complete: the approved commits are not merged into main yet", page)
+        self.assertNotIn("Mark done: approved at", page)
         self.assertEqual(call(self.base + "/review/t/AB-99")[0], 404)
         status, _, headers = call(self.base + "/t/AB-2")
         self.assertEqual((status, headers["Location"]), (303, "/#/task/task_AB2"))
@@ -1062,16 +1090,14 @@ class ClosingTests(RepoFixture):
         rng = lr.resolve_range(self.repo, lr.find_task(self.repo, sid), "main")
         return lr.closing_summary(self.repo, "main", rng, list(comments), list(threads), plan_state)
 
-    def test_says_where_the_commits_are(self):
-        self.assertIn("not merged into main yet: Mark done, then merge and push.", self.summary("AB-4"))
-        self.assertIn("merged into main, which has no upstream.", self.summary("AB-2"))
-        git(self.repo, "update-ref", "refs/remotes/origin/main", self.b)
+    def test_says_where_the_landed_commits_are(self):
+        self.assertIn("1 commit, merged into main, which has no upstream.", self.summary("AB-2"))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
         git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
         git(self.repo, "config", "branch.main.remote", "origin")
         git(self.repo, "config", "branch.main.merge", "refs/heads/main")
-        self.assertIn("merged into main but not pushed: Mark done, then push main.", self.summary("AB-2"))
-        git(self.repo, "update-ref", "refs/remotes/origin/main", self.f)
         self.assertIn("1 commit, merged into main and pushed. Nothing left to merge or push.", self.summary("AB-2"))
+        self.assertNotIn("Mark done, then", self.summary("AB-2"))
 
     def test_counts_review_rounds_and_quotes_the_latest_agent_note(self):
         comments = [
