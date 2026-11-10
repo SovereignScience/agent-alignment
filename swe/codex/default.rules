@@ -152,3 +152,21 @@ prefix_rule(
     decision = "forbidden",
     justification = "Agents never read or change Vault.",
 )
+
+
+# Hooks stay on, and picking and completing board tasks is the owner's.
+prefix_rule(
+    pattern = ["git", "commit", ["-n", "--no-verify"]],
+    decision = "forbidden",
+    justification = "Commits run the repository's hooks. Stop and explain the blocked action; do not retry or delegate it.",
+)
+prefix_rule(
+    pattern = ["git", "worktree", "prune"],
+    decision = "forbidden",
+    justification = "Pruning can drop the record of a checkout kept outside this project. Name the one worktree and give the user the command.",
+)
+prefix_rule(
+    pattern = ["lattice", ["next", "complete"]],
+    decision = "forbidden",
+    justification = "The owner picks and completes tasks. Work only the task you were given and leave it in in_review.",
+)
