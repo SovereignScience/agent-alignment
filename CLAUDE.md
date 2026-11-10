@@ -89,6 +89,8 @@ and rules for answering review threads.
   LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n> feature/AA-<n>-<slug> --actor agent:<tool>
   ```
 
+  Candidate branches for competing versions stay unlinked until the
+  owner picks one.
   Then edit, test and run servers only there, with `LATTICE_ROOT` set to
   this checkout.
 - The board has its own private Git repository at `.lattice/`. Use source

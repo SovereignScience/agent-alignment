@@ -5,7 +5,7 @@ agents, commands, hooks, status line) lives inside the two
 track subtrees:
 
 - [`../swe/.claude/`](../swe/.claude/): SWE-track configuration
-  (12 SWE subagents, 14 SWE slash commands, language-aware hooks,
+  (SWE subagents and slash commands, language-aware hooks,
   pytest/ruff/mypy/npm/eslint/tsc/cargo/go permissions)
 - [`../flourishing/.claude/`](../flourishing/.claude/):
   alignment-track configuration (10 alignment subagents,
