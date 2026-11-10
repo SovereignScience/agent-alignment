@@ -97,6 +97,9 @@ affected protocol.
 | Compare candidate versions of one task | `code-reviewer` | `/swe-compare` |
 | Install the five protocols in another repo | (orchestrator) | `/swe-init` |
 
+Codex has no slash commands: open the command's file in
+`.claude/commands/` and follow it.
+
 Use subagents to keep research out of the main context, a few at a
 time and at most three at once. Run the review and audit agents only
 when the user asks. `/swe-swarm-review` runs five independent reviews

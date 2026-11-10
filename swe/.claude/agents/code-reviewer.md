@@ -67,8 +67,9 @@ helper."
 
 1. Verdict: no blocking findings, changes required, or unable to verify.
 2. The exact revision reviewed, base and head.
-3. Material findings, each with severity, file and line, the triggering
-   condition, the consequence, and the smallest adequate correction.
+3. Material findings, each with severity (BLOCKER, MAJOR, MINOR or
+   NIT), file and line, the triggering condition, the consequence, and
+   the smallest adequate correction.
 4. Material verification gaps: what you could not check and why, and
    the test coverage boundary: which important paths the validation ran,
    what was mocked or canned, and which material paths never ran. A
