@@ -126,6 +126,10 @@ repository are not always loaded.
 - If neither `~/.claude/CLAUDE.md` nor `~/.codex/AGENTS.md` exists, read
   `swe/user/CLAUDE.md` before any work and follow it as your user rules.
 - Follow every rule as written even when nothing enforces it.
+- The owner has no shell there, so a push the owner asks for in that
+  session is yours to run, with `bash .claude/scripts/cloud_push.sh`. It
+  sends the current task branch and nothing else; `--board` sends the
+  board's commits. Never push any other way, and never unasked.
 - What reaches a cloud session, and the owner's one-time setup, is in
   [swe/README.md](swe/README.md#cloud-sessions).
 

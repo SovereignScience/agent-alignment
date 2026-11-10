@@ -144,3 +144,13 @@ in swe vs `skeptic`/`arbiter` in flourishing). They do not interact.
   the Flourishing umbrella. Conceptually wrong: code-quality
   rules are not relational alignment rules, and the prompts would
   bloat past the point of being usable.
+
+## Amendment: cloud sessions
+
+The root `.claude/` was to hold a SessionStart hook and a status line
+only. It now also holds one guard hook and one push script, both for
+cloud sessions. A cloud session opens at the repository root, reads only
+the root settings and has none of the owner's machine layer, so the
+track-level and machine-level guards never reach it. The hook exits at
+once unless `CLAUDE_CODE_REMOTE` is true, and the script refuses outside
+a cloud session, so local sessions are unchanged.
