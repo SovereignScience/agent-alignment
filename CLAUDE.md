@@ -1,7 +1,9 @@
 # CLAUDE.md: agent-alignment (root)
 
 This file is a router. The repository holds two independent toolkits. Do
-not work from this folder: `cd` into a track and follow its `CLAUDE.md`.
+not work from this folder: open the session in a track's folder, so that
+track's settings, hooks, agents and commands load, and follow its
+`CLAUDE.md`.
 `AGENTS.md` is a symlink to this file, here and in each track.
 
 | Track | Folder | Use when |
