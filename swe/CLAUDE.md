@@ -42,7 +42,8 @@ affected protocol.
 6. Verify before claiming done: type checks are not feature checks;
    open the browser, run the command. Reuse valid evidence and state
    material paths that were not exercised.
-7. Push, force-push and `--no-verify` are denied. Never amend or
+7. Push, force-push and `--no-verify` are denied, apart from the cloud
+   session push in the root guide. Never amend or
    rewrite published history. Confirm before recursive deletes, local
    history rewrites, dependency removal, schema migrations and CI
    changes.
@@ -101,4 +102,5 @@ existing five (Identity, Operating principles, When to surface,
 Anti-patterns, Examples) and update this file, the README and `/swe-init`.
 Agents and commands: see [.claude/README.md](.claude/README.md), and add
 the row to the dispatch table above. In a protocol, an example carries
-nuance that would otherwise bloat the rule.
+nuance that would otherwise bloat the rule. When in doubt, read this
+file, the README and the relevant protocol, then act.
