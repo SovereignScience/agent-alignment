@@ -61,7 +61,7 @@ add)
         *) die "--candidates takes 2 or 3" ;;
     esac
     mkdir -p "$common/info"
-    grep -qxF /.worktrees/ "$common/info/exclude" 2>/dev/null || echo /.worktrees/ >> "$common/info/exclude"
+    grep -qxF /.worktrees/ "$common/info/exclude" 2>/dev/null || printf '\n/.worktrees/\n' >> "$common/info/exclude"
     for name in "${names[@]}"; do
         git -C "$root" worktree add "$root/.worktrees/$id$name" -b "feature/$id-$slug$name" "$base"
     done
@@ -77,9 +77,15 @@ remove)
     for tree in "$root/.worktrees/$id" "$root/.worktrees/$id"-[a-c]; do
         [ -d "$tree" ] || continue
         found=yes
+        if [ -L "$tree" ]; then
+            echo "keep    $tree: a link to another folder, not a worktree made here"
+            continue
+        fi
         branch=$(git -C "$tree" rev-parse --abbrev-ref HEAD)
         if [ "$branch" = HEAD ]; then
             echo "keep    $tree: no branch checked out"
+        elif [[ $branch != feature/$id-* ]]; then
+            echo "keep    $tree ($branch): not a branch of $id"
         elif [ -n "$(git -C "$tree" status --porcelain)" ]; then
             echo "keep    $tree ($branch): uncommitted changes"
         elif git -C "$root" merge-base --is-ancestor "$branch" "$base"; then
