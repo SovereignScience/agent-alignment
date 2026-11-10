@@ -517,12 +517,13 @@ notes and plans are the dashboard's own controls on the same page;
 writes made there carry the owner's actor. The review is bound to the
 commit IDs it covered: "Mark done" appears only while the latest review
 is an approval of the task's current commits and every thread is
-resolved, the dashboard's status control refuses `done` under the same
-rule, and the section says why otherwise. Mark done before merging a
-linked branch: after the merge the task's work is found only through
-its `Task:` trailers, and a task whose commits lack them reads as having
-no work and is no longer gated. Then merge locally; pushing can wait for
-a checkpoint, since every commit was reviewed.
+resolved, the approved commits are merged into main and pushed, and
+every open acceptance criterion has evidence. The dashboard's status
+control refuses `done` under the same rule, and the section says why
+otherwise. Merge and push first, then Mark done. After the merge the
+task's work is found only through its `Task:` trailers, and earlier
+approvals still cover the commits they reviewed, so give every commit
+the trailer.
 
 Feedback that needs more work: "Move to in progress" in the section, or
 the status control when the section offers no button, then give the

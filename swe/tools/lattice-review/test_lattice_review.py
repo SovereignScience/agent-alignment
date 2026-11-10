@@ -456,6 +456,58 @@ class PureTests(RepoFixture):
         self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [by_owner, later_by_agent, withdrawn]))
         self.assertIs(lr.latest_review([by_owner, dict(withdrawn, author="agent:x")]), by_owner)
 
+    def test_earlier_approvals_cover_merged_history_but_not_new_work(self):
+        record = lr.find_task(self.repo, "AB-2")
+        ident = ("-c", "user.name=t", "-c", "user.email=t@example.invalid")
+
+        def approval(day, base, head, **extra):
+            return dict({"role": "review", "created_at": "2026-01-0%dT00:00:00Z" % day, "author": "human:t",
+                         "body": self.approved(base, head)}, **extra)
+
+        def merge(branch, message, extra=None):
+            git(self.repo, "checkout", "-q", "main")
+            commit(self.repo, "main-" + branch.replace("/", "-"), "chore: main moves on")
+            git(self.repo, *ident, "merge", "-q", "--no-ff", "--no-commit", branch)
+            if extra:
+                (self.repo / extra).write_text("not reviewed\n")
+                git(self.repo, "add", extra)
+            git(self.repo, *ident, "commit", "-q", "-m", message)
+
+        first = approval(1, self.b, self.c)
+        c2 = commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
+        second = approval(2, self.f, c2)
+        self.assertIn("no single commit range", lr.completion_block(self.repo, record, "main", [second]))
+        self.assertIsNone(lr.completion_block(self.repo, record, "main", [first, second]))
+        withdrawn = {"role": "review", "created_at": "2026-01-01T12:00:00Z", "author": "human:t", "deleted": True, "body": ""}
+        self.assertIn("no single commit range", lr.completion_block(self.repo, record, "main", [first, withdrawn, second]))
+        live = dict(first, body=self.approved(self.b, self.c, " live"))
+        self.assertIn("no single commit range", lr.completion_block(self.repo, record, "main", [live, second]))
+        git(self.repo, "checkout", "-q", "-b", "fix/ab-2")
+        c3 = commit(self.repo, "c3", "fix: c3\n\nTask: AB-2")
+        merge("fix/ab-2", "Merge fix/ab-2\n\nTask: AB-2")
+        third = approval(3, c2, c3)
+        self.assertIsNone(lr.completion_block(self.repo, record, "main", [first, second, third]))
+        git(self.repo, "checkout", "-q", "-b", "fix2/ab-2")
+        c4 = commit(self.repo, "c4", "fix: c4\n\nTask: AB-2")
+        merge("fix2/ab-2", "Merge fix2/ab-2\n\nTask: AB-2", extra="smuggled")
+        fourth = approval(4, git(self.repo, "rev-parse", c4 + "^"), c4)
+        self.assertIn("no single commit range", lr.completion_block(self.repo, record, "main", [first, second, third, fourth]))
+
+    def test_completion_waits_until_every_approved_part_has_landed(self):
+        record = lr.find_task(self.repo, "AB-4")
+        x = commit(self.repo, "x", "fix: x\n\nTask: AB-4")
+        reviews = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.e)},
+                   {"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t", "body": self.approved(self.f, x)}]
+        self.assertIn("not merged into main yet", lr.completion_block(self.repo, record, "main", reviews))
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "merge", "-q", "--no-ff", "-m", "merge", "task/ab-4")
+        git(self.repo, "update-ref", "refs/remotes/origin/main", x)
+        git(self.repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git(self.repo, "config", "branch.main.remote", "origin")
+        git(self.repo, "config", "branch.main.merge", "refs/heads/main")
+        self.assertIn("main is not pushed yet", lr.completion_block(self.repo, record, "main", reviews))
+        git(self.repo, "update-ref", "refs/remotes/origin/main", "main")
+        self.assertIsNone(lr.completion_block(self.repo, record, "main", reviews))
+
     def test_completion_waits_until_the_work_is_merged_pushed_and_evidenced(self):
         branch_task = lr.find_task(self.repo, "AB-4")
         approved = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.e)}]
@@ -901,6 +953,13 @@ class SectionTests(RepoFixture):
         status, body, _ = call(self.base + "/api/tasks/task_AB9/status", done, headers)
         self.assertEqual(status, 409)
         self.assertIn("no evidence is recorded yet for AC-1", json.loads(body)["error"]["message"])
+
+    def test_merged_history_that_earlier_approvals_cover_offers_mark_done(self):
+        c2 = commit(self.repo, "c2", "fix: more c\n\nTask: AB-2")
+        self.reviews["AB-2"] = [
+            {"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t", "body": self.approved(self.b, self.c)},
+            {"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t", "body": self.approved(self.f, c2)}]
+        self.assertIn("Mark done: approved at " + c2[:12], call(self.base + "/review/t/AB-2")[1])
 
     def test_review_section_offers_only_what_the_task_allows(self):
         split = call(self.base + "/review/t/AB-1")[1]
