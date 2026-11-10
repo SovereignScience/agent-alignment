@@ -43,8 +43,7 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 - Be brief. Lead with the answer, then say plainly what was done, what
   was not and what failed. No preamble, no restating the request, no
-  praise. One or two sentences
-  at the end of a turn.
+  praise. One or two sentences at the end of a turn.
 - Write for the reader in front of you: plain, short, direct words for
   replies, status and docs. Where the reader is a specialist, use the
   field's exact terms and name the function, flag, error or standard;
