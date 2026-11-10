@@ -62,6 +62,7 @@ merge_rules() {
         [ -f "$file" ] || continue
         if ! git merge-file -p "$file" "$work/base" "$template" > "$work/$i.merged" 2>/dev/null; then
             echo "collision  $file: a template change touches lines you edited; merge it by hand"
+            rm -f "$work/$i.merged"
             clean=1
         fi
     done
@@ -82,6 +83,8 @@ status)
         i=$((i + 1))
         if [ ! -f "$file" ]; then
             echo "absent     $file (install the filled-in template once by hand)"
+        elif [ ! -f "$work/$i.merged" ]; then
+            :
         elif cmp -s "$file" "$work/$i.merged"; then
             echo "unchanged  $file"
         else
@@ -95,6 +98,13 @@ status)
         echo "unchanged  $hooks/pre-push"
     else
         echo "would update $hooks/pre-push"
+    fi
+    if [ -f "$HOME/.codex/AGENTS.md" ]; then
+        size=$({ cat "$HOME/.codex/AGENTS.md" "$root/AGENTS.md" "$swe/AGENTS.md" 2>/dev/null || true; } | wc -c)
+        limit=$({ sed -n 's/^project_doc_max_bytes *= *\([0-9]*\).*/\1/p' "$HOME/.codex/config.toml" 2>/dev/null || true; } | head -n 1)
+        if [ "$size" -gt "${limit:-32768}" ]; then
+            echo "warning    Codex instruction files total $size bytes, over its limit of ${limit:-32768}, and the rest is dropped silently; set project_doc_max_bytes in ~/.codex/config.toml"
+        fi
     fi
     latest="$(latest_snapshot)"
     echo "Latest snapshot: ${latest:-none}"
