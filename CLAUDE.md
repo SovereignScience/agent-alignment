@@ -119,6 +119,21 @@ and rules for answering review threads.
 
 ---
 
+## Cloud sessions
+
+A cloud session starts from a fresh clone on a hosted machine. The owner's
+machine rules are not installed there, and the hooks and deny lists in this
+repository are not always loaded.
+
+- If neither `~/.claude/CLAUDE.md` nor `~/.codex/AGENTS.md` exists, read
+  `swe/user/CLAUDE.md` before any work and follow it as your user rules.
+- Follow every rule as written even when nothing enforces it. A command
+  that a hook would refuse on the owner's machine is refused there too.
+- What reaches a cloud session, and the owner's one-time setup, is in
+  [swe/README.md](swe/README.md#cloud-sessions).
+
+---
+
 ## Top-level layout
 
 ```
