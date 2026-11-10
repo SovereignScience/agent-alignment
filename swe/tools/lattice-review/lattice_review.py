@@ -165,7 +165,7 @@ SAFE_GIT = {"GIT_CONFIG_COUNT": "4", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_
             "GIT_TERMINAL_PROMPT": "0"}
 RUNS_PROGRAM = re.compile(r"^(?:local|worktree)\t(diff\.external|diff\..+\.(?:command|textconv)|"
                           r"filter\..+\.(?:clean|smudge|process))=", re.IGNORECASE | re.MULTILINE)
-NO_DIFF_PROGRAMS = ("diff", "log", "show")
+NO_DIFF_PROGRAMS = ("diff", "diff-tree", "log", "show")
 
 
 def git_env(repo):
@@ -857,14 +857,43 @@ def latest_review(comments):
     authentication, since anyone who can write the board files can write it.
     Deleted reviews count: a deleted one withdraws what came before it.
     Ties on the one-second timestamps go to the later event."""
+    reviews = person_reviews(comments)
+    return reviews[-1] if reviews else None
+
+
+def person_reviews(comments):
+    """The reviews latest_review chooses from, oldest first."""
     reviews = [(c.get("created_at") or "", i, c) for i, c in enumerate(comments)
                if c.get("role") == "review" and (c.get("author") or "").startswith("human:")
                and (c.get("deleted") or reviewed_revision(c.get("body") or "")[1])]
-    return max(reviews)[2] if reviews else None
+    return [c for _, _, c in sorted(reviews, key=lambda r: r[:2])]
 
 
-def stale_reason(repo, task, main, text):
-    """Why a recorded review does not cover the task's work now, or None when it does."""
+def approved_commits(repo, comments):
+    """Commit IDs inside the ranges a person approved since the last deleted
+    review. A review of uncommitted changes approves no commits."""
+    ranges = []
+    for review in person_reviews(comments):
+        base, head, qualifier = reviewed_revision(review.get("body") or "")
+        if review.get("deleted"):
+            ranges = []
+        elif review_decision(review.get("body") or "") == "approved" and not qualifier:
+            ranges.append((base, head))
+    return {sha for base, head in ranges for sha in run_git(repo, "rev-list", base + ".." + head, check=False).split()}
+
+
+def adds_nothing(repo, sha):
+    """Whether a commit is a merge whose every line comes from one of its
+    parents: its combined diff is empty."""
+    parents = run_git(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:]
+    return len(parents) > 1 and not run_git(repo, "diff-tree", "-p", "--cc", "--no-commit-id", sha).strip()
+
+
+def stale_reason(repo, task, main, text, comments=()):
+    """Why a recorded review does not cover the task's work now, or None when
+    it does. With the task's comments, work that earlier approvals covered
+    counts as reviewed, so merged history need not be one range; a merge that
+    adds nothing of its own needs no approval."""
     base_sha, head_sha, qualifier = reviewed_revision(text)
     if not head_sha:
         return "the recorded review names no revision; review the whole range again"
@@ -872,6 +901,11 @@ def stale_reason(repo, task, main, text):
         return ("your latest review was of uncommitted changes, which gives feedback but cannot complete a task. "
                 "Once the work is committed with the trailer Task: %s, review the whole range" % task["short_id"])
     rng = resolve_range(repo, task, main)
+    if (rng["base_sha"], rng["head_sha"]) == (base_sha, head_sha):
+        return None
+    approved = approved_commits(repo, comments)
+    if rng["commits"] and all(c["hash"] in approved or adds_nothing(repo, c["hash"]) for c in rng["commits"]):
+        return None
     if not rng["head_sha"]:
         return "the task has no single commit range now (its commits are not consecutive); review them one by one"
     if (rng["base_sha"], rng["head_sha"]) != (base_sha, head_sha):
@@ -880,13 +914,15 @@ def stale_reason(repo, task, main, text):
     return None
 
 
-def landing_block(repo, main, head_sha):
-    """Why approved work has not landed yet, or None: it must be in main and,
-    when main has an upstream, pushed there."""
-    if not contains(repo, main, head_sha):
+def landing_block(repo, main, shas):
+    """Why the task's current work has not landed yet, or None: every one of
+    its commits must be in main and, when main has an upstream, pushed there."""
+    def outside(ref):
+        return run_git(repo, "rev-list", *shas, "--not", ref).strip()
+    if outside(main):
         return "the approved commits are not merged into %s yet; merge them, push %s, then Mark done" % (main, main)
     upstream = rev(repo, main + "@{upstream}")
-    if upstream and not contains(repo, upstream, head_sha):
+    if upstream and outside(upstream):
         return "%s is not pushed yet; push it, then Mark done" % main
     return None
 
@@ -921,8 +957,8 @@ def completion_block(repo, task, main, comments):
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
-    return (stale_reason(repo, task, main, review["body"])
-            or landing_block(repo, main, reviewed_revision(review["body"])[1])
+    return (stale_reason(repo, task, main, review["body"], comments)
+            or landing_block(repo, main, [c["hash"] for c in resolve_range(repo, task, main)["commits"]])
             or criteria_block(task))
 
 
@@ -1494,7 +1530,7 @@ def render_history(ctx, sid, entries):
     return "".join(out)
 
 
-def next_step(ctx, task, rng, review, threads, running, block, plan_state):
+def next_step(ctx, task, rng, review, threads, running, block, plan_state, comments):
     """One line that says what the owner does now."""
     sid, status = task["short_id"], task.get("status")
     act = REVIEW_PATH + "/t/" + sid + "/"
@@ -1514,10 +1550,11 @@ def next_step(ctx, task, rng, review, threads, running, block, plan_state):
             return ""
         text = "Nothing is committed for %s yet, so there is nothing to approve. " % sid
         text += "To complete the task, the agent commits the work with the trailer Task: %s." % sid
-    elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"]) \
+    elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"], comments) \
             and on_agent + on_you:
         text = ("Approved at %s. %d thread(s) still open: Resolve each one you are done with, or Reply and resolve to add a "
-                "last word. If one needs more work, reply in it and move the task back to in progress." % (rng["head_sha"][:12], on_agent + on_you))
+                "last word. If one needs more work, reply in it and move the task back to in progress."
+                % (reviewed_revision(review["body"])[1][:12], on_agent + on_you))
     elif on_agent:
         text = ("%d thread(s) wait on the agent. Nothing notifies it: send the agent session the task ID %s. "
                 "It answers each thread here before changing code, then returns the task to review." % (on_agent, sid))
@@ -1690,13 +1727,13 @@ def render_review(ctx, task):
             code.append("<p class='muted'>Completion: %s.</p>" % e(block))
         else:
             code.append(closing_summary(ctx.repo, ctx.main, rng, comments, threads, plan_state))
-            code.append(button(ctx, act + "complete", "Mark done: approved at %s" % rng["head_sha"][:12], primary=True))
+            code.append(button(ctx, act + "complete", "Mark done: approved at %s" % reviewed_revision(review["body"])[1][:12], primary=True))
     code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads"))
 
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
     deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
-    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, plan_state),
+    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
             section("deps", "deps", "Dependencies", deps) if deps else "",
             section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)

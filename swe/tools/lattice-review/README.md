@@ -227,7 +227,10 @@ Bookkeeping events (short IDs, comment edits, other reactions) are left out.
 The latest comment with role `review` that carries a `Reviewed:` line
 decides. "Mark done" appears only when that review is an approval, its
 commit IDs are the task's current work, every one of its notes was
-recorded as a thread and every review thread is resolved; a later
+recorded as a thread and every review thread is resolved. Once work is
+merged, its commits need not be one range: each must lie in a range a
+person approved since the last deleted review, or be a merge whose
+combined diff is empty. A later
 annotated review, a deleted review, a moved branch, a new trailer
 commit, a review of uncommitted changes from an older version, a note whose recording failed or an open
 code or plan thread all withdraw it, and the section says why. It also
