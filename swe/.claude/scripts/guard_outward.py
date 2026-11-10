@@ -373,9 +373,7 @@ def check_git(args):
         deny("git commit -n, the short form of --no-verify")
     if sub == "config":
         words = [a for a in rest if not a.startswith("-")]
-        if words[:1] == ["set"]:
-            words = words[1:]
-        if len(words) > 1 and GIT_HIDING_SETTING.match(words[0]):
+        if any(GIT_HIDING_SETTING.match(word) for word in words[:-1]):
             deny("git config setting an alias or core.hooksPath")
     if sub == "worktree" and [a for a in rest if not a.startswith("-")][:1] == ["prune"]:
         owner_only("git worktree prune",
