@@ -880,10 +880,33 @@ def stale_reason(repo, task, main, text):
     return None
 
 
+def landing_block(repo, main, head_sha):
+    """Why approved work has not landed yet, or None: it must be in main and,
+    when main has an upstream, pushed there."""
+    if not contains(repo, main, head_sha):
+        return "the approved commits are not merged into %s yet; merge them, push %s, then Mark done" % (main, main)
+    upstream = rev(repo, main + "@{upstream}")
+    if upstream and not contains(repo, upstream, head_sha):
+        return "%s is not pushed yet; push it, then Mark done" % main
+    return None
+
+
+def criteria_block(task):
+    """Why the task's open acceptance criteria are not all evidenced, or None.
+    An install or deploy is written as a criterion, so its evidence is what
+    lets the task close."""
+    evidenced = {cid for ref in task.get("evidence_refs", []) for cid in ref.get("criterion_ids") or []}
+    missing = [c["id"] for c in task.get("acceptance_criteria", []) if not c.get("retired") and c["id"] not in evidenced]
+    if missing:
+        return "no evidence is recorded yet for %s; record it on the task, then Mark done" % ", ".join(missing)
+    return None
+
+
 def completion_block(repo, task, main, comments):
     """Why the task may not be completed now, or None: its latest bound review
-    must approve exactly the commits it has now, and every review thread must
-    be resolved."""
+    must approve exactly the commits it has now, every review thread must be
+    resolved, the commits must be merged and pushed, and every open criterion
+    must have evidence."""
     review = latest_review(comments)
     if not review:
         return "no Plannotator review is recorded for this task yet"
@@ -898,7 +921,9 @@ def completion_block(repo, task, main, comments):
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
-    return stale_reason(repo, task, main, review["body"])
+    return (stale_reason(repo, task, main, review["body"])
+            or landing_block(repo, main, reviewed_revision(review["body"])[1])
+            or criteria_block(task))
 
 
 def session_url(log_text):
@@ -1504,7 +1529,7 @@ def next_step(ctx, task, rng, review, threads, running, block, plan_state):
     elif not review:
         text = "Open Plannotator on the range below. Each note you send becomes its own thread on this task."
     elif block is None:
-        text = "Approved and every thread resolved. The summary above Mark done below says what was reviewed and whether anything is left to merge or push."
+        text = "Approved, every thread resolved, the work merged and every criterion evidenced. The summary above Mark done below says what was reviewed."
     else:
         text = "Not ready to complete: %s." % block
     return "<p class='next'>%s</p>" % e(text)
@@ -1534,9 +1559,9 @@ def contains(repo, ref, sha):
 
 
 def closing_summary(repo, main, rng, comments, threads, plan_state):
-    """What the owner needs before closing an approved task: the review rounds,
-    the threads resolved, whether the commits are merged and pushed, and the
-    newest agent note, since agents record installs and deploys there."""
+    """What the owner needs before closing an approved task whose work has
+    landed: the review rounds, the threads resolved, where the commits are,
+    and the newest agent note, since agents record installs and deploys there."""
     def count(n, word):
         return "%d %s%s" % (n, word, "" if n == 1 else "s")
     people = [c for c in comments if (c.get("author") or "").startswith("human:") and not c.get("deleted")]
@@ -1545,14 +1570,9 @@ def closing_summary(repo, main, rng, comments, threads, plan_state):
     resolved = sum(1 for t in threads if t["state"] == "resolved")
     facts = "Plan approved after %s. " % count(plans, "review") if plan_state == "approved" else ""
     facts += "Code approved after %s, %s." % (count(reviews, "review"), count(resolved, "thread") + " resolved" if resolved else "no threads")
-    head, upstream = rng["head_sha"], rev(repo, main + "@{upstream}")
     where = count(len(rng["commits"]), "commit") + ", "
-    if upstream and contains(repo, upstream, head):
+    if rev(repo, main + "@{upstream}"):
         where += "merged into %s and pushed. Nothing left to merge or push." % main
-    elif not contains(repo, main, head):
-        where += "not merged into %s yet: Mark done, then merge and push." % main
-    elif upstream:
-        where += "merged into %s but not pushed: Mark done, then push %s." % (main, main)
     else:
         where += "merged into %s, which has no upstream." % main
     lines = [facts, where]
@@ -1789,14 +1809,17 @@ def make_handler(ctx, base=None, static_dir=None):
             """Task writes from the dashboard carry this server's actor (the page
             sends none or dashboard:web); other writes, such as the dashboard's
             own settings, which reject unknown keys, pass through unchanged.
-            Done needs an approved review of the task's current work. False
-            means a reply was sent."""
+            Done needs what Mark done needs; a task without commits needs
+            evidence on every open criterion. False means a reply was sent."""
             if parts[:2] == ["api", "tasks"] and record.get("actor") in (None, "dashboard:web"):
                 record["actor"] = ctx.actor
             if parts[:2] == ["api", "tasks"] and parts[3:] == ["status"] and record.get("status") == "done":
                 task = find_task(ctx.board, parts[2])
-                if task and resolve_range(ctx.repo, task, ctx.main)["mode"] != "none":
-                    block = completion_block(ctx.repo, task, ctx.main, ctx.comments(task["short_id"]))
+                if task:
+                    if resolve_range(ctx.repo, task, ctx.main)["mode"] != "none":
+                        block = completion_block(ctx.repo, task, ctx.main, ctx.comments(task["short_id"]))
+                    else:
+                        block = criteria_block(task)
                     if block:
                         self.send_json(409, {"ok": False, "error": {"code": "REVIEW_REQUIRED", "message": "not completed: " + block}})
                         return False
