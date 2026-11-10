@@ -187,8 +187,9 @@ Each `apply` keeps a snapshot in `~/.config/agent-alignment/snapshots/`,
 a folder sessions cannot read or write. `revert` goes back to the state
 before the first `apply` you have not reverted, or to the snapshot you
 name, so two sets of rules can be compared by switching between them.
-If your checkouts are not under `~/projects`, set `SWE_WORKSPACE` to
-their folder for `status` and `apply`.
+The script takes your checkouts to live in the folder this one is in;
+set `SWE_WORKSPACE` if they do not. A plain `revert` after everything is
+already reverted changes nothing and says so.
 
 In VS Code, restarting means "Developer: Reload Window" in each window
 and then a new chat in each extension. Codex reads its profile and rules
