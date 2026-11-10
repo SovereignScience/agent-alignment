@@ -287,9 +287,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   if it matters later it becomes a task the owner authorizes. Tests
   cover each behaviour in the acceptance criteria and each fixed bug,
   nothing more; a request for another test names the behaviour left
-  unpinned. A thread gets two rounds: if it is still open after the
-  second reply, set one Need: flag that gives both positions, and the
-  owner decides.
+  unpinned. A thread gets two rounds: if the owner's note after the
+  second reply still disagrees, set one Need: flag that gives both
+  positions, and the owner decides.
 - The board is versioned separately from source, in its own private
   repository at .lattice/. A board checkpoint requires an explicit request;
   remote creation and pushing remain the owner's.

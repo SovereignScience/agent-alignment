@@ -91,6 +91,30 @@ class TaskWorktree(unittest.TestCase):
         self.assertEqual(sorted(branches), ["feature/AA-7-x-c", "feature/AA-70-other", "main"])
         self.assertTrue(self.tree("AA-70").exists())
 
+    def test_remove_leaves_a_folder_that_is_a_link(self):
+        outside = pathlib.Path(self.tmp.name, "outside")
+        self.git("worktree", "add", "-q", str(outside), "-b", "production")
+        self.tree("AA-8").parent.mkdir()
+        self.tree("AA-8").symlink_to(outside)
+
+        code, out = self.run_script("remove", "AA-8", "--drop-unmerged", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn("a link to another folder", out)
+        self.assertTrue(outside.exists())
+        self.assertIn("production", self.git("branch", "--format=%(refname:short)").split())
+
+    def test_remove_keeps_a_worktree_on_a_branch_of_another_task(self):
+        self.run_script("add", "AA-8", "x")
+        self.run_script("add", "AA-9", "y")
+        self.commit(self.tree("AA-9"), "unmerged")
+        self.git("switch", "-q", "--detach", cwd=self.tree("AA-9"))
+        self.git("switch", "-q", "feature/AA-9-y", cwd=self.tree("AA-8"))
+
+        code, out = self.run_script("remove", "AA-8", "--drop-unmerged", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn("not a branch of AA-8", out)
+        self.assertIn("feature/AA-9-y", self.git("branch", "--format=%(refname:short)").split())
+
 
 if __name__ == "__main__":
     unittest.main()
