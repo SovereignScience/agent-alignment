@@ -171,6 +171,48 @@ rules. Keep source links and required provenance when adapting guidance.
 
 ---
 
+## Cloud sessions
+
+A cloud session runs on a fresh clone on a hosted machine, so nothing
+installed on your own machine reaches it: the layer under
+`/etc/claude-code`, `~/.claude/CLAUDE.md` and the pre-push hook all stay
+behind. Sessions in VS Code and the terminal run on your machine and keep
+the installed layer.
+
+What a Claude Code cloud session takes from this repository depends on how
+it was started:
+
+| Started with | Rule text | Hooks, deny lists and settings |
+|---|---|---|
+| One repository, outside a project | Root `CLAUDE.md` | Loaded from the root `.claude/settings.json` |
+| Several repositories, or a thread in a project | Root `CLAUDE.md` | Not loaded |
+
+The root `CLAUDE.md` is the one file every cloud session reads, so it
+tells the session to read [user/CLAUDE.md](user/CLAUDE.md) as its user
+rules. Where hooks are not loaded the written rules are the only guard.
+The cloud Git proxy refuses branch deletions and tag pushes but does not
+limit which branch a push updates, so protect `main` with a GitHub
+ruleset.
+
+One owner step per cloud environment, in its dialog at claude.ai/code: add
+these environment variables with your own values, so commits made there
+carry your name. Git reads them directly.
+
+```text
+GIT_AUTHOR_NAME=
+GIT_AUTHOR_EMAIL=
+GIT_COMMITTER_NAME=
+GIT_COMMITTER_EMAIL=
+```
+
+The root settings switch off the co-author trailer, the pull request footer
+and the session link that the cloud harness adds by default. The session
+link key needs Claude Code 2.1.183 or later.
+
+Source: [Configure cloud environments](https://code.claude.com/docs/en/cloud-environments).
+
+---
+
 ## Git writes under a managed profile
 
 Some managed profiles mount source Git metadata read-only. The owner
