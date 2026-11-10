@@ -78,8 +78,17 @@ class Rewrite(Exception):
     pass
 
 
+class OwnerOnly(Exception):
+    pass
+
+
 def deny(what):
     raise Blocked(what)
+
+
+def owner_only(what, instead):
+    """A local action the written rules keep for the owner; the reason says what to do instead."""
+    raise OwnerOnly("Blocked: %s is the owner's to run. %s Do not retry it another way." % (what, instead))
 
 
 # The managed hook runs python3 -I, which leaves this folder off the import
@@ -295,8 +304,64 @@ def secret_file(path):
         not TEMPLATE_OK.search(path) or bool(re.search(r"/\.(kube|ssh)/", path)))
 
 
+GIT_GLOBAL_VALUES = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
+# An alias hides the real subcommand from this guard; core.hooksPath turns the
+# repository's hooks off, the same as --no-verify.
+GIT_HIDING_SETTING = re.compile(r"^(alias\.|core\.hookspath(=|$))", re.IGNORECASE)
+COMMIT_SHORT_VALUES = "mFCct"
+COMMIT_SHORT_ATTACHED = "uS"
+COMMIT_LONG_VALUES = {"--message", "--file", "--reuse-message", "--reedit-message", "--template",
+                      "--author", "--date", "--cleanup", "--fixup", "--squash", "--trailer",
+                      "--pathspec-from-file"}
+
+
+def git_globals(args):
+    """Settings passed before the subcommand, and the arguments after it."""
+    settings, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-c", "--config-env") and i + 1 < len(args):
+            settings.append(args[i + 1])
+        elif a.startswith("--config-env="):
+            settings.append(a.split("=", 1)[1])
+        if a in GIT_GLOBAL_VALUES:
+            i += 2
+        elif a.startswith("-"):
+            i += 1
+        else:
+            return settings, args[i + 1:]
+    return settings, []
+
+
+def commit_skips_hooks(rest):
+    """True when git commit is given -n, alone or inside a group of short options."""
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return False
+        if a.startswith("--"):
+            if a in COMMIT_LONG_VALUES:
+                i += 1
+        elif a.startswith("-"):
+            for j, ch in enumerate(a[1:], 1):
+                if ch == "n":
+                    return True
+                if ch in COMMIT_SHORT_VALUES:
+                    if j == len(a) - 1:
+                        i += 1
+                    break
+                if ch in COMMIT_SHORT_ATTACHED:
+                    break
+        i += 1
+    return False
+
+
 def check_git(args):
-    pos = positional(args, {"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+    settings, rest = git_globals(args)
+    if any(GIT_HIDING_SETTING.match(s) for s in settings):
+        deny("git -c with an alias or core.hooksPath; run the git command directly")
+    pos = positional(args, GIT_GLOBAL_VALUES)
     if not pos:
         return
     sub = pos[0]
@@ -304,6 +369,18 @@ def check_git(args):
         deny("git " + sub)
     if sub in ("commit", "merge", "rebase", "am") and "--no-verify" in args:
         deny("git %s --no-verify" % sub)
+    if sub == "commit" and commit_skips_hooks(rest):
+        deny("git commit -n, the short form of --no-verify")
+    if sub == "config":
+        words = [a for a in rest if not a.startswith("-")]
+        if words[:1] == ["set"]:
+            words = words[1:]
+        if len(words) > 1 and GIT_HIDING_SETTING.match(words[0]):
+            deny("git config setting an alias or core.hooksPath")
+    if sub == "worktree" and [a for a in rest if not a.startswith("-")][:1] == ["prune"]:
+        owner_only("git worktree prune",
+                   "It can drop the record of a checkout kept outside this project. "
+                   "Name the one worktree to remove and give the owner that command.")
     if sub == "commit":
         for i, arg in enumerate(args):
             path = args[i + 1] if arg in ("-F", "--file") and i + 1 < len(args) else None
@@ -326,6 +403,36 @@ def commit_message(args):
             msgs.append(a.split("=", 1)[1])
     return "\n".join(msgs)
 
+
+
+LATTICE_ACTOR_FLAGS = ("--actor", "--on-behalf-of")
+LATTICE_VALUES = {"--actor", "--on-behalf-of", "--name", "--model", "--session", "--triggered-by",
+                  "--reason", "--note", "--role", "--file", "--title"}
+LATTICE_OWNER_ROLES = ("review", "plan-review")
+
+
+def check_lattice(args):
+    """Board actions the written rules keep for the owner. The board files stay
+    writable, so this stops the plain route, not a determined one."""
+    for i, a in enumerate(args):
+        flag, equals, value = a.partition("=")
+        if not equals:
+            value = args[i + 1] if i + 1 < len(args) else ""
+        if flag in LATTICE_ACTOR_FLAGS and value.lower().startswith("human:"):
+            owner_only("writing to the board as the owner",
+                       "Pass --actor agent:<tool> on every board write.")
+        if flag == "--role" and value.lower() in LATTICE_OWNER_ROLES:
+            owner_only("a comment with the role %s" % value,
+                       "That role records the owner's Plannotator decision. Use --role validation "
+                       "for evidence, or no role.")
+    pos = positional(args, LATTICE_VALUES)
+    if pos[:1] in (["next"], ["complete"]):
+        owner_only("lattice " + pos[0],
+                   "Work only the task you were given and leave it in in_review.")
+    if pos[:1] == ["status"] and "done" in pos[2:3]:
+        owner_only("marking a task done",
+                   "The owner completes it from the review section once the work is merged and "
+                   "every criterion has evidence. Leave the task in in_review.")
 
 
 def check_gcloud(args):
@@ -597,6 +704,8 @@ def check_argv(argv):
             deny("git credential fill")
     elif name == "gh":
         check_gh(args)
+    elif name == "lattice":
+        check_lattice(args)
     elif name in ("kubectl", "k", "oc", "kubecolor", "k8s.sh"):
         check_kubectl(args)
     elif name == "helm":
@@ -837,7 +946,7 @@ def decide(cmd):
     check_tells(cmd)
     try:
         check_command(cmd)
-    except (Blocked, Rewrite):
+    except (Blocked, Rewrite, OwnerOnly):
         raise
     except Exception:
         if FALLBACK.search(cmd):
@@ -910,7 +1019,7 @@ def main():
             hit = off_machine(tin)
             if hit:
                 deny("%s: browser tools stay on this machine, not %s" % (tool, hit))
-    except Rewrite as r:
+    except (Rewrite, OwnerOnly) as r:
         print(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
