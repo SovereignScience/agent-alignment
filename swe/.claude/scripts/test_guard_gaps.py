@@ -76,6 +76,16 @@ class HookAndAliasCases(unittest.TestCase):
             "git -c core.hookspath= commit -m 'fix: x'",
             "git config core.hooksPath /tmp/none", "git config set core.hooksPath /tmp/none",
             "git config --global core.hooksPath /tmp/none",
+            "git config unset core.hooksPath", "git config --unset core.hooksPath",
+            "git commit --no-verif -m 'fix: x'", "git commit --no-veri -m 'fix: x'",
+            "git --attr-source HEAD commit -n -m 'fix: x'",
+            "git -c include.path=/tmp/other.cfg commit -m 'fix: x'",
+            "git config include.path /tmp/other.cfg",
+            "git -c includeIf.gitdir:/.path=/tmp/other.cfg commit -m 'fix: x'",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null "
+            "git commit -m 'fix: x'",
+            "env GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m 'fix: x'",
+            "export GIT_CONFIG_GLOBAL=/tmp/other.cfg; git commit -m 'fix: x'",
         ]
         for command in commands:
             with self.subTest(command=command):
@@ -100,17 +110,42 @@ class HookAndAliasCases(unittest.TestCase):
             "git commit --amend --no-edit", "git commit -v -m 'fix: x'",
             "git commit -m 'fix: x' -- -n", "git switch -c feature/x",
             "git -c core.quotepath=off status", "git config --get alias.p",
-            "git config get alias.p", "git config unset core.hooksPath",
+            "git config get alias.p", "git config core.hooksPath",
             "git config user.name", "git merge -n feature/x",
+            "git merge --no-verify-signatures feature/x", "git commit -m 'fix: x' > commit.log",
+            "GIT_PAGER=cat git log -n 3",
         ]
         for command in commands:
             with self.subTest(command=command):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+class SplitCommandCases(unittest.TestCase):
+    def test_a_continued_line_is_read_as_one_command(self):
+        commands = [
+            "git commit -m 'fix: x' \\\n  --no-verify", "git commit \\\n -n -m 'fix: x'",
+            "git \\\n push origin main", "git worktree \\\n prune",
+            "lattice status AA-1 \\\n done --actor agent:claude",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_a_redirect_does_not_end_the_command(self):
+        commands = [
+            "git commit -m 'fix: x' 2>&1 --no-verify", "git commit -m 'fix: x' > log.txt -n",
+            "lattice 2>&1 next", "lattice complete 2>/dev/null AA-1",
+            "git worktree 2>/dev/null prune",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+
 class WorktreeCases(unittest.TestCase):
     def test_prune_is_refused_and_named_worktrees_pass(self):
-        for command in ("git worktree prune", "git -C project worktree prune --expire now",
+        for command in ("git worktree prune", "git -c gc.worktreePruneExpire=now gc",
+            "git config gc.worktreePruneExpire now", "git -C project worktree prune --expire now",
                         "bash -c 'git worktree prune'"):
             with self.subTest(command=command):
                 self.assertEqual(decision(GUARD, command), "deny")
