@@ -230,9 +230,13 @@ commit IDs are the task's current work, every one of its notes was
 recorded as a thread and every review thread is resolved; a later
 annotated review, a deleted review, a moved branch, a new trailer
 commit, a review of uncommitted changes from an older version, a note whose recording failed or an open
-code or plan thread all withdraw it, and the section says why. The dashboard's status control is held to the
+code or plan thread all withdraw it, and the section says why. It also
+waits until the approved commits are merged into main and pushed to its
+upstream, and every open acceptance criterion has evidence. Write an
+install or deploy as a criterion; its evidence is what lets the task
+close. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
-spikes) are not gated. Completion is `lattice status <ID> done
+spikes) need only evidence on every open criterion. Completion is `lattice status <ID> done
 --no-auto-review` with the review already on the task; the command
 itself is not gated, so agents never run it (`lattice complete` only
 works with a status literally named `review`). A Plannotator run that exits with an error or
@@ -240,8 +244,8 @@ without a decision is shown as an error and records nothing. Board
 writes that fail are shown in the section, never reported as done.
 
 Above Mark done, a short summary gives the plan and code review rounds,
-the threads resolved, whether the commits are merged into main and
-pushed to its upstream, and the first sentence of the newest agent note,
+the threads resolved, where the commits landed, and the first sentence
+of the newest agent note,
 where agents record installs and deploys.
 
 Annotations typed in Plannotator stay in that session until Send
