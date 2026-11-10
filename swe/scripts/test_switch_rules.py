@@ -4,6 +4,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 from test_install_isolation import PROFILE
@@ -102,6 +103,58 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(self.hook.read_text(), "old hook\n")
         self.assertEqual(self.context.read_text(), "old context\n")
         self.assertFalse((self.repo / ".git/hooks/tells_check.py").exists())
+
+    def test_revert_after_two_applies_goes_back_to_the_start(self):
+        before = self.rules.read_text()
+        self.assertEqual(self.switch("apply")[0], 0)
+        time.sleep(1.1)  # snapshot names have one-second resolution
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.snapshots()), 2)
+        code, out = self.switch("status")
+        self.assertIn("Revert goes back to: %s" % self.snapshots()[0], out)
+        code, out = self.switch("revert")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.rules.read_text(), before)
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists(), out)
+        self.assertEqual(self.hook.read_text(), "old hook\n")
+
+    def test_rules_installed_from_an_older_template_get_the_merged_changes(self):
+        self.git("add", "swe/user/CLAUDE.md")
+        self.git("commit", "-q", "-m", "merge the new rule into main")
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        merged = self.rules.read_text()
+        self.assertIn(FILLED, merged)
+        self.assertIn("- A rule this checkout adds.\n", merged)
+
+    def test_revert_refuses_a_manifest_that_names_another_file(self):
+        self.assertEqual(self.switch("apply")[0], 0)
+        keep = self.home / "notes.txt"
+        keep.write_text("mine\n")
+        manifest = self.snapshots()[0] / "manifest"
+        manifest.write_text(manifest.read_text() + "absent\t%s\n" % keep)
+        code, out = self.switch("revert")
+        self.assertNotEqual(code, 0)
+        self.assertIn("does not manage", out)
+        self.assertTrue(keep.exists())
+        self.assertTrue((self.etc / "claude-code/managed-settings.json").exists())
+
+    def test_a_linked_hook_and_a_missing_board_are_left_alone(self):
+        target = self.repo / "swe/.claude/scripts/old-pre-push"
+        target.write_text("old hook\n")
+        self.hook.unlink()
+        self.hook.symlink_to(target)
+        shutil.rmtree(self.context.parent)
+        new_context = self.repo / "new-context.md"
+        new_context.write_text("new context\n")
+        code, out = self.switch("apply", "--context", str(new_context))
+        self.assertNotEqual(code, 0)
+        self.assertIn("no board", out)
+        self.assertEqual(self.snapshots(), [])
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(target.read_text(), "old hook\n")
 
     def test_codex_gets_the_profile_and_the_same_rules_and_both_go_back(self):
         codex = self.home / ".codex"
