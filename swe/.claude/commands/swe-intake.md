@@ -38,5 +38,7 @@ Steps:
    owner's answers in the Request.
 
 Do not create the task, write a test into the checkout or start the
-fix. The owner authorizes the task. The failing test is written later,
-in the task's worktree, with `/swe-add-test`.
+fix. The owner authorizes the task; after a yes, create it with
+`lattice create` and `lattice criterion add`, passing
+`--actor agent:<tool>`. The failing test is written later, in the
+task's worktree, with `/swe-add-test`.

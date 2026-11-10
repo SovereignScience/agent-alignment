@@ -39,8 +39,8 @@ Steps:
    plan's scope.
 6. Rank by the first rule that separates them: fails no check; meets
    more criteria; has no BLOCKER or MAJOR finding; changes fewer files
-   outside scope; has the smaller diff. If only diff size separates
-   two candidates, report "no clear winner" and what each does better.
+   outside scope. If none of these separates two candidates, report
+   "no clear winner" and what each does better.
 7. Return the scorecard, the pick with the one rule that decided it,
    and anything a losing candidate did better that is worth carrying
    over. Offer to attach the scorecard to the task as validation
