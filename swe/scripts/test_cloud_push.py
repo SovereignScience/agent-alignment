@@ -102,6 +102,19 @@ class CloudPush(unittest.TestCase):
         self.assertEqual(self.remote_branches(), ["main"])
         self.assertNotEqual(self.push("--board", cloud=False)[0], 0)
         self.assertNotEqual(self.push("--force")[0], 0)
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.remote), self.git("rev-parse", "origin/main"))
+
+    def test_a_plain_board_folder_never_sends_the_source_repository(self):
+        self.git("switch", "-q", "-c", "feature/AA-7-x")
+        self.commit("work")
+        (self.repo / ".git/info/exclude").write_text("/.lattice/\n")
+        (self.repo / ".lattice").mkdir()
+        before = self.git("rev-parse", "main", cwd=self.remote)
+        code, out = self.push("--board")
+        self.assertNotEqual(code, 0)
+        self.assertIn("no board repository of its own", out)
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.remote), before)
+        self.assertEqual(self.remote_branches(), ["main"])
 
     def test_the_root_guard_hook_runs_only_in_a_cloud_session(self):
         import json
