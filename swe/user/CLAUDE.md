@@ -111,6 +111,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   it. Ask only when a wrong guess would be costly; approvals these rules
   require are still asked for. Revise a settled plan when I ask or a new
   fact contradicts it; otherwise leave it.
+- Before reporting done, read your own diff as its reviewer would and cut
+  what the request does not need.
 - Done means the need is met and checked. Report and stop; no review or
   hardening rounds of your own. Name known gaps in one line each. Keep
   plans, task records and reports as short as the work.
@@ -193,6 +195,15 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   copy is a defect.
 - Change the existing path and delete, in the same commit, what the
   change makes dead. Leave no parallel version beside it.
+- No helper, option or abstraction for a single use, and no feature the
+  request did not ask for.
+- Write it the way the project and the library's current documentation
+  do. The installed version decides which API is current: check it
+  instead of trusting memory, and use nothing deprecated.
+- Before writing your own, use the standard library, then what the
+  repository already depends on, then a well-kept package. Confirm a new
+  package exists under that exact name in its registry, is maintained and
+  is licensed for the project, and say why you added it.
 - Let an unexpected input fail where it happens. No catch that swallows an
   error, no default that hides a missing value, no stub that returns a
   made-up result. No handling or validation for cases that cannot happen.

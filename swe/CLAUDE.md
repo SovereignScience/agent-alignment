@@ -100,4 +100,5 @@ A new protocol is rare: promote it from a working pattern, mirror the
 existing five (Identity, Operating principles, When to surface,
 Anti-patterns, Examples) and update this file, the README and `/swe-init`.
 Agents and commands: see [.claude/README.md](.claude/README.md), and add
-the row to the dispatch table above.
+the row to the dispatch table above. In a protocol, an example carries
+nuance that would otherwise bloat the rule.
