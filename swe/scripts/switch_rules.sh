@@ -11,8 +11,9 @@
 #   1. runs install_isolation.sh --apply: the managed settings, hooks and Codex profile;
 #   2. merges this checkout's changes to the user rules template (user/CLAUDE.md)
 #      into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, keeping what you filled in;
-#   3. refreshes the pre-push hook in this repository, if one is installed;
-#   4. with --context, installs that file as this repository's board context.
+#   3. copies codex/default.rules to ~/.codex/rules/, if ~/.codex exists;
+#   4. refreshes the pre-push hook in this repository, if one is installed;
+#   5. with --context, installs that file as this repository's board context.
 # revert restores each saved file and removes any that did not exist when the
 # snapshot was taken. With no name it goes back to the state before the first
 # apply that has not been reverted, however many times apply ran since. Name a
@@ -38,12 +39,13 @@ root="$(dirname "$common")"
 hooks="$common/hooks"
 template="$swe/user/CLAUDE.md"
 rules=("$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md")
+codex_rules="$HOME/.codex/rules/default.rules"
 files=(
     "$etc/managed-settings.json" "$etc/managed-settings.d/50-local.json"
     "$etc/hooks/guard_outward.py" "$etc/hooks/tells_check.py"
     "$etc/hooks/after_summary.sh" "$etc/hooks/fetch_allow.txt"
     "$codex_etc/requirements.toml"
-    "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}"
+    "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}" "$codex_rules"
     "$hooks/pre-push" "$hooks/tells_check.py" "$root/.lattice/context.md"
 )
 
@@ -120,6 +122,13 @@ status)
             echo "would merge template changes into $file"
         fi
     done
+    if [ ! -d "$HOME/.codex" ]; then
+        :
+    elif cmp -s "$codex_rules" "$swe/codex/default.rules"; then
+        echo "unchanged  $codex_rules"
+    else
+        echo "would update $codex_rules"
+    fi
     if [ ! -f "$hooks/pre-push" ]; then
         echo "absent     $hooks/pre-push (left alone)"
     elif [ -L "$hooks/pre-push" ]; then
@@ -176,6 +185,11 @@ apply)
             echo "merged     $file"
         fi
     done
+    if [ -d "$HOME/.codex" ] && ! cmp -s "$codex_rules" "$swe/codex/default.rules"; then
+        mkdir -p "$(dirname "$codex_rules")"
+        cp "$swe/codex/default.rules" "$codex_rules"
+        echo "installed  $codex_rules"
+    fi
     if [ -f "$hooks/pre-push" ] && [ ! -L "$hooks/pre-push" ]; then
         cp "$swe/.claude/scripts/pre-push" "$swe/.claude/scripts/tells_check.py" "$hooks/"
         chmod +x "$hooks/pre-push"

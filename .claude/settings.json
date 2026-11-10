@@ -33,6 +33,20 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|WebFetch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" = true ] || exit 0; exec python3 \"$CLAUDE_PROJECT_DIR\"/swe/.claude/scripts/guard_outward.py",
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "Checking outward-action guard"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
