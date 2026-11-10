@@ -99,6 +99,13 @@ status)
     else
         echo "would update $hooks/pre-push"
     fi
+    if [ -f "$HOME/.codex/AGENTS.md" ]; then
+        size=$({ cat "$HOME/.codex/AGENTS.md" "$root/AGENTS.md" "$swe/AGENTS.md" 2>/dev/null || true; } | wc -c)
+        limit=$({ sed -n 's/^project_doc_max_bytes *= *\([0-9]*\).*/\1/p' "$HOME/.codex/config.toml" 2>/dev/null || true; } | head -n 1)
+        if [ "$size" -gt "${limit:-32768}" ]; then
+            echo "warning    Codex instruction files total $size bytes, over its limit of ${limit:-32768}, and the rest is dropped silently; set project_doc_max_bytes in ~/.codex/config.toml"
+        fi
+    fi
     latest="$(latest_snapshot)"
     echo "Latest snapshot: ${latest:-none}"
     ;;
