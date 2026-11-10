@@ -62,6 +62,7 @@ merge_rules() {
         [ -f "$file" ] || continue
         if ! git merge-file -p "$file" "$work/base" "$template" > "$work/$i.merged" 2>/dev/null; then
             echo "collision  $file: a template change touches lines you edited; merge it by hand"
+            rm -f "$work/$i.merged"
             clean=1
         fi
     done
@@ -82,6 +83,8 @@ status)
         i=$((i + 1))
         if [ ! -f "$file" ]; then
             echo "absent     $file (install the filled-in template once by hand)"
+        elif [ ! -f "$work/$i.merged" ]; then
+            :
         elif cmp -s "$file" "$work/$i.merged"; then
             echo "unchanged  $file"
         else
