@@ -40,8 +40,8 @@ Habits that matter most when an agent is doing the building:
 
 ## Reviewing
 
-Read a change in this order. An earlier problem makes the later ones
-moot, so report it and stop polishing the rest.
+Read a change in this order. Report an earlier problem first, and leave
+unpolished what its fix would rewrite.
 
 1. Design. Does the change belong here, and does it fit the system
    around it?
