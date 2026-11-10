@@ -165,6 +165,16 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   one owning task; dependent tasks link to it and inherit them, and a
   proposed deviation is a needs_human on the owning task. Run lattice
   doctor after a reconciliation round.
+- Ask before the plan. Read the task, the code it touches and the
+  related tasks first, and ask only what they cannot answer. A task is
+  clear when you can say who needs the change, what goes wrong today,
+  the result they expect, how the owner will check it and what is out
+  of scope. Until then ask one question at a time, the one whose answer
+  changes the most first, each with two to four options and your
+  recommendation, answerable in a few words. Leave out style and
+  anything cheap to undo; those are Assumptions in the plan. Stop when
+  the task is clear or after five questions, write each answer into
+  the task in the owner's words, then write the plan.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan in the plan shape below to the file `lattice plan <ID>` names, sets
   `needs-human <ID> "Need: approve plan"` and stops, in todo. The owner
@@ -467,6 +477,7 @@ Remaining: not started.
 Rules for the fields:
 
 - Title: imperative, under 80 characters, no ticket prefix.
+- Request, for a bug: what was run, what happened and what was expected.
 - Type: `task` for a change, `bug` for broken behaviour, `chore` for
   cleanup, `spike` for research with no change.
 - Priority: `high` for exposure or data risk, `medium` for correctness and
