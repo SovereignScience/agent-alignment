@@ -77,6 +77,15 @@ the committed patch. Feedback returns to task threads automatically.
 Changed commits require another approval; only the owner resolves threads
 and completes the task. Merging and publishing remain owner actions.
 
+The section opens with the agent's open `Need:` request, when the task
+has one, and then one line that says what you do next. Mark done asks
+first and repeats an open request, because done is final. The result of
+a reply, Resolve or Reopen shows inside its thread. While a Plannotator
+session runs the section reloads every five seconds, except while a
+reply box holds text. Branches of the task that are not read are named:
+unlinked `feature/<ID>-*` branches, a linked branch that is missing, and
+any linked branch after the first one with commits.
+
 ## How a task's work is found
 
 1. A linked branch (`lattice branch-link <ID> <branch>`) with commits of
