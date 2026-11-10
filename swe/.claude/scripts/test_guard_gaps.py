@@ -120,6 +120,19 @@ class HookAndAliasCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+class RootCases(unittest.TestCase):
+    def test_a_session_never_runs_a_command_as_root(self):
+        for command in ("sudo ls /etc/claude-code", "sudo -n true", "env X=1 sudo install -m 644 a /etc/a",
+                        "doas rm /etc/claude-code/managed-settings.json", "su -c 'id'", "pkexec id",
+                        "bash -c 'sudo id'", "true && sudo id"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+        for command in ("grep -n sudo swe/scripts/install_isolation.sh", "command -v sudo",
+                        "echo 'the owner runs sudo'"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
 class SplitCommandCases(unittest.TestCase):
     def test_a_continued_line_is_read_as_one_command(self):
         commands = [
