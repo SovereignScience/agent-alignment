@@ -16,16 +16,16 @@
 #   5. with --context, installs that file as this repository's board context.
 # revert restores each saved file and removes any that did not exist when the
 # snapshot was taken. With no name it goes back to the state before the first
-# apply that has not been reverted, however many times apply ran since. Name a
-# snapshot folder to go to that one. Restart every Claude Code and Codex
+# apply that has not been reverted, however many times apply ran since, and
+# refuses when there is no such apply. Name a snapshot folder to go to that one. Restart every Claude Code and Codex
 # session after either.
 #
 # Template changes are worked out against the version each installed copy was
 # made from: the committed version of user/CLAUDE.md it differs from least, or
 # SWE_RULES_BASE when set. A change that collides with your own edits stops
 # apply before anything is written.
-# SWE_WORKSPACE is the folder that holds your checkouts (default ~/projects);
-# install_isolation.sh needs it.
+# SWE_WORKSPACE is the folder that holds your checkouts. install_isolation.sh
+# needs it; unset, it is taken to be the folder this checkout is in.
 # SWE_ETC and SWE_CODEX_ETC replace /etc/claude-code and /etc/codex, for tests.
 set -euo pipefail
 
@@ -58,11 +58,11 @@ known() { local f; for f in "${files[@]}"; do [ "$f" != "$1" ] || return 0; done
 managed() { case "$1" in "$etc"/*|"$codex_etc"/*) return 0 ;; *) return 1 ;; esac; }
 latest_snapshot() { { find "$store" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true; } | sort | tail -n 1; }
 # The snapshot a plain revert goes back to: the one taken before the first
-# apply that has not been reverted.
+# apply that has not been reverted. Empty when nothing is applied.
 revert_target() {
     local name
-    name="$(cat "$marker" 2>/dev/null || true)"
-    if [ -n "$name" ] && [ -f "$store/$name/manifest" ]; then echo "$store/$name"; else latest_snapshot; fi
+    name="$(basename "$(cat "$marker" 2>/dev/null || true)")"
+    if [ -n "$name" ] && [ -f "$store/$name/manifest" ]; then echo "$store/$name"; fi
 }
 # The committed template version an installed copy was made from.
 base_of() {
@@ -80,6 +80,7 @@ base_of() {
     git -C "$swe" show "$best:./user/CLAUDE.md"
 }
 
+export SWE_WORKSPACE="${SWE_WORKSPACE:-$(dirname "$root")}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -147,7 +148,7 @@ status)
         fi
     fi
     target="$(revert_target)"
-    echo "Revert goes back to: ${target:-nothing saved yet}"
+    echo "Revert goes back to: ${target:-nothing, no apply is waiting to be reverted}"
     ;;
 apply)
     context=""
@@ -158,6 +159,12 @@ apply)
         [ -d "$root/.lattice" ] || die "no board at $root/.lattice for --context; nothing was written"
     fi
     merge_rules || die "nothing was written"
+    if [ -d "$HOME/.codex" ]; then
+        if [ -L "$codex_rules" ] && [ ! -e "$codex_rules" ]; then die "$codex_rules is a link to nothing; nothing was written"; fi
+        [ ! -e "$codex_rules" ] || [ -f "$codex_rules" ] || die "$codex_rules is not a file; nothing was written"
+        [ ! -e "$(dirname "$codex_rules")" ] || [ -d "$(dirname "$codex_rules")" ] \
+            || die "$(dirname "$codex_rules") is not a folder; nothing was written"
+    fi
     bash "$swe/scripts/install_isolation.sh" > "$work/preview" 2>&1 \
         || { cat "$work/preview" >&2; die "install_isolation.sh would stop; nothing was written"; }
     snap="$store/$(date -u +%Y%m%dT%H%M%SZ)"
@@ -207,7 +214,7 @@ revert)
     target="$(revert_target)"
     if [ $# -eq 0 ]; then
         snap="$target"
-        [ -n "$snap" ] || die "no snapshot under $store"
+        [ -n "$snap" ] || die "nothing to revert: no apply since the last revert. Name a snapshot under $store to restore that one."
     else
         snap="$store/$(basename "$1")"
     fi
