@@ -116,6 +116,9 @@ questions and scaffolding steps.
 1. Update `.claude/settings.json` `ALIGN_PROVIDER_VARIANTS`.
 2. Add the file to `scripts/check_drift.sh`'s derived list.
 3. Update `.claude/agents/module-composer.md`'s derived-file table.
+4. Update the list of derived files in `README.md`.
 
 In a module, default to no comments, and let an example carry nuance that
-would otherwise bloat the rule.
+would otherwise bloat the rule. History rewrites and destructive
+operations are the user's to run. When in doubt, read this file, the
+README and the affected canonical module, then act.

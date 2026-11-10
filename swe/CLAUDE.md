@@ -101,4 +101,5 @@ existing five (Identity, Operating principles, When to surface,
 Anti-patterns, Examples) and update this file, the README and `/swe-init`.
 Agents and commands: see [.claude/README.md](.claude/README.md), and add
 the row to the dispatch table above. In a protocol, an example carries
-nuance that would otherwise bloat the rule.
+nuance that would otherwise bloat the rule. When in doubt, read this
+file, the README and the relevant protocol, then act.
