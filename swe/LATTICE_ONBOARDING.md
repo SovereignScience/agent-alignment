@@ -282,6 +282,35 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
+- Other updates have a shape each. Leave out a line with nothing to say.
+
+  Evidence, posted with `--role validation` and `--criterion` for each
+  criterion it covers:
+
+      Result: <what now works, in one sentence the owner can check>
+      Checked: <each command and its result, and the commit it ran on>
+      Not checked: <what was mocked, and what never ran>
+      Remains: <the owner's next step, or none>
+
+  Handover, the round summary posted before in_review:
+
+      Threads: <place, Status and one line for each; or none>
+      Changed: <each commit and what it does, in a few words>
+      Checked: <as in Evidence>
+      Not checked: <as in Evidence>
+      Look first at: <the file or decision most worth the owner's time>
+      Remains: <what is left for the owner>
+
+  Blocked, when a step is refused or cannot be done from the session:
+
+      Blocked: <the command or step, and what refused it>
+      Needed for: <what the task cannot do without it>
+      For the owner: <the exact command, or the decision>
+
+  Question, the text of a needs_human flag:
+
+      Need: <one question>. Options: <A>; <B>. Recommended: <A>,
+        because <reason>.
 - Keeping review small: from an agent's review, only a BLOCKER or MAJOR
   finding holds a merge. A MINOR or NIT is fixed in passing or dropped;
   if it matters later it becomes a task the owner authorizes. Tests
@@ -375,6 +404,15 @@ Every behaviour case has a criterion and a step. Every step serves a
 case. Every criterion can be checked from outside the code. The plan
 uses the task's own terms. No open question sits in Approach or Steps;
 it belongs in Assumptions or Decisions.
+
+What a plan holds, and when the task is done, depends on its type:
+
+| Type | The plan holds | Done when |
+|---|---|---|
+| bug | The reproduction (command and output), the cause with file:line, and the test that fails today | That test passes and the reproduction no longer fails |
+| task | The full shape, or the small-fix form | Every criterion has evidence |
+| spike | The question, what would decide it and a time box; no code is merged | The findings, a recommendation and what it rests on are on the task |
+| chore | What changes, why now and how to undo it | The checks pass and nothing a user sees has changed |
 ```
 
 ### 3a. Agent instructions
