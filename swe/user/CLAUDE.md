@@ -219,8 +219,12 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   inflated verbs where "is" works, no lists of three for rhythm, no closing
   summaries, no hedging or chatbot phrases, no stock AI vocabulary.
 - No AI attribution anywhere: no AI Co-Authored-By trailers, no "generated
-  with" footers, badges or emoji. Strip any a tool adds. Keep human
-  co-author trailers and other required provenance.
+  with" footers, session links, badges or emoji. Strip any a tool adds.
+  Keep human co-author trailers and other required provenance.
+- Every commit carries my name and email as author and committer. Before
+  the first commit in a clone, read `git config user.name` and
+  `git config user.email`; if they are not mine, stop and ask. Name
+  branches for the work, never for a tool (`claude/`, `codex/`).
 - A hook flags tells in docs you write and rejects commit messages that
   have them. Fix the wording; don't work around the check.
 

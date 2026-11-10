@@ -3,11 +3,14 @@
 
 Agents cannot push, so this only ever asks the user. It asks for y when a push has
 more than 3 commits, more than 80 added doc lines, more than 400 added lines in
-total, a new doc file, an AI tell in docs or commit messages, or AI attribution
-anywhere. If git cannot work out what is being pushed, the push is refused.
+total, a new doc file, an AI tell in docs or commit messages, AI attribution
+anywhere, a commit whose author or committer is not this clone's user, or a
+branch named for an agent. If git cannot work out what is being pushed, the push
+is refused.
 An executable pre-push.local beside this hook runs after it.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -26,6 +29,7 @@ MAX_DOC_LINES = 80
 MAX_LINES = 400
 DOCS = (".md", ".txt", ".rst", ".adoc", ".html")
 ZERO = "0" * 40
+AGENT_BRANCH = re.compile(r"^refs/heads/(claude|codex|copilot|cursor|devin|gemini)[/-]", re.I)
 
 
 class GitError(Exception):
@@ -83,6 +87,24 @@ def measure(shas):
     return doc_lines, all_lines, sorted(set(new_docs)), tells
 
 
+def not_mine(shas):
+    """Authors and committers of the pushed commits other than this clone's user."""
+    if not shas:
+        return []
+    me = "<%s>" % git("config", "user.email").strip().lower()
+    people = set()
+    for sha in shas:
+        for person in git("log", "-1", "--format=%an <%ae>%n%cn <%ce>", sha).splitlines():
+            if not person.lower().endswith(me):
+                people.add(person)
+    return sorted(people)
+
+
+def agent_branches(updates):
+    refs = [line.split()[2] for line in updates.splitlines() if len(line.split()) == 4]
+    return sorted(ref for ref in refs if AGENT_BRANCH.match(ref))
+
+
 def confirm(summary):
     print(summary, file=sys.stderr)
     try:
@@ -100,6 +122,7 @@ def main():
     try:
         shas = pushed_commits(updates)
         doc_lines, all_lines, new_docs, tells = measure(shas)
+        others, branches = not_mine(shas), agent_branches(updates)
     except GitError as err:
         print("Push check could not read this push (%s); push refused." % err, file=sys.stderr)
         return 1
@@ -107,10 +130,14 @@ def main():
         len(shas), all_lines, doc_lines, len(new_docs),
         " (%s)" % ", ".join(new_docs[:5]) if new_docs else "",
         "; AI tells: " + ", ".join(tells) if tells else "")
+    if others:
+        summary += "\nNot authored and committed by you: " + ", ".join(others) + "."
+    if branches:
+        summary += "\nBranch named for an agent: " + ", ".join(branches) + "."
     over = (len(shas) > MAX_COMMITS or doc_lines > MAX_DOC_LINES or all_lines > MAX_LINES
-            or new_docs or tells)
+            or new_docs or tells or others or branches)
     if over:
-        limits = "Limits: %d commits, %d lines, %d doc lines, no new docs, no tells." % (
+        limits = "Limits: %d commits, %d lines, %d doc lines, no new docs, no tells, your commits only." % (
             MAX_COMMITS, MAX_LINES, MAX_DOC_LINES)
         if not confirm(summary + "\n" + limits):
             return 1
