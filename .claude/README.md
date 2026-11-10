@@ -15,7 +15,7 @@ track subtrees:
 
 | Path | Purpose |
 |---|---|
-| [settings.json](settings.json) | Minimal allowlist for read-only navigation; SessionStart + statusLine hooks only. No agents, no commands, no language hooks. |
+| [settings.json](settings.json) | Minimal allowlist for read-only navigation; SessionStart + statusLine hooks only. No agents, no commands, no language hooks. Switches off harness attribution on commits and pull requests, which is what a one-repository cloud session reads. |
 | [scripts/session_start.sh](scripts/session_start.sh) | Prints a "you're at the router, `cd swe/` or `cd flourishing/`" message at session start. |
 | [scripts/statusline.sh](scripts/statusline.sh) | Status line that shows `(router)` to remind that real work happens in a subtree. |
 
