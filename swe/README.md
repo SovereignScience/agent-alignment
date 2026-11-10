@@ -16,6 +16,9 @@ this file, then act.
   it.
 - A review request template in [REVIEW_REQUEST.md](REVIEW_REQUEST.md), for
   handing a change to an independent reviewer.
+- Craft rubrics in [CRAFT.md](CRAFT.md): what adequate and excellent work
+  look like when building, reviewing and designing. A reference read on
+  demand, not a sixth protocol.
 - Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
 - Sixteen slash commands in [.claude/commands/](.claude/commands/).
 - Hooks in [.claude/scripts/](.claude/scripts/): `guard_outward.py`
@@ -48,6 +51,7 @@ others when relevant:
 | Hot path, render loop, large data path | + `PERFORMANCE_PROTOCOL.md` |
 | Auth, input handling, deps, anything crossing a trust boundary | + `SECURITY_PROTOCOL.md` |
 | Reviewing a diff, signing off, claiming "done" | + `SKEPTIC_ARBITER.md` (or run `/swe-skeptic`) |
+| A design choice, a review, or a change with more than one way to build it | + the part of `CRAFT.md` for that job |
 
 Reading each protocol once is enough. They are small on purpose.
 
