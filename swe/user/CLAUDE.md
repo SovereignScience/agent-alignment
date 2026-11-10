@@ -96,6 +96,12 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   most. Never save status, plans, counts or an approval.
 - Commands you hand me run in a subshell with `set -euo pipefail` and carry
   scripts inline, never as files in a shared temp folder.
+- Before a block depends on state the session cannot see, hand over a
+  read-only block that prints it and build on the pasted result.
+- A block handles every outcome its tools can produce, carries no
+  placeholder and ends in one fixed line. A check counts as tested only
+  after it ran on the newest real artifact.
+- Logic longer than a screen is a script with a test, reviewed as a diff.
 - When the sandbox blocks a tool (pip over HTTPS, Galaxy, Terraform, Ansible
   runs, secret files), hand me the command. No workarounds.
 - When I ask for a review message, make it self-contained: repo path,
