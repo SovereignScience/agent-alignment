@@ -58,10 +58,13 @@ class SwitchRules(unittest.TestCase):
     def git(self, *args):
         subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True)
 
-    def switch(self, *args):
-        env = dict(os.environ, HOME=str(self.home), SWE_WORKSPACE=str(self.home / "projects"),
+    def switch(self, *args, workspace="projects"):
+        env = dict(os.environ, HOME=str(self.home),
                    SWE_ETC=str(self.etc / "claude-code"), SWE_CODEX_ETC=str(self.etc / "codex"),
                    PATH="%s:%s" % (self.bin, os.environ["PATH"]))
+        env.pop("SWE_WORKSPACE", None)
+        if workspace:
+            env["SWE_WORKSPACE"] = str(self.home / workspace)
         run = subprocess.run(["bash", str(self.repo / "swe/scripts/switch_rules.sh"), *args], env=env,
                              input="y\ny\n", capture_output=True, text=True, timeout=180, cwd=self.repo)
         return run.returncode, run.stdout + run.stderr
@@ -118,6 +121,29 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(self.rules.read_text(), before)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists(), out)
         self.assertEqual(self.hook.read_text(), "old hook\n")
+        code, out = self.switch("revert")
+        self.assertNotEqual(code, 0)
+        self.assertIn("nothing to revert", out)
+        self.assertEqual(self.rules.read_text(), before)
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists(), out)
+
+    def test_an_odd_codex_rules_path_stops_before_anything_is_written(self):
+        codex = self.home / ".codex"
+        (codex / "rules/default.rules").mkdir(parents=True)
+        (codex / "config.toml").write_text(PROFILE)
+        before = self.rules.read_text()
+        code, out = self.switch("apply")
+        self.assertNotEqual(code, 0)
+        self.assertIn("is not a file; nothing was written", out)
+        self.assertEqual(self.rules.read_text(), before)
+        self.assertEqual(self.snapshots(), [])
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+
+    def test_the_workspace_defaults_to_the_folder_this_checkout_is_in(self):
+        code, out = self.switch("status", workspace=None)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("does not exist", out)
+        self.assertNotIn("install_isolation.sh stopped", out)
 
     def test_rules_installed_from_an_older_template_get_the_merged_changes(self):
         self.git("add", "swe/user/CLAUDE.md")
@@ -210,7 +236,7 @@ class SwitchRules(unittest.TestCase):
     def test_revert_needs_a_snapshot_and_bad_arguments_are_refused(self):
         code, out = self.switch("revert")
         self.assertNotEqual(code, 0)
-        self.assertIn("no snapshot", out)
+        self.assertIn("nothing to revert", out)
         for args in ((), ("apply", "--context"), ("apply", "--context", "missing.md"), ("install",)):
             with self.subTest(args=args):
                 code, _ = self.switch(*args)
