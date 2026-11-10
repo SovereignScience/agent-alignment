@@ -177,12 +177,18 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   the task in the owner's words, then write the plan.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan in the plan shape below to the file `lattice plan <ID>` names, sets
-  `needs-human <ID> "Need: approve plan"` and stops, in todo. A small fix on a task the owner selected goes
-  ahead without that stop when its plan is the four-line small-fix form,
-  it has no owner decision, and it touches nothing hard to undo and no
-  guardrail, security or data path; the plan says that it qualifies, and
-  the code review is the gate.
-  When in doubt it is not small. The owner
+  `needs-human <ID> "Need: approve plan"` and stops, in todo. One exception: a task the owner selected
+  goes ahead without that stop, and with no flag, when all of this holds.
+  Its plan fits the small-fix form (Need, Acceptance criteria, Steps,
+  Coverage boundary) and leaves the owner nothing to decide. The change
+  is easy to revert. It touches none of these: settings, hooks, scripts,
+  agents, commands, rules or instruction files (any CLAUDE.md or
+  AGENTS.md, the protocols, anything under .claude/ or codex/, the
+  installers); authentication, permissions, secrets or network access;
+  stored data or its format. The plan says which of these it checked.
+  When in doubt it is not small. The owner's review of the code is still
+  required before a merge.
+  For every other task the owner
   reviews it with "Plannotator: review the plan" in the task's review
   section, or comments on the task; a question is not an approval. Notes
   become threads that the session answers like code review threads,
