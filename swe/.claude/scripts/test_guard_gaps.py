@@ -133,6 +133,34 @@ class RootCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+class WrappedCommandCases(unittest.TestCase):
+    def test_a_push_or_root_command_behind_a_wrapper_is_still_refused(self):
+        commands = [
+            "bash -c -- 'git push origin main'", "cat <(git push origin main)",
+            "echo 'git push origin main' | bash", "printf 'sudo id' | sh -s",
+            "watch -n 1 git push origin main", "setsid git push origin main",
+            "exec -a x git push origin main", "env --chdir /tmp git push origin main",
+            "git send-pack origin main", "sudoedit /etc/hosts", "busybox su", "$'sudo' ls",
+            "setsid sudo ls", "watch -n 1 sudo ls", "bash -c -- 'sudo ls'", "cat <(sudo ls)",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_a_session_cannot_call_itself_a_cloud_session(self):
+        for command in ("CLAUDE_CODE_REMOTE=true bash .claude/scripts/cloud_push.sh",
+                        "export CLAUDE_CODE_REMOTE=true", "env CLAUDE_CODE_REMOTE=true bash x.sh"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_ordinary_uses_of_the_same_words_pass(self):
+        for command in ("./su --help", "bin/su", "bash scripts/check_drift.sh", "bash -n scripts/x.sh",
+                        "bash --version", "diff <(sort a.txt) <(sort b.txt)", "watch -n 1 date",
+                        "busybox ls", "cat notes.txt | grep sudo", "echo \"$CLAUDE_CODE_REMOTE\""):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
 class SplitCommandCases(unittest.TestCase):
     def test_a_continued_line_is_read_as_one_command(self):
         commands = [
