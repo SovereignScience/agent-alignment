@@ -12,7 +12,23 @@ import unittest
 
 SCRIPT = pathlib.Path(__file__).with_name("check_isolation.sh")
 SWE = SCRIPT.parent.parent
-FAKE_CURL = '#!/bin/sh\ncase "$*" in *example.com*) exit "${FAKE_EXAMPLE:-7}" ;; *) exit "${FAKE_PYPI:-7}" ;; esac\n'
+FAKE_CURL = '''#!/bin/sh
+case "$*" in
+    *example.com*)
+        if [ "${FAKE_EXAMPLE_KILL:-0}" = 1 ]; then
+            kill -TERM "$PPID"
+        fi
+        exit "${FAKE_EXAMPLE:-7}" ;;
+    *)
+        if [ "${FAKE_PYPI_HTTP_ERROR:-0}" = 1 ]; then
+            for arg in "$@"; do
+                case "$arg" in -f|--fail) exit 22 ;; esac
+            done
+            exit 0
+        fi
+        exit "${FAKE_PYPI:-7}" ;;
+esac
+'''
 FAKE_PYTHON = ('#!/bin/sh\ncase "$3" in *AF_UNIX*) printf "%s" "$FAKE_PY_OUT"; exit "${FAKE_PY_EXIT:-0}" ;;\n'
                '*tomllib*) exec "$REAL_PY" "$@" ;; esac\nexit 0\n')
 REQUIREMENTS = ('default_permissions = "alignment_workstation"\n\n[allowed_permission_profiles]\n'
@@ -119,6 +135,30 @@ class Probe(unittest.TestCase):
         (self.bin / "curl").unlink()
         _, out = self.probe("codex", sentinel="")
         self.assertIn("FAIL  curl not found", out)
+
+    def test_codex_reports_a_separate_denial_without_ending_the_run(self):
+        self.sentinel.symlink_to("/dev/null")
+        self.home.chmod(0o555)
+        try:
+            code, out = self.probe("codex", sentinel=None, FAKE_EXAMPLE_KILL="1", FAKE_PYPI="0")
+        finally:
+            self.home.chmod(0o755)
+        self.assertEqual(code, 2, out)
+        self.assertIn("ok    pypi.org reachable", out)
+        self.assertIn("Separate checks, each as its own command in this session:", out)
+        self.assertIn("curl -sS -m 8 -o /dev/null https://example.com", out)
+        self.assertIn("Record an explicit client policy denial", out)
+        self.assertNotIn("ok    example.com not reached", out)
+        self.assertNotIn("Outside checks, for your own terminal:", out)
+        self.assertNotIn("All checks passed", out)
+
+    def test_an_http_error_does_not_verify_the_approved_read(self):
+        for client in ("claude", "codex"):
+            with self.subTest(client=client):
+                code, out = self.probe(client, sentinel="", FAKE_PYPI_HTTP_ERROR="1")
+                self.assertEqual(code, 1, out)
+                self.assertIn("FAIL  pypi.org not reached", out)
+                self.assertNotIn("ok    pypi.org reachable", out)
 
     def test_only_a_refused_socket_creation_counts(self):
         cases = (({}, "ok    Unix socket creation refused"),
