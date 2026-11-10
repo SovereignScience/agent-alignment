@@ -124,6 +124,18 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(agents.read_text(), before)
         self.assertEqual((codex / "config.toml").read_text(), PROFILE)
 
+    def test_status_warns_when_codex_would_drop_instructions(self):
+        codex = self.home / ".codex"
+        codex.mkdir()
+        (codex / "AGENTS.md").write_text("- a rule\n" * 4000)
+        code, out = self.switch("status")
+        self.assertEqual(code, 0, out)
+        self.assertIn("over its limit of 32768", out)
+        (codex / "config.toml").write_text("project_doc_max_bytes = 65536\n")
+        code, out = self.switch("status")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("over its limit", out)
+
     def test_a_colliding_template_change_stops_before_anything_is_written(self):
         self.template.write_text(self.template.read_text().replace(PLACEHOLDER, "- A reworded rule.\n"))
         before = self.rules.read_text()
