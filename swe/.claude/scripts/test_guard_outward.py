@@ -56,6 +56,53 @@ class HookPathTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
 
+class PrePushTests(unittest.TestCase):
+    """With no terminal the hook refuses whatever it would have asked about."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = pathlib.Path(self.tmp.name)
+        self.git("init", "-q")
+        self.git("config", "user.name", "Owner")
+        self.git("config", "user.email", "owner@example.com")
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def push(self, ref="refs/heads/main"):
+        line = "%s %s %s %s\n" % (ref, self.git("rev-parse", "HEAD"), ref, "0" * 40)
+        return subprocess.run(["/usr/bin/python3", "-I", str(GUARD.with_name("pre-push")), "origin", "url"],
+                              cwd=self.repo, input=line, capture_output=True, text=True, timeout=60,
+                              start_new_session=True)
+
+    def test_the_owners_own_commit_passes(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_commit_by_someone_else_is_held(self):
+        self.git("-c", "user.name=Claude", "-c", "user.email=noreply@anthropic.com", "commit", "-q",
+                 "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Not authored and committed by you: Claude <noreply@anthropic.com>", result.stderr)
+
+    def test_a_branch_named_for_an_agent_is_held(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push("refs/heads/claude/fix-empty-input")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Branch named for an agent: refs/heads/claude/fix-empty-input", result.stderr)
+
+    def test_a_session_link_in_a_message_is_a_tell(self):
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 "fix: handle empty input\n\nClaude-Session: https://claude.ai/code/session_x")
+        result = self.push()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("AI attribution", result.stderr)
+
+
 class WebFetchTests(unittest.TestCase):
     def test_documentation_hosts_and_their_subdomains_are_allowed(self):
         for url in ("https://code.claude.com/docs/en/sandboxing",
