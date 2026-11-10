@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+from test_install_isolation import PROFILE
+
 SWE = pathlib.Path(__file__).resolve().parent.parent
 FAKE_SUDO = '''#!/usr/bin/env bash
 args=()
@@ -101,9 +103,34 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(self.context.read_text(), "old context\n")
         self.assertFalse((self.repo / ".git/hooks/tells_check.py").exists())
 
+    def test_codex_gets_the_profile_and_the_same_rules_and_both_go_back(self):
+        codex = self.home / ".codex"
+        (codex / "attachments").mkdir(parents=True)
+        (codex / "skills/openai-docs").mkdir(parents=True)
+        (codex / "config.toml").write_text(PROFILE)
+        agents = codex / "AGENTS.md"
+        agents.write_text(self.rules.read_text())
+        before = agents.read_text()
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        requirements = self.etc / "codex/requirements.toml"
+        self.assertTrue(requirements.exists(), out)
+        self.assertIn(FILLED, agents.read_text())
+        self.assertIn("- A rule this checkout adds.\n", agents.read_text())
+        self.assertNotEqual((codex / "config.toml").read_text(), PROFILE)
+        code, out = self.switch("revert")
+        self.assertEqual(code, 0, out)
+        self.assertFalse(requirements.exists(), out)
+        self.assertEqual(agents.read_text(), before)
+        self.assertEqual((codex / "config.toml").read_text(), PROFILE)
+
     def test_a_colliding_template_change_stops_before_anything_is_written(self):
         self.template.write_text(self.template.read_text().replace(PLACEHOLDER, "- A reworded rule.\n"))
         before = self.rules.read_text()
+        code, out = self.switch("status")
+        self.assertEqual(code, 0, out)
+        self.assertIn("collision", out)
+        self.assertNotIn("would merge template changes", out)
         code, out = self.switch("apply")
         self.assertNotEqual(code, 0)
         self.assertIn("collision", out)
