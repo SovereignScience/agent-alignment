@@ -251,6 +251,17 @@ class PureTests(RepoFixture):
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
+    def test_candidate_branches_stay_out_until_one_is_linked(self):
+        for letter in "ab":
+            git(self.repo, "checkout", "-q", "-b", "feature/AB-9-x-" + letter, "main")
+            commit(self.repo, "candidate-" + letter, "feat: candidate %s\n\nTask: AB-9" % letter)
+        git(self.repo, "checkout", "-q", "main")
+        self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
+        task(self.repo, "AB-9", "in_review", "the owner picked b", branch="feature/AB-9-x-b")
+        rng = lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")
+        self.assertEqual((rng["mode"], rng["head"]), ("branch", "feature/AB-9-x-b"))
+        self.assertEqual([c["subject"] for c in rng["commits"]], ["feat: candidate b"])
+
     def test_repository_config_cannot_make_git_run_a_program(self):
         marker = self.tools / "ran"
         probe = self.tools / "probe"

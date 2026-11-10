@@ -17,7 +17,7 @@ this file, then act.
 - A review request template in [REVIEW_REQUEST.md](REVIEW_REQUEST.md), for
   handing a change to an independent reviewer.
 - Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
-- Fourteen slash commands in [.claude/commands/](.claude/commands/).
+- Sixteen slash commands in [.claude/commands/](.claude/commands/).
 - Hooks in [.claude/scripts/](.claude/scripts/): `guard_outward.py`
   runs on PreToolUse for Bash and MCP tools and denies outward
   actions and secret reads; `tells_check.py` runs on PostToolUse for
@@ -83,6 +83,8 @@ gaps. Otherwise read the repository directly within the task scope.
 | Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
 | Five-specialist review | (orchestrator) | `/swe-swarm-review` |
+| Check a reported issue is real, then draft its task | `debugger` | `/swe-intake` |
+| Compare candidate versions of one task | `code-reviewer` | `/swe-compare` |
 | Install the protocols in another repo | (orchestrator) | `/swe-init` |
 
 Use subagents to keep research out of the main context, at most
@@ -149,7 +151,8 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Test the guard's WebFetch check | `python3 -m unittest discover -s .claude/scripts -p 'test_*.py'` |
-| Test the installer and the probe | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
+| Test the installer, the probe and the worktree script | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
+| Make or clear a task's worktrees (owner-run) | `bash scripts/task_worktree.sh add <ID> <slug>`, then `remove <ID>` |
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |

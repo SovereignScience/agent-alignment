@@ -37,12 +37,13 @@ You are in the SWE track. Protocols (drop-in system prompts):
 Subagents (.claude/agents/):
   code-reviewer, regression-test-writer, security-reviewer, perf-auditor,
   dashboard-probe, dependency-auditor, architecture-explorer,
-  refactoring-planner, debugger, docs-writer, code-skeptic, code-arbiter
+  refactoring-planner, debugger, docs-writer, web-researcher,
+  code-skeptic, code-arbiter
 
 Slash commands (.claude/commands/):
   /swe-explore /swe-review /swe-add-test /swe-fix-bug /swe-debug
   /swe-perf /swe-security /swe-deps /swe-refactor /swe-probe /swe-docs
-  /swe-skeptic /swe-swarm-review /swe-init
+  /swe-skeptic /swe-swarm-review /swe-intake /swe-compare /swe-init
 
 Read this folder's README.md and CLAUDE.md for full conventions.
 EOF
