@@ -27,6 +27,7 @@ SHELL_WORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "
                "function", "coproc"}
 WRAPPERS = {"sudo", "env", "nohup", "time", "nice", "ionice", "stdbuf", "command",
             "exec", "builtin", "watch", "unbuffer", "chronic", "doas"}
+ROOT_COMMANDS = {"sudo", "su", "doas", "pkexec"}
 WRAPPER_ARGS = {"sudo": {"-u", "-g", "-h", "-C", "-p", "-U"}, "doas": {"-u", "-C"},
                 "nice": {"-n"}, "ionice": {"-c", "-n", "-p"}, "env": {"-u", "-C"},
                 "timeout": {"-s", "-k", "--signal", "--kill-after"}}
@@ -222,6 +223,10 @@ def unwrap(argv):
         if not argv:
             return argv
         name = os.path.basename(argv[0])
+        if name in ROOT_COMMANDS:
+            owner_only("running a command as root",
+                       "Sessions have no root access. Give the owner the exact command and say "
+                       "what it is for.")
         if name == "command" and argv[1:2] in (["-v"], ["-V"]):
             return []
         if name in WRAPPERS or name == "timeout":
