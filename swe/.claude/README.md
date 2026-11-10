@@ -76,8 +76,8 @@ pre-push is a git hook for the user, not a Claude hook. It shows what is
 about to leave the machine and asks for a y when a push has more than 3
 commits, more than 80 added doc lines, more than 400 added lines, a new doc
 file, an AI tell in docs or commit messages, AI attribution anywhere, a
-commit whose author or committer is not the clone's `user.email`, or a
-branch named for an agent such as `claude/`. It refuses when there is no
+commit whose author or committer is not the clone's `user.name` and
+`user.email`, or a new branch under an agent's name such as `claude/`. It refuses when there is no
 terminal. Install it with tells_check.py beside it:
 
 ```bash

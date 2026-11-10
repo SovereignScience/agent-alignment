@@ -13,7 +13,8 @@ PATTERNS = [
     ("em or en dash", re.compile("[—–]")),
     ("curly quotes", re.compile("[‘’“”]")),
     ("AI attribution", re.compile(
-        r"co-authored-by:[^\n]*(claude|anthropic|openai|chatgpt|gpt-|codex|copilot|gemini)|generated (with|by) (claude|ai|chatgpt|codex)|"
+        r"co-authored-by:[^\n]*(?<![\w-])(claude|anthropic|openai|chatgpt|gpt-|codex|copilot|cursor|gemini)|"
+        r"generated (with|by) \[?(claude|ai\b|chatgpt|codex|copilot|cursor)|"
         r"claude-session:|claude\.ai/code/|noreply@anthropic\.com|\U0001F916", re.I)),
     ("emoji", re.compile("[\U0001F300-\U0001FAFF✅❌✨⭐]")),
     ("AI vocabulary", re.compile(
