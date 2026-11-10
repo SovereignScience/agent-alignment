@@ -191,9 +191,11 @@ bash swe/scripts/switch_rules.sh revert   # puts the saved state back
 A session may run `status` and explain the result. `apply` and `revert`
 are yours: they use sudo and change the rules every session runs under.
 Each `apply` keeps a snapshot in `~/.config/agent-alignment/snapshots/`,
-a folder sessions cannot read or write. `revert` takes the latest, or
-the one you name, so two sets of rules can be compared by switching
-between them.
+a folder sessions cannot read or write. `revert` goes back to the state
+before the first `apply` you have not reverted, or to the snapshot you
+name, so two sets of rules can be compared by switching between them.
+If your checkouts are not under `~/projects`, set `SWE_WORKSPACE` to
+their folder for `status` and `apply`.
 
 ---
 
