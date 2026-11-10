@@ -248,6 +248,21 @@ class PureTests(RepoFixture):
         self.assertEqual([x["text"] for x in refs], ["mentioned this task in commit %s docs: follow-up for AB-2 in the runbook" % mention[:12]])
         self.assertEqual(lr.commit_mentions(self.repo, "AB-1", {self.b, self.d}), [])
 
+    def test_a_mention_on_an_unmerged_branch_names_the_branch(self):
+        git(self.repo, "checkout", "-q", "-b", "feature/AB-2-x-a")
+        side = commit(self.repo, "s", "wip: try another way for AB-2")
+        git(self.repo, "checkout", "-q", "main")
+        landed = commit(self.repo, "m", "docs: follow-up for AB-2 in the runbook")
+        texts = [x["text"] for x in lr.commit_mentions(self.repo, "AB-2", {self.c}, "main")]
+        self.assertIn("mentioned this task in commit %s wip: try another way for AB-2 (on feature/AB-2-x-a, not merged)" % side[:12], texts)
+        self.assertIn("mentioned this task in commit %s docs: follow-up for AB-2 in the runbook" % landed[:12], texts)
+
+    def test_board_writes_report_in_the_owners_words(self):
+        self.assertEqual(lr.written(("react", "AB-2", "ev_1", lr.RESOLVED)), "Thread resolved.")
+        self.assertEqual(lr.written(("unreact", "AB-2", "ev_1", lr.RESOLVED)), "Thread reopened.")
+        self.assertEqual(lr.written(("status", "AB-2", "done", "--no-auto-review")), "Marked done.")
+        self.assertEqual(lr.written(("status", "AB-2", "in_progress", "--no-auto-review")), "Moved to in progress.")
+
     def test_unlinked_task_has_no_work(self):
         self.assertEqual(lr.resolve_range(self.repo, lr.find_task(self.repo, "AB-9"), "main")["mode"], "none")
 
@@ -963,7 +978,7 @@ class SectionTests(RepoFixture):
 
     def test_review_section_offers_only_what_the_task_allows(self):
         split = call(self.base + "/review/t/AB-1")[1]
-        self.assertEqual(split.count(">Plannotator</button>"), 2)
+        self.assertEqual(split.count(">Review this commit</button>"), 2)
         self.assertNotIn("the whole range", split)
         self.assertIn("Completion: no Plannotator review", split)
         branch = call(self.base + "/review/t/AB-4")[1]
@@ -1103,6 +1118,74 @@ class SectionTests(RepoFixture):
         (self.repo / ".lattice" / "tasks" / "task_AB1.json").write_text(json.dumps(record))
         self.assertIn("has no branch of its own", call(self.base + "/review/t/AB-1")[1])
         self.assertNotIn("has no branch of its own", call(self.base + "/review/t/AB-4")[1])
+
+    def edit_task(self, name, **fields):
+        path = self.repo / ".lattice" / "tasks" / (name + ".json")
+        path.write_text(json.dumps(dict(json.loads(path.read_text()), **fields)))
+
+    def test_an_open_request_is_shown_and_named_before_mark_done(self):
+        self.edit_task("task_AB2", needs_human={"flagged_by": "agent:x", "reason": "Need: run the checks on your machine"})
+        self.reviews["AB-2"] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
+                                 "body": self.approved(self.b, self.c)}]
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("Open request from agent:x:</b> Need: run the checks on your machine", page)
+        self.assertIn("lattice needs-human AB-2 --clear", page)
+        self.assertIn("data-confirm='Mark AB-2 done? Done is final. The open request is: Need: run the checks on your machine'", page)
+        self.assertLess(page.index("Open request"), page.index("Mark done"))
+        self.assertNotIn("Open request", call(self.base + "/review/t/AB-1")[1])
+        self.assertIn("data-confirm='Mark AB-10 done? Done is final.'", self.approved_page("AB-10", self.d, self.f))
+
+    def approved_page(self, sid, base, head):
+        self.reviews[sid] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
+                              "body": self.approved(base, head)}]
+        return call(self.base + "/review/t/" + sid)[1]
+
+    def test_the_result_of_a_thread_action_shows_in_that_thread(self):
+        self.reviews["AB-2"] = [{"id": "ev_1", "created_at": "2026-01-01T00:00:01Z", "author": "human:t",
+                                 "body": lr.THREAD + "c, whole file at abc\n" + lr.REVIEW_OF + "ev_r\nwhy?"}]
+        call(self.base + "/review/t/AB-2/reply", form(self.ctx, parent="ev_1", body=" "))
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("the reply is empty", page)
+        self.assertGreater(page.index("id='notice'"), page.index("id='thread-ev_1'"))
+        call(self.base + "/review/t/AB-2/complete", form(self.ctx))
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("not completed", page)
+        self.assertLess(page.index("id='notice'"), page.index("id='thread-ev_1'"))
+        self.assertNotIn("id='notice'", call(self.base + "/review/t/AB-2")[1])
+
+    def test_a_typed_reply_survives_the_refresh_and_a_form_is_sent_once(self):
+        running = lr.page("t", "<p>x</p>", refresh=True).decode()
+        self.assertNotIn("http-equiv", running)
+        self.assertIn('if(a&&a.tagName==="TEXTAREA")return', running)
+        self.assertIn("t[i].value.trim()", running)
+        still = lr.page("t", "<p>x</p>").decode()
+        self.assertNotIn("setInterval", still)
+        self.assertIn("f.dataset.sent", still)
+        self.assertIn("data-confirm='Close it?'", lr.button(self.ctx, "/x", "Close session", confirm="Close it?"))
+
+    def test_branches_the_range_does_not_read_are_named(self):
+        for name in ("feature/AB-9-x-a", "feature/AB-9-x-b", "feature/AB-90-other"):
+            git(self.repo, "branch", name)
+        page = call(self.base + "/review/t/AB-9")[1]
+        self.assertIn("Not linked, so not read here: <code>feature/AB-9-x-a</code>, <code>feature/AB-9-x-b</code>", page)
+        self.assertIn("lattice branch-link AB-9", page)
+        self.assertNotIn("AB-90", page)
+        self.edit_task("task_AB4", branch_links=[{"branch": "gone"}, {"branch": "task/ab-4"}, {"branch": "main"}])
+        page = call(self.base + "/review/t/AB-4")[1]
+        self.assertIn("Linked branch <code>gone</code> is not in this repository", page)
+        self.assertIn("Also linked and not read: <code>main</code>", page)
+        self.assertIn("branch <code>task/ab-4</code>", page)
+
+    def test_the_section_says_what_is_left_after_done_and_names_a_wrong_base(self):
+        self.edit_task("task_AB2", status="done")
+        self.assertNotIn("class='next'", call(self.base + "/review/t/AB-2")[1])
+        (self.repo / ".worktrees" / "AB-2").mkdir(parents=True)
+        (self.repo / ".worktrees" / "AB-20").mkdir()
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("Done. Still on disk: .worktrees/AB-2.", page)
+        self.ctx.main = "develop"
+        page = call(self.base + "/review/t/AB-1")[1]
+        self.assertIn("The integration branch <code>develop</code> is not in this repository", page)
 
     def test_task_writes_carry_the_owner_and_settings_writes_pass_through(self):
         status = call(self.base + "/api/config/dashboard", json.dumps({"theme": "linear"}).encode(), origin(self.base))[0]
