@@ -16,7 +16,9 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   ansible, ssh, tofu or terraform apply, Vault, DNS, cloud consoles, access
   changes, credential rotation, restarts of shared services. Prepare the
   change locally and ask me to confirm the specific action; I push and
-  post it myself.
+  post it myself. In a cloud session, where I have no shell, a push I ask
+  for in that session is yours to run, only with the repository's own
+  push script and only for the task's branch.
 - Shell commands run in a sandbox with approved network destinations and
   no access to keys or the owner's credentials. Private GitHub reads use
   the approved read-only integration, not shell access. Cloud and cluster
