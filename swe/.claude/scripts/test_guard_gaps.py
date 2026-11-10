@@ -67,6 +67,102 @@ class ShellCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "deny")
 
 
+class HookAndAliasCases(unittest.TestCase):
+    def test_commits_that_skip_hooks_are_refused(self):
+        commands = [
+            "git commit -n -m 'fix: x'", "git commit -nm 'fix: x'",
+            "git commit -anm 'fix: x'", "git -C project commit -n -m 'fix: x'",
+            "git commit --amend -n", "git -c core.hooksPath=/dev/null commit -m 'fix: x'",
+            "git -c core.hookspath= commit -m 'fix: x'",
+            "git config core.hooksPath /tmp/none", "git config set core.hooksPath /tmp/none",
+            "git config --global core.hooksPath /tmp/none",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_aliases_cannot_hide_a_subcommand(self):
+        commands = [
+            "git -c alias.p=push p", "git -c alias.p='!git push' p origin",
+            "git --config-env=alias.p=HIDDEN p", "git config alias.p push",
+            "git config --add alias.p push", "git config set alias.p push",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_ordinary_commits_and_config_reads_pass(self):
+        commands = [
+            "git commit -m 'fix: handle -n in the parser'", "git commit -m -n",
+            "git commit -sm 'fix: x'", "git commit -F notes.txt",
+            "git commit --author 'N <n@example.com>' -m 'fix: x'",
+            "git commit --amend --no-edit", "git commit -v -m 'fix: x'",
+            "git commit -m 'fix: x' -- -n", "git switch -c feature/x",
+            "git -c core.quotepath=off status", "git config --get alias.p",
+            "git config get alias.p", "git config unset core.hooksPath",
+            "git config user.name", "git merge -n feature/x",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
+class WorktreeCases(unittest.TestCase):
+    def test_prune_is_refused_and_named_worktrees_pass(self):
+        for command in ("git worktree prune", "git -C project worktree prune --expire now",
+                        "bash -c 'git worktree prune'"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+        for command in ("git worktree list", "git worktree add .worktrees/AA-1 -b feature/AA-1-x main",
+                        "git worktree remove .worktrees/AA-1"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
+class LatticeCases(unittest.TestCase):
+    def test_owner_actions_are_refused(self):
+        commands = [
+            "lattice next", "lattice next --claim --actor agent:claude",
+            "lattice complete AA-1 --actor agent:claude",
+            "lattice status AA-1 done --actor agent:claude",
+            "lattice status AA-1 done --no-auto-review --actor agent:codex",
+            "LATTICE_NO_UPDATE_CHECK=1 lattice status AA-1 done --actor agent:claude",
+            "lattice comment AA-1 approved --actor human:patrick",
+            "lattice comment AA-1 approved --actor=human:patrick",
+            "lattice comment AA-1 approved --actor agent:claude --on-behalf-of human:patrick",
+            "lattice needs-human AA-1 --clear --note ok --actor Human:patrick",
+            "lattice comment AA-1 'Reviewed: abc' --role review --actor agent:claude",
+            "lattice comment AA-1 ok --role=plan-review --actor agent:claude",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_agent_board_work_passes(self):
+        commands = [
+            "lattice show AA-1", "lattice comments AA-1 --json", "lattice plan AA-1",
+            "lattice status AA-1 in_review --no-auto-review --actor agent:claude",
+            "lattice status AA-1 in_progress --actor agent:codex",
+            "lattice comment AA-1 'the checks are done' --role validation --actor agent:claude",
+            "lattice comment AA-1 done --actor agent:claude",
+            "lattice needs-human AA-1 'Need: approve plan' --actor agent:claude",
+            "lattice attach AA-1 out.txt --title 'review notes' --actor agent:claude",
+            "lattice branch-link AA-1 feature/AA-1-x --actor agent:claude",
+            "lattice criterion add AA-1 'The owner sees the done state' --actor agent:claude",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+    def test_the_refusal_says_what_to_do_instead(self):
+        result = subprocess.run(["/usr/bin/python3", "-I", str(GUARD)], input=json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": "lattice complete AA-1"}}),
+            text=True, capture_output=True, check=True, timeout=10)
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("in_review", reason)
+        self.assertNotIn("remote writes", reason)
+
+
 class GcloudCases(unittest.TestCase):
     def test_only_the_approved_reads_pass(self):
         commands = [
