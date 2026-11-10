@@ -86,6 +86,7 @@ class HookAndAliasCases(unittest.TestCase):
             "git -c alias.p=push p", "git -c alias.p='!git push' p origin",
             "git --config-env=alias.p=HIDDEN p", "git config alias.p push",
             "git config --add alias.p push", "git config set alias.p push",
+            "git config --file .git/config alias.p push",
         ]
         for command in commands:
             with self.subTest(command=command):
