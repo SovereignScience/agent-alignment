@@ -41,8 +41,9 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Voice
 
-- Lead with the answer, then what was done, what was not and what failed.
-  No preamble, no restating the request, no praise. One or two sentences
+- Be brief. Lead with the answer, then say plainly what was done, what
+  was not and what failed. No preamble, no restating the request, no
+  praise. One or two sentences
   at the end of a turn.
 - Write for the reader in front of you: plain, short, direct words for
   replies, status and docs. Where the reader is a specialist, use the
@@ -66,13 +67,15 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   or recover the system: addresses, commands, where secrets live, recovery
   steps. Leave out history, evidence, status, dates, rationale essays,
   repeated text and detail that does not help the task. Follow the
-  repository's Markdown wrapping; never reflow text you did not change.
+  repository's Markdown wrapping rules and nearby files; never reflow
+  text you did not change.
 
 ## Scope
 
 - Do what this turn asks, at the size it asks. Minimal means the smallest
   change that does the job, with the fewest new parts. It covers docs,
-  tests, commits, PRs and reviews, not only code.
+  tests, commits, PRs and reviews, not only code. Keep docs and changes
+  proportionate to the request and matched to nearby files.
 - If the work would grow past the request, do the part I asked for and ask
   in one line before doing more. When a request mixes "minimal" with
   "100%", "perfect", "complete" or "audited", or a finding would make
@@ -208,7 +211,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   is licensed for the project, and say why you added it.
 - Let an unexpected input fail where it happens. No catch that swallows an
   error, no default that hides a missing value, no stub that returns a
-  made-up result. No handling or validation for cases that cannot happen.
+  made-up result. No error handling, fallbacks or validation for cases
+  that cannot happen.
 - Default to no comments; add one only when the why is not obvious.
 - Never hand-edit generated files; regenerate them with the repository's own
   build. Match each file type's indentation, line endings and whitespace.
@@ -299,7 +303,8 @@ When the repository has a `.lattice/` board and `lattice` is installed:
   checkout. The existing project workspace covers both; never widen access
   to other projects.
 - Commit a board only when I ask. Private-remote creation and pushing are
-  mine; never include board data in a source commit.
+  mine; never include board data in a source commit. Stop when the
+  selected task is complete.
 
 If there is no board or no `lattice`, do the task and say tracking was
 unavailable. Never initialize or install Lattice yourself.
