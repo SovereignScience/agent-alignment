@@ -18,7 +18,8 @@ The layout is in [README.md](README.md) and the reason for two tracks in
 
 - Plain language over jargon.
 - Operational rules over aspirational language.
-- Push, force-push and `git commit --no-verify` are denied. Never
+- Push, force-push and `git commit --no-verify` are denied; the one
+  exception for a push is under Cloud sessions below. Never
   amend or rewrite published history; history rewrites are the user's
   to run. Confirm before recursive deletes, dependency removal and CI
   changes. Hooks are best-effort guards; the deny lists, and in
