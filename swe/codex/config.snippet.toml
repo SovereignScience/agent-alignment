@@ -7,6 +7,10 @@ approval_policy = "never"
 default_permissions = "alignment_workstation"
 web_search = "live"
 check_for_update_on_startup = false
+# Codex stops loading instruction files once together they pass this size,
+# and does not say so. The user rules plus a project's own files can pass
+# the 32 KiB default.
+project_doc_max_bytes = 65536
 
 [history]
 persistence = "none"
