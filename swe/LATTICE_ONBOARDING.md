@@ -272,6 +272,14 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
+- Keeping review small: from an agent's review, only a BLOCKER or MAJOR
+  finding holds a merge. A MINOR or NIT is fixed in passing or dropped;
+  if it matters later it becomes a task the owner authorizes. Tests
+  cover each behaviour in the acceptance criteria and each fixed bug,
+  nothing more; a request for another test names the behaviour left
+  unpinned. A thread gets two rounds: if it is still open after the
+  second reply, set one Need: flag that gives both positions, and the
+  owner decides.
 - The board is versioned separately from source, in its own private
   repository at .lattice/. A board checkpoint requires an explicit request;
   remote creation and pushing remain the owner's.
