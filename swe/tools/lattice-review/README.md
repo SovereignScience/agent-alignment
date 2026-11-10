@@ -91,6 +91,12 @@ and completes the task. Merging and publishing remain owner actions.
 3. Otherwise the task has no work yet, and an empty range is refused
    before Plannotator starts.
 
+Candidate branches for competing versions of one task stay unlinked
+until the owner picks one. Only the first linked branch with commits is
+read, and trailer commits on an unlinked branch are not found while the
+checkout is on the integration branch, so the candidates that were not
+picked never count as the task's work.
+
 Plannotator gets the task's range as a static patch (`git diff base
 head` on stdin) of the commit IDs resolved at the moment the button is
 pressed, and the recorded review names those same IDs. The per-commit
