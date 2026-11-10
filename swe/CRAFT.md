@@ -37,6 +37,31 @@ Habits that matter most when an agent is doing the building:
   this one is full of dead ends.
 - Keep the context for the task. Send wide searches to a subagent, and
   hand a reviewer the evidence, never your conclusion.
+- Check the installed version before using an API. Models were trained
+  on old code and reach for calls that have since been deprecated.
+
+Choosing a dependency. Prefer, in order: the standard library, a
+dependency the repository already has, a well-kept package, your own
+code. Well kept means released within the last year, widely used or kept
+by more than one maintainer, under a licence the project accepts, and
+with no open advisory against the version you pin. Look the exact name
+up in the registry before installing: models invent package names often
+enough that attackers register them. Write your own when the job is a
+few lines, or the package would bring more code and risk than it saves.
+
+Before you hand over, read the whole diff as its reviewer:
+
+- Does every hunk serve the request? Take out debug output, unrelated
+  edits, reformatting, helpers and options used once, and comments that
+  narrate what the code does.
+- Would an engineer who knows this codebase have written it this way?
+  Compare it with the nearest similar code and with the library's own
+  documentation.
+- Is each acceptance criterion met, by a check run on this revision?
+- Can it be reviewed in one sitting? If not, split it: first the change
+  that makes it easy, with no change in behaviour, then the change.
+- Does the handover say what changed, why, how it was checked, what was
+  not, and where to look first?
 
 ## Reviewing
 
@@ -138,3 +163,11 @@ is judged by the rubrics above, never by a count.
 - GitClear, AI Copilot Code Quality reports: more copied code and less
   refactoring as assistants spread. A vendor study, read with that in
   mind.
+- Spracklen and others, "We Have a Package for You!" (USENIX Security
+  2025): about one in five packages recommended by code models did not
+  exist. A 2026 replication on frontier models measured about one in
+  twenty.
+- Wang and others, "LLMs Meet Library Evolution" (ICSE 2025): every
+  model tested suggested deprecated APIs. https://arxiv.org/abs/2406.09834
+- Anthropic, prompting best practices: the block against
+  over-engineering (scope, documentation, defensive code, abstractions).
