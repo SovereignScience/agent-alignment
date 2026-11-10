@@ -29,7 +29,7 @@ MAX_DOC_LINES = 80
 MAX_LINES = 400
 DOCS = (".md", ".txt", ".rst", ".adoc", ".html")
 ZERO = "0" * 40
-AGENT_BRANCH = re.compile(r"^refs/heads/(claude|codex|copilot|cursor|devin|gemini)[/-]", re.I)
+AGENT_BRANCH = re.compile(r"^refs/heads/(claude|codex|copilot|cursor|devin|gemini)/", re.I)
 
 
 class GitError(Exception):
@@ -91,18 +91,18 @@ def not_mine(shas):
     """Authors and committers of the pushed commits other than this clone's user."""
     if not shas:
         return []
-    me = "<%s>" % git("config", "user.email").strip().lower()
+    me = "%s <%s>" % (git("config", "user.name").strip(), git("config", "user.email").strip())
     people = set()
     for sha in shas:
         for person in git("log", "-1", "--format=%an <%ae>%n%cn <%ce>", sha).splitlines():
-            if not person.lower().endswith(me):
+            if person.lower() != me.lower():
                 people.add(person)
     return sorted(people)
 
 
 def agent_branches(updates):
-    refs = [line.split()[2] for line in updates.splitlines() if len(line.split()) == 4]
-    return sorted(ref for ref in refs if AGENT_BRANCH.match(ref))
+    lines = [line.split() for line in updates.splitlines() if len(line.split()) == 4]
+    return sorted(remote for _, sha, remote, _ in lines if sha != ZERO and AGENT_BRANCH.match(remote))
 
 
 def confirm(summary):

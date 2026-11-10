@@ -70,8 +70,8 @@ affected protocol.
 9. Cite evidence on every approval: file:line, test name, or
    measurement. No "looks good" without specifics.
 10. No AI attribution anywhere: no AI co-author trailers, no
-    "generated with" footers, badges or emoji. Keep human co-author
-    trailers.
+    "generated with" footers, session links, badges or emoji. Keep
+    human co-author trailers.
 
 ---
 

@@ -57,8 +57,9 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 - No AI attribution anywhere: no AI co-author trailers, no
   "generated with" footers, session links, badges or emoji. Keep human
   co-author trailers. Every commit carries the owner's name and email
-  as author and committer; if `git config user.email` is not the
-  owner's, stop and ask. Name branches for the work, never for a tool.
+  as author and committer: use the identity Git already has and never
+  set or override it. If it is missing or names a tool, stop and ask.
+  Name branches for the work, never for a tool.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing a track.
   It has track-specific rubrics.
 
