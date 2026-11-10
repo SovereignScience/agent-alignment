@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Try this checkout's rules on this machine, then go back. Run it yourself in a
+# terminal, from the checkout you want to try; sessions cannot write these files.
+#
+#   swe/scripts/switch_rules.sh status                    what would change; writes nothing
+#   swe/scripts/switch_rules.sh apply [--context <file>]  save what is installed, then install this checkout
+#   swe/scripts/switch_rules.sh revert [<snapshot>]       put a saved state back, the latest by default
+#
+# apply first saves every file it may touch under
+# ~/.config/agent-alignment/snapshots/<time>/. Then it:
+#   1. runs install_isolation.sh --apply: the managed settings, hooks and Codex profile;
+#   2. merges this checkout's changes to the user rules template (user/CLAUDE.md)
+#      into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, keeping what you filled in;
+#   3. refreshes the pre-push hook in this repository, if one is installed;
+#   4. with --context, installs that file as this repository's board context.
+# revert restores each saved file and removes any that did not exist when the
+# snapshot was taken. Restart every Claude Code and Codex session after either.
+#
+# Template changes are worked out against SWE_RULES_BASE (default main), the
+# version your installed copies were made from. A change that collides with
+# your own edits stops apply before anything is written.
+# SWE_ETC and SWE_CODEX_ETC replace /etc/claude-code and /etc/codex, for tests.
+set -euo pipefail
+
+swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+etc="${SWE_ETC:-/etc/claude-code}"
+codex_etc="${SWE_CODEX_ETC:-/etc/codex}"
+store="$HOME/.config/agent-alignment/snapshots"
+common="$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)"
+root="$(dirname "$common")"
+hooks="$common/hooks"
+template="$swe/user/CLAUDE.md"
+rules=("$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md")
+files=(
+    "$etc/managed-settings.json" "$etc/managed-settings.d/50-local.json"
+    "$etc/hooks/guard_outward.py" "$etc/hooks/tells_check.py"
+    "$etc/hooks/after_summary.sh" "$etc/hooks/fetch_allow.txt"
+    "$codex_etc/requirements.toml"
+    "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}"
+    "$hooks/pre-push" "$hooks/tells_check.py" "$root/.lattice/context.md"
+)
+
+usage() {
+    echo "usage: $0 status | apply [--context <file>] | revert [<snapshot>]" >&2
+    exit 64
+}
+die() { echo "switch_rules: $*" >&2; exit 1; }
+managed() { case "$1" in "$etc"/*|"$codex_etc"/*) return 0 ;; *) return 1 ;; esac; }
+latest_snapshot() { { find "$store" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true; } | sort | tail -n 1; }
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# The installed rules with this checkout's template changes merged in, one
+# file per installed copy. Returns 1 when a change collides with local edits.
+merge_rules() {
+    local i=0 file clean=0
+    git -C "$swe" show "${SWE_RULES_BASE:-main}:swe/user/CLAUDE.md" > "$work/base" 2>/dev/null \
+        || die "no user rules template at ${SWE_RULES_BASE:-main}; set SWE_RULES_BASE"
+    for file in "${rules[@]}"; do
+        i=$((i + 1))
+        [ -f "$file" ] || continue
+        if ! git merge-file -p "$file" "$work/base" "$template" > "$work/$i.merged" 2>/dev/null; then
+            echo "collision  $file: a template change touches lines you edited; merge it by hand"
+            clean=1
+        fi
+    done
+    return "$clean"
+}
+
+[ $# -ge 1 ] || usage
+action=$1
+shift
+case $action in
+status)
+    [ $# -eq 0 ] || usage
+    echo "This checkout: $(git -C "$swe" rev-parse --abbrev-ref HEAD) at $(git -C "$swe" rev-parse --short HEAD)"
+    bash "$swe/scripts/install_isolation.sh" || echo "install_isolation.sh stopped; see the lines above"
+    merge_rules || true
+    i=0
+    for file in "${rules[@]}"; do
+        i=$((i + 1))
+        if [ ! -f "$file" ]; then
+            echo "absent     $file (install the filled-in template once by hand)"
+        elif cmp -s "$file" "$work/$i.merged"; then
+            echo "unchanged  $file"
+        else
+            echo "would merge template changes into $file"
+        fi
+    done
+    if [ ! -f "$hooks/pre-push" ]; then
+        echo "absent     $hooks/pre-push (left alone)"
+    elif cmp -s "$hooks/pre-push" "$swe/.claude/scripts/pre-push" \
+            && cmp -s "$hooks/tells_check.py" "$swe/.claude/scripts/tells_check.py"; then
+        echo "unchanged  $hooks/pre-push"
+    else
+        echo "would update $hooks/pre-push"
+    fi
+    latest="$(latest_snapshot)"
+    echo "Latest snapshot: ${latest:-none}"
+    ;;
+apply)
+    context=""
+    if [ $# -gt 0 ]; then
+        [ $# -eq 2 ] && [ "$1" = --context ] || usage
+        context=$2
+        [ -f "$context" ] || die "no context file $context"
+    fi
+    merge_rules || die "nothing was written"
+    snap="$store/$(date -u +%Y%m%dT%H%M%SZ)"
+    [ ! -e "$snap" ] || die "snapshot $snap exists; wait a second and rerun"
+    mkdir -p "$snap/files"
+    chmod 700 "$store" "$snap"
+    for file in "${files[@]}"; do
+        if [ -f "$file" ]; then
+            mkdir -p "$snap/files$(dirname "$file")"
+            cp -p "$file" "$snap/files$file"
+            printf 'present\t%s\n' "$file"
+        else
+            printf 'absent\t%s\n' "$file"
+        fi
+    done > "$snap/manifest"
+    echo "saved      $snap"
+    bash "$swe/scripts/install_isolation.sh" --apply
+    i=0
+    for file in "${rules[@]}"; do
+        i=$((i + 1))
+        if [ -f "$work/$i.merged" ] && ! cmp -s "$file" "$work/$i.merged"; then
+            cat "$work/$i.merged" > "$file"
+            echo "merged     $file"
+        fi
+    done
+    if [ -f "$hooks/pre-push" ]; then
+        cp "$swe/.claude/scripts/pre-push" "$swe/.claude/scripts/tells_check.py" "$hooks/"
+        chmod +x "$hooks/pre-push"
+        echo "installed  $hooks/pre-push"
+    fi
+    if [ -n "$context" ]; then
+        cp "$context" "$root/.lattice/context.md"
+        echo "installed  $root/.lattice/context.md"
+    fi
+    echo
+    echo "Restart every Claude Code and Codex session. To go back: $0 revert"
+    ;;
+revert)
+    [ $# -le 1 ] || usage
+    snap="${1:-}"
+    if [ -z "$snap" ]; then
+        snap="$(latest_snapshot)"
+        [ -n "$snap" ] || die "no snapshot under $store"
+    elif [ ! -d "$snap" ]; then
+        snap="$store/$snap"
+    fi
+    [ -f "$snap/manifest" ] || die "no snapshot at $snap"
+    read -r -p "Put back the files saved in $snap? [y/N] " answer
+    [ "$answer" = y ] || { echo "Nothing changed."; exit 1; }
+    while IFS=$'\t' read -r state file; do
+        saved="$snap/files$file"
+        if [ "$state" = present ]; then
+            if [ -f "$file" ] && cmp -s "$saved" "$file"; then
+                echo "unchanged  $file"
+            elif managed "$file"; then
+                sudo install -m "$(stat -c %a "$saved")" -o root -g root "$saved" "$file"
+                echo "restored   $file"
+            else
+                cp -p "$saved" "$file"
+                echo "restored   $file"
+            fi
+        elif [ -e "$file" ]; then
+            if managed "$file"; then sudo rm "$file"; else rm "$file"; fi
+            echo "removed    $file"
+        fi
+    done < "$snap/manifest"
+    echo
+    echo "Restart every Claude Code and Codex session."
+    ;;
+*) usage ;;
+esac
