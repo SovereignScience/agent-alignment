@@ -8,8 +8,9 @@ model: inherit
 Decide whether `$ARGUMENTS` describes a real issue, and draft the task
 if it does.
 
-Input: the report, the failing output or the user's description. If
-empty, ask what was run, what happened and what was expected.
+Input: the report, the failing output or the user's description. If it
+does not say what was run, what happened and what was expected, ask for
+the missing part, one question at a time, before going on.
 
 Steps:
 
@@ -27,10 +28,14 @@ Steps:
    - NOT A DEFECT: the behaviour is intended. The doc or test that
      says so.
    - DUPLICATE: the task that covers it.
-4. For VALID only, draft the task in the board's description shape
-   (Request, Scope, Owner, Coverage boundary, Remaining) with a title,
-   type and priority, and one acceptance criterion per outcome a
-   reviewer can check. The reproduction is the first criterion's check.
+4. For VALID only, ask until the task is clear, by the "Ask before the
+   plan" rule in `.lattice/context.md`: who needs the fix, the result
+   they expect, how the owner will check it and what is out of scope.
+5. Draft the task in the board's description shape (Request, Scope,
+   Owner, Coverage boundary, Remaining) with a title, type and
+   priority, and one acceptance criterion per outcome a reviewer can
+   check. The reproduction is the first criterion's check. Quote the
+   owner's answers in the Request.
 
 Do not create the task, write a test into the checkout or start the
 fix. The owner authorizes the task. The failing test is written later,
