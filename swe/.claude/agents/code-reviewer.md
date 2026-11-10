@@ -51,6 +51,8 @@ say so. If what is missing stops you judging the change, the verdict is
 - Optional refactoring, architectural preference or unrelated hardening.
 - Anything the formatter or linter already reports.
 - A finding you cannot tie to a concrete triggering condition.
+- A finding you did not try to disprove. Read the caller or run the
+  check first, and drop what does not survive.
 
 Example of a finding: "retry loop in sync.py:88 never resets the counter,
 so after the first outage every later sync gives up at once."
