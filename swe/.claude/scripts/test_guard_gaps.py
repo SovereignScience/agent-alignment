@@ -147,6 +147,17 @@ class WrappedCommandCases(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(decision(GUARD, command), "deny")
 
+    def test_the_app_command_given_to_the_local_browser_is_checked_too(self):
+        for command in ("python3 scripts/local_browser.py --app 'git push origin main' http://127.0.0.1:1/",
+                        "python3 scripts/local_browser.py --app='sudo ls' http://127.0.0.1:1/ shot:x",
+                        "./scripts/local_browser.py --out x --app 'bash -c \"git push\"' http://localhost:1/"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+        for command in ("python3 scripts/local_browser.py --app 'python3 -m http.server 8123' http://127.0.0.1:8123/",
+                        "python3 scripts/local_browser.py --app 'npm run dev' http://localhost:5173/ 'click:#push'"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
     def test_a_session_cannot_call_itself_a_cloud_session(self):
         for command in ("CLAUDE_CODE_REMOTE=true bash .claude/scripts/cloud_push.sh",
                         "export CLAUDE_CODE_REMOTE=true", "env CLAUDE_CODE_REMOTE=true bash x.sh"):
