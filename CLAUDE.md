@@ -47,7 +47,11 @@ and rules for answering review threads.
 - Plan before code. For a task that changes behaviour, write the plan to
   the file `lattice plan AA-<n>` names, set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
-  owner approves it.
+  owner approves it. A small fix on a task the owner selected goes
+  ahead without that stop when its plan is the four-line small-fix form,
+  it has no owner decision, and it touches nothing hard to undo and no
+  guardrail, security or data path; the plan says that it qualifies, and
+  the code review is the gate.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging
