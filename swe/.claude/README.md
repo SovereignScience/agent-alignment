@@ -257,8 +257,12 @@ swe/scripts/check_isolation.sh --client claude   # or --client codex
 It tests read access only on sentinel files with made-up content, reports
 real credential paths by metadata alone, and checks that the installed hooks
 match the checkout. It exits 0 when every check passed, 1 when one failed,
-and 2 when the result is incomplete until you run the outside checks it
-prints, such as confirming that a sentinel it could not see exists. Then
+and 2 while separate session or outside checks remain. For Codex, run the
+printed denied-host request as its own command in the same agent session
+and record an explicit client policy denial; DNS, TLS and timeout errors
+do not count. Outside checks confirm facts the sandbox cannot see, such
+as whether a sentinel exists. The approved registry read requires HTTP
+success. Then
 check by hand, in the same session, what a shell script cannot: the agent's Read of ~/.config/agent-alignment/sentinel is
 refused, a WebFetch of https://example.com is refused, and in Codex the
 session runs on the alignment_workstation profile and refuses Full Access.
