@@ -1,30 +1,10 @@
 # CLAUDE.md: agent-alignment / swe
 
-Project-level conventions for the agentic software-engineering
-toolkit. Loaded automatically by Claude Code, Codex CLI (via the
-`AGENTS.md` symlink), Cursor, and any agent that follows the
-AGENTS.md convention. The Codex profile and rules the track ships
-live in `codex/`.
-
-This file is loaded after the root router; ancestor `CLAUDE.md`
-files are concatenated. If you are doing software engineering work
-in this folder, read this first; apart from `CONTRIBUTING.md` at
-the root, you do not need to read anything outside this subtree.
-
----
-
-## What this folder is
-
-A complete agentic-coding toolkit: five canonical protocols, thirteen
-specialist subagents, sixteen slash commands, language-aware hooks,
-sane permissions. Drop into this folder and you have everything
-you need; the only other file to visit is `CONTRIBUTING.md` at the
-root.
-
-(There is a sibling track in `../flourishing/` for alignment-prompt
-authoring. It is independent. You can ignore it.)
-
----
+Conventions for the agentic software-engineering toolkit: five canonical
+protocols, specialist subagents, slash commands and hooks. This file is
+loaded after the root `CLAUDE.md`, whose rules apply here too.
+`AGENTS.md` is a symlink to this file; the Codex profile and rules are in
+`codex/`. The sibling track in `../flourishing/` is independent.
 
 ## Canonical SWE protocols (source of truth)
 
@@ -43,7 +23,9 @@ trust boundary; add `SKEPTIC_ARBITER.md` before a review verdict or
 sign-off. `/swe-skeptic` runs the code-skeptic and code-arbiter pair
 when the user asks.
 
----
+[CRAFT.md](CRAFT.md) is a reference, read when the work is to build,
+review or design something that will last: what adequate and excellent
+look like, and the measures a reviewer can count.
 
 ## Architectural commitments (do not weaken)
 
@@ -69,11 +51,6 @@ affected protocol.
    issue.
 9. Cite evidence on every approval: file:line, test name, or
    measurement. No "looks good" without specifics.
-10. No AI attribution anywhere: no AI co-author trailers, no
-    "generated with" footers, session links, badges or emoji. Keep
-    human co-author trailers.
-
----
 
 ## Subagent dispatch table (when to spawn which)
 
@@ -105,8 +82,6 @@ time and at most three at once. Run the review and audit agents only
 when the user asks. `/swe-swarm-review` runs five independent reviews
 (code, security, perf, deps, architecture), three at a time.
 
----
-
 ## Build, verify
 
 | Goal | Command |
@@ -116,76 +91,13 @@ when the user asks. `/swe-swarm-review` runs five independent reviews
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
-There is no test suite for these protocols (they're prose). They
-are validated by use.
+The protocols are prose and are validated by use. The hooks, scripts and
+review tool have tests beside them: `python3 -m unittest discover -s <folder> -p 'test_*.py'`.
 
----
+## Adding things
 
-## Repo map (this subtree)
-
-```
-swe/
-├── README.md                     # quickstart + dispatch table
-├── CLAUDE.md                     # this file
-├── AGENTS.md                     # symlink to CLAUDE.md
-│
-├── SWE_CORE.md                   # canonical
-├── TESTING_PROTOCOL.md           # canonical
-├── PERFORMANCE_PROTOCOL.md       # canonical
-├── SECURITY_PROTOCOL.md          # canonical
-├── SKEPTIC_ARBITER.md            # canonical (anti-sycophancy)
-│
-├── codex/                        # Codex profile and rules
-│
-├── scripts/
-│   └── check_drift.sh
-│
-└── .claude/
-    ├── settings.json             # permissions, sandbox, hooks, status line
-    ├── README.md                 # hook architecture, how to add agents and commands
-    ├── agents/                   # 13 specialists
-    ├── commands/                 # 16 slash commands
-    └── scripts/                  # hooks and status line
-```
-
----
-
-## How to add things
-
-### Add a new SWE protocol
-Rare. Promote from a working pattern, not from speculation. Mirror
-the existing five (Identity, then Operating principles, When to
-surface, Anti-patterns, Examples). Update this CLAUDE.md, the
-README, and `/swe-init`.
-
-### Add a new SWE subagent
-Drop a `.claude/agents/<name>.md` with frontmatter (`name`,
-`description`, `tools`, `model`). Body uses the canonical shape:
-"Read first", "Invariants you defend", "How you work", "What you
-do not do", "Report back with". Update the dispatch table above.
-
-### Add a new SWE slash command
-Drop a `.claude/commands/<name>.md` with frontmatter (`description`,
-`argument-hint`, `allowed-tools`). Body is the command prompt.
-Multi-step workflows hand off to specialists with explicit
-`subagent_type`.
-
----
-
-## Tone and standards
-
-- Plain language over jargon.
-- Operational rules over aspirational language.
-- Default to no comments; protocols speak for themselves.
-- Examples carry nuance that would otherwise bloat the main prompt.
-
----
-
-## Cross-tool agent compatibility
-
-`AGENTS.md` is a symlink to this file. Agent-specific config lives
-in `.claude/`. The instructions in this file apply to all agents
-that drop into this subtree.
-
-When in doubt: read this file, read `README.md`, read the relevant
-canonical protocol, then act.
+A new protocol is rare: promote it from a working pattern, mirror the
+existing five (Identity, Operating principles, When to surface,
+Anti-patterns, Examples) and update this file, the README and `/swe-init`.
+Agents and commands: see [.claude/README.md](.claude/README.md), and add
+the row to the dispatch table above.

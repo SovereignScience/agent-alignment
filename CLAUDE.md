@@ -1,47 +1,16 @@
 # CLAUDE.md: agent-alignment (root)
 
-This is a router. The repository contains two independent
-agentic toolkits, each self-contained in its own subtree apart from
-the shared `CONTRIBUTING.md`. Do not work from this folder. `cd`
-into one of the two tracks and follow the conventions you find
-there.
-
----
-
-## The two tracks
+This file is a router. The repository holds two independent toolkits. Do
+not work from this folder: `cd` into a track and follow its `CLAUDE.md`.
+`AGENTS.md` is a symlink to this file, here and in each track.
 
 | Track | Folder | Use when |
 |---|---|---|
-| Track A: agentic software engineering | [`swe/`](swe/) | You are doing software engineering: review, debug, test, refactor, audit, ship. |
-| Track B: Inner Commons + Flourishing alignment | [`flourishing/`](flourishing/) | You are authoring, composing, or evaluating alignment prompts. |
+| Agentic software engineering | [`swe/`](swe/) | Review, debug, test, refactor, audit, ship. |
+| Inner Commons + Flourishing alignment | [`flourishing/`](flourishing/) | Author, compose or evaluate alignment prompts. |
 
-Each track has:
-
-- Its own `README.md` (start here)
-- Its own `CLAUDE.md` (project conventions)
-- Its own `AGENTS.md` (symlink to CLAUDE.md)
-- Its own `.claude/` (settings, agents, commands, hooks, status line)
-- Its own `scripts/check_drift.sh`
-- Its own canonical protocol modules
-
-Once you `cd` into a track's folder, you do not need to reference
-this file or anything else outside the track apart from
-`CONTRIBUTING.md`.
-
----
-
-## Why two tracks (briefly)
-
-The repository started as the Inner Commons alignment prompt
-library. The maintainer also runs serious agentic-coding workflows
-that benefit from the same shape (canonical protocols, specialist
-subagents, slash commands, hooks). Folding them into one tree
-would have forced agents to disambiguate between alignment-prompt
-work and software-engineering work on every turn. The two tracks
-are independent in content and infrastructure; only the repo and
-the cross-cutting `CONTRIBUTING.md` are shared.
-
-The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-track.md).
+The layout is in [README.md](README.md) and the reason for two tracks in
+[docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-track.md).
 
 ---
 
@@ -134,42 +103,3 @@ repository are not always loaded.
 - What reaches a cloud session, and the owner's one-time setup, is in
   [swe/README.md](swe/README.md#cloud-sessions).
 
----
-
-## Top-level layout
-
-```
-agent-alignment/
-├── README.md                 # router
-├── CLAUDE.md                 # this file (router)
-├── AGENTS.md                 # symlink to CLAUDE.md
-├── CONTRIBUTING.md           # PR rubric (both tracks)
-├── .claude/                  # SessionStart hook and status line only
-│
-├── swe/                      # Track A, SWE
-├── flourishing/              # Track B, alignment
-│
-├── docs/
-│   └── ADR-0001-dual-track.md
-├── presentations/
-└── media/
-```
-
-The top-level `.claude/` holds only a SessionStart hook and a status
-line. Subagents, slash commands and language hooks live inside the
-track subtrees.
-
----
-
-## Cross-tool agent compatibility
-
-`AGENTS.md` is a symlink to this file. The convention applies to
-the subtrees too: `swe/AGENTS.md` points to `swe/CLAUDE.md` and
-`flourishing/AGENTS.md` to `flourishing/CLAUDE.md`. The Codex
-profile and rules the SWE track ships live in `swe/codex/`.
-
-If you opened the repo root in Claude Code / Codex CLI / Cursor
-and you are about to do real work, the right move is to `cd swe/`
-or `cd flourishing/` and re-open from there. The track-level
-`.claude/` will load automatically and you'll get the right
-permissions, hooks, status line, and roster.
