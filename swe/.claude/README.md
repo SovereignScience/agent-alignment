@@ -307,7 +307,8 @@ admin interfaces, forwarded services or authentication bypasses. A server
 inside another command's private network namespace is not automatically
 published on host loopback. Verify cross-session access before claiming it.
 
-Keep the existing app-and-browser-in-one-command recipe for isolated tests.
+For isolated tests, `../scripts/local_browser.py` starts the app and the
+browser in one command.
 Shared app screenshots also need an actual client check of proxy routing,
 redirects, WebSockets and service-worker restrictions; a successful HTTP
 request alone does not establish browser containment. Claude's

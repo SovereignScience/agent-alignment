@@ -66,7 +66,7 @@ affected protocol.
 | Performance audit against the repository's budgets | `perf-auditor` | `/swe-perf` |
 | Audit dependency adds / removes / bumps | `dependency-auditor` | `/swe-deps` |
 | Plan a behavior-preserving refactor | `refactoring-planner` | `/swe-refactor` |
-| Browser-verify a UI fix (headless Chromium) | `dashboard-probe` | `/swe-probe` |
+| Screenshot or browser-verify a UI fix (`scripts/local_browser.py`) | `dashboard-probe` | `/swe-probe` |
 | Update a README or runbook; write an ADR the user names | `docs-writer` | `/swe-docs` |
 | Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
