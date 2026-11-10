@@ -16,8 +16,9 @@
 # An empty file is no evidence. One that looks absent may be hidden or missing.
 #
 # Exit status: 0 when every check passed, 1 when one failed, 2 when the result
-# is incomplete until you run the outside checks it prints: a sentinel the
-# sandbox did not show or a marker it wrote to a home directory on tmpfs.
+# is incomplete until you run the separate session or outside checks it
+# prints: Codex's denied-host request, a sentinel the sandbox did not show,
+# or a marker it wrote to a home directory on tmpfs.
 #
 # The other PATHs, and the built-in list of credential stores, are reported by
 # metadata only: whether the sandbox shows the path at all. That is information,
@@ -50,6 +51,7 @@ case "$client" in
 esac
 failed=0
 confirm=()
+separate=()
 ok() { printf 'ok    %s\n' "$1"; }
 bad() { printf 'FAIL  %s\n' "$1"; failed=1; }
 info() { printf 'info  %s\n' "$1"; }
@@ -180,18 +182,25 @@ fi
 if ! command -v curl >/dev/null; then
     bad "curl not found, so the network checks did not run"
 else
-    if curl -sS -m 8 -o /dev/null https://example.com 2>/dev/null; then
+    if [ "$client" = codex ]; then
+        separate+=("curl -sS -m 8 -o /dev/null https://example.com")
+    elif curl -sS -m 8 -o /dev/null https://example.com 2>/dev/null; then
         bad "example.com reachable"
     else
         ok "example.com not reached"
     fi
-    if curl -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
+    if curl --fail -sS -m 8 -o /dev/null https://pypi.org/simple/ 2>/dev/null; then
         ok "pypi.org reachable"
     else
         bad "pypi.org not reached; approved network access is not verified"
     fi
 fi
 
+if [ "${#separate[@]}" -gt 0 ]; then
+    echo "Separate checks, each as its own command in this session:"
+    for c in "${separate[@]}"; do printf '  %s\n' "$c"; done
+    echo "Record an explicit client policy denial; DNS, TLS and timeout errors do not count."
+fi
 if [ "${#confirm[@]}" -gt 0 ]; then
     echo "Outside checks, for your own terminal:"
     for c in "${confirm[@]}"; do printf '  %s\n' "$c"; done
@@ -200,8 +209,8 @@ if [ "$failed" != 0 ]; then
     echo "Some checks failed."
     exit 1
 fi
-if [ "${#confirm[@]}" -gt 0 ]; then
-    echo "Incomplete: no check failed, but the result waits on the outside checks above."
+if [ "${#confirm[@]}" -gt 0 ] || [ "${#separate[@]}" -gt 0 ]; then
+    echo "Incomplete: no check failed, but the result waits on the checks above."
     exit 2
 fi
 echo "All checks passed."
