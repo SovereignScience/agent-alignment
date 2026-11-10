@@ -35,7 +35,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|WebFetch|mcp__.*",
+        "matcher": "Bash|Monitor|WebFetch|mcp__.*",
         "hooks": [
           {
             "type": "command",
