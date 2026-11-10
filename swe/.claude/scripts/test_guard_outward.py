@@ -110,6 +110,12 @@ class TellsTests(unittest.TestCase):
         self.assertEqual(self.managed(GUARD, "git commit -m 'feat: delve into the parser'"), "deny")
         self.assertIsNone(self.managed(GUARD, "git commit -m 'fix: parse empty headers'"))
 
+    def test_attached_and_trailer_messages_are_read_too(self):
+        self.assertEqual(self.managed(GUARD, "git commit -m'feat: delve into the parser'"), "deny")
+        self.assertEqual(self.managed(
+            GUARD, "git commit -m 'fix: x' --trailer 'Co-Authored-By: Claude <noreply@anthropic.com>'"), "deny")
+        self.assertIsNone(self.managed(GUARD, "git commit -am'fix: parse empty headers'"))
+
     def test_a_missing_checker_refuses_commit_messages(self):
         with tempfile.TemporaryDirectory() as tmp:
             lone = pathlib.Path(tmp, "guard_outward.py")
