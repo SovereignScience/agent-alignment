@@ -104,11 +104,25 @@ Warning signs in a design:
 | The choice | Works | The reason names the trade-off accepted, and what would make the other option right |
 | Reversibility | Not mentioned | Says how hard the choice is to undo, and puts the care there |
 
+## Measures
+
+Counts a reviewer can take from a diff. They show where to look. A change
+is judged by the rubrics above, never by a count.
+
+| Measure | What to count | Why |
+|---|---|---|
+| Size | Lines and files changed. About 100 lines reviews well and about 1,000 is too many; the same lines over many files count as more. | A large change is skimmed. |
+| Duplication | New blocks of five or more lines that repeat code already in the repository. | The fault that has grown most in agent-written code. |
+| Reuse | Existing functions called, extended or moved, against new ones written for the same job. | Reuse fell as duplication rose. |
+| Error masking | Catch blocks, default values and stubs that hide the cause of a failure. | Also rising; the bug surfaces later and further away. |
+| Rework | Lines changed again within weeks of being written. | The work was not finished the first time. |
+| Test strength | New tests that fail when the code they cover is broken. | A test that cannot fail shows nothing. |
+
 ## Sources
 
 - Google, Engineering Practices: the standard of code review, what to
-  look for in a review, and how to write review comments.
-  https://google.github.io/eng-practices/
+  look for in a review, how to write review comments, and the size of a
+  change in "Small CLs". https://google.github.io/eng-practices/
 - Martin Fowler, "Beck Design Rules", on Kent Beck's four rules of
   simple design. https://www.martinfowler.com/bliki/BeckDesignRules.html
 - John Ousterhout, A Philosophy of Software Design: deep modules,
