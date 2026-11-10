@@ -173,7 +173,7 @@ def strip_comments(text):
 def segments(cmd):
     """Simple commands, plus redirect targets as pseudo-commands."""
     text, shell_bodies = strip_heredocs(cmd)
-    text = strip_comments(text).replace("`", "\n").replace("\n", " ; ")
+    text = strip_comments(text).replace("\\\n", " ").replace("`", "\n").replace("\n", " ; ")
     lex = shlex.shlex(text, posix=True, punctuation_chars=True)
     lex.whitespace_split = True
     lex.commenters = ""
@@ -189,9 +189,14 @@ def segments(cmd):
             pending = None
             continue
         if tok and set(tok) <= set(";&|()<>"):
-            if seg:
-                yield seg
-            seg = []
+            if "<" in tok or ">" in tok:
+                # A redirect sits inside its command; drop the descriptor number before it.
+                if seg and seg[-1].isdigit():
+                    seg.pop()
+            else:
+                if seg:
+                    yield seg
+                seg = []
             if "<<" in tok:
                 pending = ""
             elif tok.endswith(("<", "<&", "<>")):
@@ -304,10 +309,19 @@ def secret_file(path):
         not TEMPLATE_OK.search(path) or bool(re.search(r"/\.(kube|ssh)/", path)))
 
 
-GIT_GLOBAL_VALUES = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
-# An alias hides the real subcommand from this guard; core.hooksPath turns the
-# repository's hooks off, the same as --no-verify.
-GIT_HIDING_SETTING = re.compile(r"^(alias\.|core\.hookspath(=|$))", re.IGNORECASE)
+GIT_GLOBAL_VALUES = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env",
+                     "--attr-source"}
+# An alias hides the real subcommand from this guard, and an include can carry one.
+# core.hooksPath turns the repository's hooks off, the same as --no-verify.
+# gc.worktreePruneExpire makes an ordinary gc prune worktree records.
+GIT_HIDING_SETTING = re.compile(
+    r"^(alias\.|includeif\.|(core\.hookspath|include\.path|gc\.worktreepruneexpire)(=|$))",
+    re.IGNORECASE)
+GIT_HIDING_REASON = "a setting that hides a command, turns hooks off or prunes worktrees"
+GIT_CONFIG_ENV = re.compile(r"^GIT_CONFIG(_[A-Z0-9_]*)?=")
+GIT_CONFIG_REMOVALS = {"unset", "--unset", "--unset-all", "remove-section", "--remove-section",
+                       "rename-section", "--rename-section"}
+NO_VERIFY = re.compile(r"--no-veri(fy?)?")
 COMMIT_SHORT_VALUES = "mFCct"
 COMMIT_SHORT_ATTACHED = "uS"
 COMMIT_LONG_VALUES = {"--message", "--file", "--reuse-message", "--reedit-message", "--template",
@@ -360,21 +374,22 @@ def commit_skips_hooks(rest):
 def check_git(args):
     settings, rest = git_globals(args)
     if any(GIT_HIDING_SETTING.match(s) for s in settings):
-        deny("git -c with an alias or core.hooksPath; run the git command directly")
+        deny("git -c with %s; run the git command directly" % GIT_HIDING_REASON)
     pos = positional(args, GIT_GLOBAL_VALUES)
     if not pos:
         return
     sub = pos[0]
     if sub in ("push", "send-email", "request-pull"):
         deny("git " + sub)
-    if sub in ("commit", "merge", "rebase", "am") and "--no-verify" in args:
+    if sub in ("commit", "merge", "rebase", "am") and any(NO_VERIFY.fullmatch(a) for a in rest):
         deny("git %s --no-verify" % sub)
     if sub == "commit" and commit_skips_hooks(rest):
         deny("git commit -n, the short form of --no-verify")
     if sub == "config":
         words = [a for a in rest if not a.startswith("-")]
-        if any(GIT_HIDING_SETTING.match(word) for word in words[:-1]):
-            deny("git config setting an alias or core.hooksPath")
+        changed = words if GIT_CONFIG_REMOVALS & set(rest) else words[:-1]
+        if any(GIT_HIDING_SETTING.match(word) for word in changed):
+            deny("git config changing " + GIT_HIDING_REASON)
     if sub == "worktree" and [a for a in rest if not a.startswith("-")][:1] == ["prune"]:
         owner_only("git worktree prune",
                    "It can drop the record of a checkout kept outside this project. "
@@ -395,10 +410,12 @@ def check_git(args):
 def commit_message(args):
     msgs = []
     for i, a in enumerate(args):
-        if (a in ("-m", "--message") or re.fullmatch(r"-[a-zA-Z]*m", a)) and i + 1 < len(args):
+        if (a in ("-m", "--message", "--trailer") or re.fullmatch(r"-[a-zA-Z]*m", a)) and i + 1 < len(args):
             msgs.append(args[i + 1])
-        elif a.startswith("--message="):
+        elif a.startswith(("--message=", "--trailer=")):
             msgs.append(a.split("=", 1)[1])
+        elif re.match(r"-[a-ln-zA-Z]*m.", a):
+            msgs.append(a.split("m", 1)[1])
     return "\n".join(msgs)
 
 
@@ -647,6 +664,8 @@ def check_guardrail_writes(name, args):
 
 
 def check_argv(argv):
+    if any(GIT_CONFIG_ENV.match(word) for word in argv):
+        deny("Git configuration passed through the environment; use the repository's own settings")
     argv = unwrap(list(argv))
     if not argv:
         return
