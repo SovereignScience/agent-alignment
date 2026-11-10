@@ -17,8 +17,8 @@ this file, then act.
 - A review request template in [REVIEW_REQUEST.md](REVIEW_REQUEST.md), for
   handing a change to an independent reviewer.
 - Craft rubrics in [CRAFT.md](CRAFT.md): what adequate and excellent work
-  look like when building, reviewing and designing. A reference read on
-  demand, not a sixth protocol.
+  look like when building, reviewing and designing. A reference, read on
+  demand.
 - Thirteen specialist subagents in [.claude/agents/](.claude/agents/).
 - Sixteen slash commands in [.claude/commands/](.claude/commands/).
 - Hooks in [.claude/scripts/](.claude/scripts/): `guard_outward.py`
