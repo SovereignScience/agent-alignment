@@ -169,7 +169,7 @@ different way.
 | What | Where it lives | How a session gets it |
 |---|---|---|
 | Agents, commands, protocols, project instructions | the checkout | Open the session in a worktree of that branch |
-| Managed settings and hooks, the Codex profile, your user rules, the pre-push hook | this machine | `scripts/switch_rules.sh apply` |
+| Managed settings and hooks, the Codex profile and rules, your user rules, the pre-push hook | this machine | `scripts/switch_rules.sh apply` |
 | Board conventions | `.lattice/context.md` | `apply --context <file>` |
 
 From a worktree of the branch you want to try:
@@ -189,6 +189,18 @@ before the first `apply` you have not reverted, or to the snapshot you
 name, so two sets of rules can be compared by switching between them.
 If your checkouts are not under `~/projects`, set `SWE_WORKSPACE` to
 their folder for `status` and `apply`.
+
+In VS Code, restarting means "Developer: Reload Window" in each window
+and then a new chat in each extension. Codex reads its profile and rules
+when a chat starts, and a resumed chat keeps the old ones. To try the
+checkout's own agents, commands and project rules as well, open a window
+on the worktree's `swe/` folder with `code <worktree>/swe`. On WSL, run
+all of this from the distribution's shell: the files are on the Linux
+side. A Codex rule can be checked without a session:
+
+```bash
+codex execpolicy check --pretty --rules ~/.codex/rules/default.rules -- git commit -n -m x
+```
 
 ---
 

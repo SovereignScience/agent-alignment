@@ -171,8 +171,11 @@ class SwitchRules(unittest.TestCase):
         self.assertIn(FILLED, agents.read_text())
         self.assertIn("- A rule this checkout adds.\n", agents.read_text())
         self.assertNotEqual((codex / "config.toml").read_text(), PROFILE)
+        installed_rules = codex / "rules/default.rules"
+        self.assertEqual(installed_rules.read_bytes(), (self.repo / "swe/codex/default.rules").read_bytes())
         code, out = self.switch("revert")
         self.assertEqual(code, 0, out)
+        self.assertFalse(installed_rules.exists(), out)
         self.assertFalse(requirements.exists(), out)
         self.assertEqual(agents.read_text(), before)
         self.assertEqual((codex / "config.toml").read_text(), PROFILE)
