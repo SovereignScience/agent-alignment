@@ -243,6 +243,16 @@ def find_task(board, short_id):
     return None
 
 
+def task_comments(lattice, board, short_id):
+    """The task's comments as the lattice CLI gives them, or none when it fails."""
+    env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(board))
+    result = subprocess.run([lattice, "comments", short_id, "--json"], cwd=board, env=env, capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
+    except json.JSONDecodeError:
+        return []
+
+
 def log_commits(repo, *args):
     out = run_git(repo, "log", "--reverse", "--format=%H%x1f%s%x1f%cs", *args)
     commits = []
@@ -956,11 +966,10 @@ def criteria_block(task, comments=()):
     return None
 
 
-def completion_block(repo, task, main, comments):
-    """Why the task may not be completed now, or None: its latest bound review
-    must approve exactly the commits it has now, every review thread must be
-    resolved, the commits must be merged and pushed, and every open criterion
-    must have evidence."""
+def review_block(repo, task, main, comments):
+    """Why the owner's review does not cover the task's work now, or None: the
+    latest bound review must approve exactly the commits the task has now, and
+    every review thread must be resolved."""
     review = latest_review(comments)
     if not review:
         return "no Plannotator review is recorded for this task yet"
@@ -975,7 +984,14 @@ def completion_block(repo, task, main, comments):
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
-    return (stale_reason(repo, task, main, review["body"], comments)
+    return stale_reason(repo, task, main, review["body"], comments)
+
+
+def completion_block(repo, task, main, comments):
+    """Why the task may not be completed now, or None: the owner's review must
+    cover its work, the commits must be merged and pushed, and every open
+    criterion must have evidence."""
+    return (review_block(repo, task, main, comments)
             or landing_block(repo, main, [c["hash"] for c in resolve_range(repo, task, main)["commits"]])
             or criteria_block(task, comments))
 
@@ -1078,12 +1094,7 @@ class Context:
         return [line for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
 
     def comments(self, short_id):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
-        result = subprocess.run([self.lattice, "comments", short_id, "--json"], cwd=self.board, env=env, capture_output=True, text=True)
-        try:
-            return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
-        except json.JSONDecodeError:
-            return []
+        return task_comments(self.lattice, self.board, short_id)
 
     def start_plannotator(self, key, record_on=None, base=None, head=None):
         """One Plannotator code review. The range is resolved to commit IDs once,
