@@ -933,14 +933,26 @@ def landing_block(repo, main, shas):
     return None
 
 
-def criteria_block(task):
+def criteria_block(task, comments=()):
     """Why the task's open acceptance criteria are not all evidenced, or None.
     An install or deploy is written as a criterion, so its evidence is what
-    lets the task close."""
+    lets the task close. A note linked to a criterion counts for it unless
+    the newest such note opens with "Not met": saying a criterion is still
+    open must not close it."""
     evidenced = {cid for ref in task.get("evidence_refs", []) for cid in ref.get("criterion_ids") or []}
-    missing = [c["id"] for c in task.get("acceptance_criteria", []) if not c.get("retired") and c["id"] not in evidenced]
+    wanted = [c["id"] for c in task.get("acceptance_criteria", []) if not c.get("retired")]
+    missing = [cid for cid in wanted if cid not in evidenced]
     if missing:
         return "no evidence is recorded yet for %s; record it on the task, then Mark done" % ", ".join(missing)
+    notes = [n for c in comments for n in [c] + list(c.get("replies") or []) if not n.get("deleted")]
+    newest = {}
+    for n in sorted(notes, key=lambda n: n.get("created_at") or ""):
+        for cid in n.get("criterion_ids") or []:
+            newest[cid] = n.get("body") or ""
+    open_ones = [cid for cid in wanted if newest.get(cid, "").lstrip().lower().startswith("not met")]
+    if open_ones:
+        return ("the newest evidence note for %s says it is not met; record what now meets it, then Mark done"
+                % ", ".join(open_ones))
     return None
 
 
@@ -965,7 +977,7 @@ def completion_block(repo, task, main, comments):
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
     return (stale_reason(repo, task, main, review["body"], comments)
             or landing_block(repo, main, [c["hash"] for c in resolve_range(repo, task, main)["commits"]])
-            or criteria_block(task))
+            or criteria_block(task, comments))
 
 
 def session_url(log_text):
@@ -1941,7 +1953,7 @@ def make_handler(ctx, base=None, static_dir=None):
                     if resolve_range(ctx.repo, task, ctx.main)["mode"] != "none":
                         block = completion_block(ctx.repo, task, ctx.main, ctx.comments(task["short_id"]))
                     else:
-                        block = criteria_block(task)
+                        block = criteria_block(task, ctx.comments(task["short_id"]))
                     if block:
                         self.send_json(409, {"ok": False, "error": {"code": "REVIEW_REQUIRED", "message": "not completed: " + block}})
                         return False

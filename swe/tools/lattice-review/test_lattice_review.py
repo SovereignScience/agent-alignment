@@ -553,6 +553,23 @@ class PureTests(RepoFixture):
         evidenced = dict(open_work, evidence_refs=open_work["evidence_refs"] + [{"id": "ev_2", "criterion_ids": ["AC-1"]}])
         self.assertIsNone(lr.completion_block(self.repo, evidenced, "main", approved))
 
+    def test_a_criterion_whose_newest_evidence_note_says_not_met_stays_open(self):
+        def note(number, body, criteria, **more):
+            return dict({"id": "ev_%d" % number, "body": body, "criterion_ids": criteria, "deleted": False,
+                         "created_at": "2026-01-01T00:00:0%dZ" % number, "replies": []}, **more)
+        task = {"acceptance_criteria": [{"id": "AC-1", "retired": False}, {"id": "AC-2", "retired": False}],
+                "evidence_refs": [{"id": "ev_1", "criterion_ids": ["AC-1", "AC-2"]}]}
+        met = note(1, "Met: the page loads in both clients.", ["AC-1", "AC-2"])
+        self.assertIsNone(lr.criteria_block(task, [met]))
+        open_again = note(2, "Not met: Codex has not run it yet.", ["AC-2"])
+        self.assertIn("the newest evidence note for AC-2 says it is not met", lr.criteria_block(task, [met, open_again]))
+        self.assertIsNone(lr.criteria_block(task, [met, dict(open_again, deleted=True)]))
+        answered = note(3, "Met: Codex ran it at 1a2b3c4.", ["AC-2"])
+        self.assertIsNone(lr.criteria_block(task, [met, open_again, answered]))
+        in_a_reply = dict(met, replies=[note(4, "  not met: the check was mocked.", ["AC-1"])])
+        self.assertIn("for AC-1 says it is not met", lr.criteria_block(task, [in_a_reply]))
+        self.assertIsNone(lr.criteria_block(task, [note(1, "The earlier wording, with no verdict word.", ["AC-1", "AC-2"])]))
+
     def test_review_notes_are_split_by_file_and_line_without_the_appended_instructions(self):
         message = ("# Code Review Feedback\n\n**Diff:** static-patch\n\n## README.md\n\n### Line 239 (new)\n"
                    "why do we need this change?\n\nsecond paragraph\n\n### File Comment\nwhere are the replies?\n\n"
