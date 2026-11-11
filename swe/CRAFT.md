@@ -115,7 +115,10 @@ that is hard to undo.
 - Spend effort by how hard the choice is to undo. For a choice that is
   cheap to reverse, pick and move. For a data model, a public interface,
   an auth model or a vendor, write down the context, the decision, what
-  follows from it and the alternatives you rejected.
+  follows from it and the alternatives you rejected, as a decision
+  record from `ADR_TEMPLATE.md`. An agent follows a decision it can see
+  and often breaks one it cannot, so the record goes in the repository,
+  and `scripts/adr.py for <file>` finds the ones that govern a file.
 - Build for the next change you can name. A layer added for a future
   nobody has asked for is cost with no user.
 
@@ -164,6 +167,16 @@ is judged by the rubrics above, never by a count.
   https://www.industrialempathy.com/posts/design-docs-at-google/
 - Michael Nygard, "Documenting Architecture Decisions": context,
   decision, consequences.
+- MADR, Markdown Architectural Decision Records: front matter for
+  status and date, considered options and a confirmation section.
+  https://adr.github.io/madr/
+- Dillon and Varanasi, "Context-Augmented Code Generation" (2026, a
+  vendor's benchmark): an agent kept every decision visible in the code
+  and between none and a third of those recorded elsewhere.
+  https://arxiv.org/abs/2605.08112
+- "Do Coding Agents Keep Their Word?" (NeurIPS 2026): a ledger of
+  earlier commitments gave the lowest rate of unintended design change.
+  https://neurips.cc/virtual/2026/173024
 - Anthropic, "Best practices for Claude Code": a way to verify the work,
   explore then plan then code, and starting clean after failed
   corrections. https://code.claude.com/docs/en/best-practices
