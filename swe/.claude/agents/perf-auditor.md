@@ -72,6 +72,7 @@ SUMMARY: <N> issues found, <M> high-impact
 [LOW]  ...
 
 RULED OUT: <one-line list>
+NOT READ: <changed files or paths you did not look at, and why>
 ```
 
 Lead with the highest-impact issue. Keep the ruled-out list brief.
