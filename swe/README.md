@@ -278,7 +278,9 @@ routine path.
 
 One owner step per cloud environment, in its dialog at claude.ai/code: add
 these environment variables with your own values, so commits made there
-carry your name. Git reads them directly.
+carry your name. Git reads them directly. Until they are set the push
+script refuses, because a commit under the tool's name cannot be taken
+back once it is public.
 
 ```text
 GIT_AUTHOR_NAME=

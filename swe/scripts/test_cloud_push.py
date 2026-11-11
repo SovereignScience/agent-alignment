@@ -59,6 +59,38 @@ class CloudPush(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.remote_branches(), ["feature/AA-7-fix-empty-input", "main"])
 
+    def test_a_commit_under_another_name_is_never_pushed(self):
+        self.git("switch", "-q", "-c", "feature/AA-7-fix-empty-input")
+        self.commit("mine")
+        (self.repo / "theirs").write_text("theirs")
+        self.git("add", "theirs")
+        self.git("-c", "user.name=Somebody Else", "-c", "user.email=else@example.com",
+                 "commit", "-q", "-m", "add theirs")
+        code, out = self.push()
+        self.assertNotEqual(code, 0)
+        self.assertIn("Somebody Else", out)
+        self.assertEqual(self.remote_branches(), ["main"])
+
+    def test_the_container_identity_is_never_pushed(self):
+        self.git("config", "user.name", "Claude")
+        self.git("config", "user.email", "noreply@anthropic.com")
+        self.git("switch", "-q", "-c", "feature/AA-7-fix-empty-input")
+        self.commit("work")
+        code, out = self.push()
+        self.assertNotEqual(code, 0)
+        self.assertIn("GIT_AUTHOR_NAME", out)
+        self.assertEqual(self.remote_branches(), ["main"])
+
+    def test_a_message_with_ai_attribution_is_never_pushed(self):
+        self.git("switch", "-q", "-c", "feature/AA-7-fix-empty-input")
+        (self.repo / "work").write_text("work")
+        self.git("add", "work")
+        self.git("commit", "-q", "-m", "add work", "-m", "Co-Authored-By: Claude <noreply@anthropic.com>")
+        code, out = self.push()
+        self.assertNotEqual(code, 0)
+        self.assertIn("AI attribution", out)
+        self.assertEqual(self.remote_branches(), ["main"])
+
     def test_other_branches_and_unsaved_work_are_refused(self):
         self.commit("on-main")
         for branch in ("main", "claude/fix", "feature/no-task-id", "integration/x"):
