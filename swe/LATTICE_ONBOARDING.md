@@ -424,6 +424,15 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   the owner for a pass by the other tool. Where a tool cannot start an
   agent, the handover asks for the review instead. No other review
   starts unasked, and an author never records a verdict on its own work.
+- Decisions that last are records in the repository, listed in its
+  decision index (docs/ADR-INDEX.md where the project follows this
+  kit). Before planning, open each accepted record that governs a file
+  the task will touch, and name them in the plan. A plan that goes
+  against an accepted record proposes the record that supersedes it.
+  When a task settles something hard to undo, or rejects an option
+  someone will try again, its last step drafts a record with status
+  proposed. Only the owner changes a status to accepted, and an
+  accepted decision is never edited: a new record supersedes it.
 - The board is versioned separately from source, in its own private
   repository at .lattice/. A board checkpoint requires an explicit request;
   remote creation and pushing remain the owner's. In a cloud session the
