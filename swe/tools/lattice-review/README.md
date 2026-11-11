@@ -271,6 +271,23 @@ Annotations typed in Plannotator stay in that session until Send
 Feedback or Approve; only then do they land on the task, where every
 browser and every agent sees them.
 
+## Merging approved work
+
+The owner merges from the main checkout, with the board in `LATTICE_ROOT`
+or the current folder:
+
+```
+python3 <kit>/swe/tools/lattice-review/merge_approved.py --check '<command>' AA-7 [AA-8 ...]
+```
+
+Each task's linked branch is merged in the order given, with a merge
+commit, only while the review rule above holds for the commits about to
+land. Every `--check` command must then pass on the merged files, and
+only then is main pushed. A stop undoes nothing: it says where things
+stand and prints the command that takes it back. A rerun continues, and
+accepts a merge already on local main only when it has the same two
+parents and the same files as the one it would make.
+
 ## Run
 
 The short way is `board`, a bash function in [board.bash](board.bash).
