@@ -17,8 +17,8 @@ Steps:
 1. Spawn `docs-writer`. Brief: "edit the existing doc in place per
    the format defined in your agent definition. Create a new file
    only if the user named it in this turn. Default to bullets and
-   tables. Refuse to add docs that just restate code. For a named
-   ADR, use the four-part Context/Decision/Consequences/Alternatives
-   shape."
+   tables. Refuse to add docs that just restate code. For a decision
+   record, copy ADR_TEMPLATE.md, draft it as proposed, and rebuild and
+   check the index with scripts/adr.py."
 2. Surface the diff to the user.
 3. Add a CHANGELOG entry only if the user named `CHANGELOG.md`.

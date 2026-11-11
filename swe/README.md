@@ -147,6 +147,23 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 
 ---
 
+## Decision records
+
+A choice that is hard to undo, or that rejects an option someone will
+try again, is written down in `docs/` as a decision record, in the shape
+of [ADR_TEMPLATE.md](ADR_TEMPLATE.md). Sessions read the records that
+govern a file before they plan, and reviewers read them before they
+judge a change. A session may draft a record as proposed; only you
+accept one, by changing its status.
+
+| Goal | Command |
+|---|---|
+| Records that govern a file | `python3 swe/scripts/adr.py for <file>` |
+| Rebuild the index after any change | `python3 swe/scripts/adr.py index --write` |
+| Check the records and the index | `python3 swe/scripts/adr.py check` |
+
+---
+
 ## Build, verify
 
 | Goal | Command |
