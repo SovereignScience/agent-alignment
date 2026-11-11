@@ -8,20 +8,22 @@ model: inherit
 Run a five-specialist SWE review of the current branch against
 `$1`. The base branch defaults to `main`.
 
-Capture the diff:
+Capture what is under review:
 
 ```bash
+git rev-parse "${1:-main}" HEAD
 git diff "${1:-main}"...HEAD --stat
-git diff "${1:-main}"...HEAD
 git diff HEAD --stat
-git diff HEAD
 git ls-files --others --exclude-standard
 ```
 
-Include committed and uncommitted changes when they are in the requested
-scope. Read the listed untracked source files without opening credentials
-or generated binaries. State the base, HEAD and working-tree boundary;
-an empty committed diff does not establish that prepared work is empty.
+That is the boundary, not the content. The reviewer reads the diff
+itself, file by file; a whole diff pasted into this chat or into a brief
+crowds out the lines that matter. Include committed and uncommitted
+changes when they are in the requested scope, and name the untracked
+source files, leaving out credentials and generated binaries. State the
+base, HEAD and working-tree boundary; an empty committed diff does not
+establish that prepared work is empty.
 
 Then dispatch the five agents, at most three at once:
 
@@ -39,9 +41,12 @@ Then dispatch the five agents, at most three at once:
    (no surprise abstractions, no surprise dependencies between
    layers).
 
-Each agent receives the same brief: "Review the diff between $1
-and HEAD. Output findings only; do not modify code. Stay under
-your agent's word cap."
+Each agent receives the same brief, with the base and head revisions,
+the original request, the acceptance criteria and any validation
+results: "Review the change between <base> and <head>. Read the diff
+yourself and open the code around it as far as each question needs.
+Output findings and what you read; do not modify code. Keep the prose
+short and never drop a finding to fit a length."
 
 After all five return, synthesize:
 

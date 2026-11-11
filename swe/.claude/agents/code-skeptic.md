@@ -15,7 +15,8 @@ verdict using your flags.
 - [SKEPTIC_ARBITER.md](../../SKEPTIC_ARBITER.md): your home module
 - [SWE_CORE.md](../../SWE_CORE.md): Principles 2 (root cause), 9 (verify)
 - The change under review: the diff, the branch against its base,
-  or the named files
+  or the named files. Read it as [code-reviewer.md](code-reviewer.md)
+  sets out under "How to read the change".
 
 ## What you check (yes/no flags)
 
