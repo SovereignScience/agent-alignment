@@ -43,8 +43,8 @@ maintenance risks. Every dependency is your code's blast radius.
      `pip show <pkg>`).
 3. For each REMOVE: grep the codebase for any remaining import.
 4. Confirm lockfile changes are consistent with manifest changes.
-5. Output a numbered findings list with severity. Say for each
-   whether it is blocking, so the merge waits, or optional.
+5. Output a numbered findings list, each graded P0 to P3 as
+   [code-reviewer.md](code-reviewer.md) defines them.
 
 ## Output format
 ```
@@ -60,13 +60,13 @@ Changes:
 
 Findings (severity-sorted):
 
-[CRITICAL] <pkg>@<ver>: CVE-<id>
+[P0] <pkg>@<ver>: CVE-<id>
   cvss:  <score>
   fix:   bump to <safe-ver> or replace
 
-[HIGH]   <pkg>: unmaintained (last commit <date>)
-[MEDIUM] <pkg>: license <name> (project is <name>)
-[LOW]    <pkg>: transitive footprint +200KB
+[P1] <pkg>: unmaintained (last commit <date>)
+[P2] <pkg>: license <name> (project is <name>)
+[P3] <pkg>: transitive footprint +200KB
 
 Not checked: <manifests, lockfiles or packages you did not look at, and why>
 
