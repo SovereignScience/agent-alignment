@@ -1,9 +1,11 @@
 # CLAUDE.md: agent-alignment (root)
 
-This file is a router. The repository holds two independent toolkits. Do
-not work from this folder: open the session in a track's folder, so that
-track's settings, hooks, agents and commands load, and follow its
-`CLAUDE.md`.
+This file is a router. The repository holds two independent toolkits.
+Open the window at this folder, the main checkout: a session reaches only
+the folder it was opened in, and Git, the board and every task worktree
+are here. Then follow the `CLAUDE.md` of the track the work is in. A
+window opened in a track folder or a worktree loads that track's
+settings, agents and commands but loses Git or the board.
 `AGENTS.md` is a symlink to this file, here and in each track.
 
 | Track | Folder | Use when |
@@ -26,12 +28,8 @@ The layout is in [README.md](README.md) and the reason for two tracks in
   to run. Confirm before recursive deletes, dependency removal and CI
   changes. Hooks are best-effort guards; the deny lists, and in
   `swe/` the sandbox, are the boundary.
-- No AI attribution anywhere: no AI co-author trailers, no
-  "generated with" footers, session links, badges or emoji. Keep human
-  co-author trailers. Every commit carries the owner's name and email
-  as author and committer: use the identity Git already has and never
-  set or override it. If it is missing or names a tool, stop and ask.
-  Name branches for the work, never for a tool.
+- No AI attribution anywhere, and every commit under the owner's own
+  Git identity: the user rules have both in full, and hooks check them.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing a track.
   It has track-specific rubrics.
 
@@ -47,20 +45,22 @@ and rules for answering review threads.
 
 - Never edit files in this checkout for task work. It stays on main for
   the owner's merges and for board writes.
-- Plan before code. For a task that changes behaviour, write the plan to
-  the file `lattice plan AA-<n>` names, set
+- Plan before code. Before the first edit to a guardrail file there is a
+  board task with an approved plan, however small the request and
+  whoever made it. Guardrail files are settings, hooks, scripts, agents,
+  commands, rules and instruction files: any CLAUDE.md or AGENTS.md, the
+  protocols, anything under .claude/ or codex/, the installers. For any
+  other task that changes behaviour, write the plan to the file
+  `lattice plan AA-<n>` names, set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
-  owner approves it. One exception: a task the owner selected
-  goes ahead without that stop, and with no flag, when all of this holds.
-  Its plan fits the small-fix form (Need, Acceptance criteria, Steps,
-  Coverage boundary) and leaves the owner nothing to decide. The change
-  is easy to revert. It touches none of these: settings, hooks, scripts,
-  agents, commands, rules or instruction files (any CLAUDE.md or
-  AGENTS.md, the protocols, anything under .claude/ or codex/, the
-  installers); authentication, permissions, secrets or network access;
-  stored data or its format. The plan says which of these it checked.
-  When in doubt it is not small. The owner's review of the code is still
-  required before a merge.
+  owner approves it. A task the owner selected skips that stop, with no
+  flag, when its plan fits the small-fix form (Need, Acceptance
+  criteria, Steps, Coverage boundary), leaves the owner nothing to
+  decide, is easy to revert and touches no guardrail file,
+  authentication, permissions, secrets, network access, stored data or
+  its format. The plan says which of these it checked. When in doubt it
+  is not small. The owner's review of the code is still required before
+  a merge.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging
@@ -78,27 +78,15 @@ and rules for answering review threads.
   owner picks one.
   Then edit, test and run servers only there, with `LATTICE_ROOT` set to
   this checkout.
-- The board has its own private Git repository at `.lattice/`. Use source
-  Git from the task checkout and board Git with `git -C .lattice` from the
-  main checkout. Keep `LATTICE_ROOT` at the main checkout; its workspace
-  covers both repos.
-  Board checkpoints require an explicit request; remote creation and
-  pushing remain the owner's.
 - End every commit for a task with the trailer line `Task: AA-<n>`, so the
   review section can find it.
-- Reviewing a diff or giving a verdict: load `swe/SKEPTIC_ARBITER.md`.
-  Answering review threads: use the reply shape and rules in
-  `.lattice/context.md`.
 - One question per needs_human flag, starting "Need:"; other decisions go
   in the plan, one per line. Clear a flag only when the owner says so,
   quoting the owner's words in the note.
-- The comment roles review and plan-review are only for the owner's
-  Plannotator results. Agents use validation, or no role.
 - At most three workers at once, each in its own task's worktree.
-- Write board comments for the owner in plain language: the point first,
-  then why, what a thing is before its path, one idea per paragraph, raw
-  output attached rather than pasted. The full rule is "Writing on the
-  board" in `.lattice/context.md`.
+- Write board notes for the owner in plain language, one sentence a line
+  with raw output attached; "Writing on the board" in
+  `.lattice/context.md` has the rule.
 - Never run lattice status <ID> done, lattice complete or lattice next;
   completion is the owner's, through the review section.
 

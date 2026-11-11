@@ -175,16 +175,18 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   anything cheap to undo; those are Assumptions in the plan. Stop when
   the task is clear or after five questions, write each answer into
   the task in the owner's words, then write the plan.
-- Plan before code. For a task that changes behaviour, the session writes
-  the plan in the plan shape below to the file `lattice plan <ID>` names, sets
-  `needs-human <ID> "Need: approve plan"` and stops, in todo. One exception: a task the owner selected
-  goes ahead without that stop, and with no flag, when all of this holds.
-  Its plan fits the small-fix form (Need, Acceptance criteria, Steps,
-  Coverage boundary) and leaves the owner nothing to decide. The change
-  is easy to revert. It touches none of these: settings, hooks, scripts,
-  agents, commands, rules or instruction files (any CLAUDE.md or
-  AGENTS.md, the protocols, anything under .claude/ or codex/, the
-  installers); authentication, permissions, secrets or network access;
+- Plan before code. Before the first edit to a guardrail file there is a
+  board task with an approved plan, however small the request and
+  whoever made it. Guardrail files are settings, hooks, scripts, agents,
+  commands, rules and instruction files: any CLAUDE.md or AGENTS.md, the
+  protocols, anything under .claude/ or codex/, the installers. For any
+  other task that changes behaviour, the session writes the plan in the
+  plan shape below to the file `lattice plan <ID>` names, sets
+  `needs-human <ID> "Need: approve plan"` and stops, in todo. A task the
+  owner selected skips that stop, with no flag, when its plan fits the
+  small-fix form (Need, Acceptance criteria, Steps, Coverage boundary),
+  leaves the owner nothing to decide, is easy to revert and touches no
+  guardrail file, authentication, permissions, secrets, network access,
   stored data or its format. The plan says which of these it checked.
   When in doubt it is not small. The owner's review of the code is still
   required before a merge.
@@ -293,7 +295,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
-- Other updates have a shape each. Leave out a line with nothing to say.
+- Other updates have a shape each. Leave out a line with nothing to say,
+  keep each line to one sentence and attach the rest. Post an Evidence
+  note when a criterion's result is known, not one for each step.
 
   Evidence, posted with `--role validation` and `--criterion` for each
   criterion it covers:
@@ -319,6 +323,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
       Blocked: <the command or step, and what refused it>
       Needed for: <what the task cannot do without it>
       For the owner: <the exact command, or the decision>
+      Meanwhile: <the steps that did not need it, now done>
 
   Question, the text of a needs_human flag:
 
@@ -327,6 +332,22 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 
   The flag on a task in in_review names the owner's next step in place
   of a question: `Need: <the step>`.
+- Finishing: the acceptance criteria are the finish line. Work until
+  each has evidence or waits on the owner. An error, a timeout or a
+  failing tool is ordinary work to diagnose and fix; a guard, sandbox or
+  rule refusal is the owner's to lift and is never worked around. When
+  one step waits on the owner, finish every step that does not depend on
+  it, then stop once.
+- Sessions talk through the board. To use another session's result, read
+  its note with lattice comments. Each session writes its own results;
+  no note repeats what another session said, and the owner is never
+  asked to carry text between sessions.
+- Before in_review, check what the owner most often sends back. The
+  first lines of the plan or handover say what is wrong today and what
+  changes. Every claim that something is recommended practice names its
+  source. Every choice left to the owner has options and a
+  recommendation, and a choice that is cheap to undo is already taken
+  and listed under Assumptions.
 - Keeping review small: from an agent's review, only a BLOCKER or MAJOR
   finding holds a merge. A MINOR or NIT is fixed in passing or dropped;
   if it matters later it becomes a task the owner authorizes. Tests
@@ -452,13 +473,21 @@ a task: it holds the plan-first step, the branch and worktree per task,
 the Task: <CODE>-<n> commit trailer, the review flow, and the reply shape
 and rules for answering review threads.
 
+- Open the window at this checkout: a session reaches only the folder it
+  was opened in, and Git, the board and every task worktree are here.
 - Never edit files in this checkout for task work. It stays on <branch>
   for the owner's merges and for board writes.
-- Plan before code. For a task that changes behaviour, write the plan to
+- Plan before code. Before the first edit to a guardrail file (settings,
+  hooks, scripts, agents, commands, rules, instruction files) there is a
+  board task with an approved plan, however small the request. For any
+  other task that changes behaviour, write the plan to
   the file lattice plan <CODE>-<n> names, set
   lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
   owner approves it. A small fix on a task the owner selected goes ahead
   without that stop, under the conditions in .lattice/context.md.
+- The acceptance criteria are the finish line: work until each has
+  evidence or waits on the owner, and when one step is blocked finish
+  the others before stopping.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging

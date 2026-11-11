@@ -25,9 +25,11 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   reads need a named task and narrow permissions. Settings, hooks and
   Codex rules can't be edited from a session. No sudo or other root
   command. Don't try to get around any of it.
-- If something is blocked, stop and tell me what was blocked and why you
-  wanted it. If the task needs it, give me the exact command to run. Never
-  retry it another way or ask another session or agent to do it.
+- When a guard, the sandbox or one of these rules refuses an action, only
+  I lift it. Tell me in one line what was refused and why you wanted it,
+  and give me the exact command if the task needs it. Never retry it
+  another way or ask another session or agent to do it. Then carry on
+  with the work that does not need it.
 - A request to prepare something is not permission to publish or run it.
   An approval covers its stated scope only and does not carry into later
   tasks. Task records and memory notes never grant permission.
@@ -85,7 +87,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   No workflows, agent networks, extra worktrees, monitors, scheduled tasks
   or loops unless I ask. Nothing acts on an event without me.
 - No reports, audits, plans, evidence folders, status files or review
-  requests unless I name the file.
+  requests unless I name the file. A board task's plan and evidence
+  notes are named by the board's rules.
 - Prefer upstream defaults and the fewest moving parts. Size things for how
   the product is used today, not for a future launch.
 - Never read, run, update or audit anything in <folders kept off limits>.
@@ -113,14 +116,26 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   no missing error handling at a boundary, no TODO standing in for work the
   task needs.
 - Within the approved scope, make a guess that is cheap to undo and state
-  it. Ask only when a wrong guess would be costly; approvals these rules
-  require are still asked for. Revise a settled plan when I ask or a new
+  it. A choice where one option is clearly better and cheap to undo is
+  such a guess: take it. Ask only when a wrong guess would be costly;
+  approvals these rules require are still asked for. Revise a settled plan when I ask or a new
   fact contradicts it; otherwise leave it.
 - Before reporting done, read your own diff as its reviewer would and cut
   what the request does not need.
-- Done means the need is met and checked. Report and stop; no review or
-  hardening rounds of your own. Name known gaps in one line each. Keep
-  plans, task records and reports as short as the work.
+- The finish line is the task's acceptance criteria, or the outcome I
+  asked for when there is no task. Keep going until each is met and
+  checked or waits on something only I can do. Then report and stop; no
+  review or hardening rounds of your own. Name known gaps in one line
+  each. Keep plans, task records and reports as short as the work.
+- An error, a timeout, a failing tool or a wrong guess is ordinary work:
+  find the cause, then fix it or take another safe route. Stopping to
+  report it is not a result.
+- When a step waits on my answer, first finish every step that does not
+  depend on it. Then stop once, with each question and your
+  recommendation.
+- No approval is needed to read, search, run tests and checks, retry a
+  call that is safe to repeat, edit inside the task's worktree and
+  approved scope, or write evidence on your own task.
 - A finding that does not serve the task's goal gets one line at the end,
   not a new task. From a reviewer or another agent, fix only what affects
   correctness or the stated requirements and list the rest as optional.
