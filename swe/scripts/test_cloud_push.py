@@ -161,6 +161,18 @@ class CloudPush(unittest.TestCase):
                                capture_output=True, text=True)
         self.assertEqual(json.loads(cloud.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_the_root_guard_hook_loads_no_python_module_from_the_environment(self):
+        import json
+        root = SCRIPT.parents[2]
+        hook = json.loads((root / ".claude/settings.json").read_text())["hooks"]["PreToolUse"][0]["hooks"][0]
+        planted = pathlib.Path(self.tmp.name, "planted")
+        planted.mkdir()
+        (planted / "json.py").write_text("raise SystemExit(0)\n")
+        call = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git push origin main"}})
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CLAUDE_CODE_REMOTE="true", PYTHONPATH=str(planted))
+        cloud = subprocess.run([BASH, "-c", hook["command"]], input=call, env=env, capture_output=True, text=True)
+        self.assertEqual(json.loads(cloud.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
+
 
 if __name__ == "__main__":
     unittest.main()

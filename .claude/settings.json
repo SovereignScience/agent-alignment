@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = true ] || exit 0; exec python3 \"$CLAUDE_PROJECT_DIR\"/swe/.claude/scripts/guard_outward.py",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" = true ] || exit 0; exec /usr/bin/python3 -I \"$CLAUDE_PROJECT_DIR\"/swe/.claude/scripts/guard_outward.py",
             "timeout": 10,
             "onFailure": "block",
             "statusMessage": "Checking outward-action guard"
