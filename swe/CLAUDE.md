@@ -42,11 +42,9 @@ affected protocol.
 6. Verify before claiming done: type checks are not feature checks;
    open the browser, run the command. Reuse valid evidence and state
    material paths that were not exercised.
-7. Push, force-push and `--no-verify` are denied, apart from the cloud
-   session push in the root guide. Never amend or
-   rewrite published history. Confirm before recursive deletes, local
-   history rewrites, dependency removal, schema migrations and CI
-   changes.
+7. Pushes, hook skips and published history: the root guide's limits
+   apply. Confirm before recursive deletes, local history rewrites,
+   dependency removal, schema migrations and CI changes.
 8. Hooks are best-effort guards; the sandbox and the deny list are
    the boundary. Do not work around either; fix the underlying
    issue.
@@ -75,13 +73,12 @@ affected protocol.
 | Compare candidate versions of one task | `code-reviewer` | `/swe-compare` |
 | Install the five protocols in another repo | (orchestrator) | `/swe-init` |
 
-Codex has no slash commands: open the command's file in
-`.claude/commands/` and follow it.
+Where a command or agent is not loaded, as in Codex or a window opened
+at the main checkout, open its file under `.claude/` and follow it.
 
-Use subagents to keep research out of the main context, a few at a
-time and at most three at once. Run the review and audit agents only
-when the user asks. `/swe-swarm-review` runs five independent reviews
-(code, security, perf, deps, architecture), three at a time.
+Run at most three subagents at once, and the review and audit agents
+only when the user asks. `/swe-swarm-review` runs five independent
+reviews (code, security, perf, deps, architecture), three at a time.
 
 ## Build, verify
 
