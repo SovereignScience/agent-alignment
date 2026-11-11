@@ -81,6 +81,13 @@ unpolished what its fix would rewrite.
 6. Context. Read the whole file around each change, since a diff hides
    what it leaves broken beside it.
 
+An agent reads a change in two passes, set out step by step in
+`.claude/agents/code-reviewer.md`: every changed line first, then only
+the surrounding code a question needs. About half of real review
+comments need more than the changed lines, yet models handed whole
+files reviewed worse in one test, and one that starts by exploring
+misses plain faults in the change.
+
 | Part of a review | Adequate | Excellent |
 |---|---|---|
 | A finding | Says something could break | Names the input, the line, the consequence and the smallest fix, and was checked before it was reported |
@@ -169,5 +176,17 @@ is judged by the rubrics above, never by a count.
   twenty.
 - Wang and others, "LLMs Meet Library Evolution" (ICSE 2025): every
   model tested suggested deprecated APIs. https://arxiv.org/abs/2406.09834
+- Zhang and others, "AACR-Bench" (2026): of 1,505 review comments, 518
+  needed the whole file and 233 the repository; reviewers that explored
+  were precise and missed local faults. https://arxiv.org/abs/2601.19494
+- Kumar, "SWE-PRBench" (2026, a single-author preprint): eight models
+  found 15 to 31 percent of what human reviewers flagged, and each
+  scored lower when given whole files. https://arxiv.org/abs/2603.26130
+- Anthropic, Code Review: findings are checked against the code before
+  they are reported, and review rules are read from the base branch.
+  https://code.claude.com/docs/en/code-review
+- OpenAI, "Custom Code Review rules for Codex" (2026): written rules
+  raised detection of those faults from 58 to 98 percent in the vendor's
+  own test. https://developers.openai.com/blog/custom-code-review-rules-for-codex
 - Anthropic, prompting best practices: the block against
   over-engineering (scope, documentation, defensive code, abstractions).
