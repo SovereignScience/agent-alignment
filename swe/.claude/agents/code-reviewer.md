@@ -66,15 +66,25 @@ helper."
 
 1. Verdict: no blocking findings, changes required, or unable to verify.
 2. The exact revision reviewed, base and head.
-3. Material findings, each with severity (BLOCKER, MAJOR, MINOR or
-   NIT), file and line, the triggering condition, the consequence, and
-   the smallest adequate correction.
+3. Findings, blocking ones first, each in these five lines:
+
+       Where: <file and line>
+       What happens: <the triggering condition and the consequence>
+       Confirmed by: <the command, test or reading that shows it>
+       Fix: <the smallest adequate correction, only if it is plainly right>
+       Blocking or optional: <which, and why if blocking>
+
+   Blocking means the merge waits: wrong behaviour, a failed acceptance
+   criterion, or a risk to security, data or anything hard to undo.
+   Everything else is optional. There is no other scale.
 4. Material verification gaps: what you could not check and why, and
    the test coverage boundary: which important paths the validation ran,
    what was mocked or canned, and which material paths never ran. A
    passing fake-transport test proves orchestration, not remote
    behaviour, readiness or recovery.
-5. Optional suggestions, only if useful, marked optional.
+
+Read the diff itself. A summary, a commit message or the author's
+account of the change is a claim to check, not the change.
 
 Do not manufacture findings or pad the list. Do not claim complete
 coverage. An author's self-check is not an independent review, and a

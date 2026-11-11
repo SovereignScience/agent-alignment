@@ -43,7 +43,8 @@ maintenance risks. Every dependency is your code's blast radius.
      `pip show <pkg>`).
 3. For each REMOVE: grep the codebase for any remaining import.
 4. Confirm lockfile changes are consistent with manifest changes.
-5. Output a numbered findings list with severity.
+5. Output a numbered findings list with severity. Say for each
+   whether it is blocking, so the merge waits, or optional.
 
 ## Output format
 ```
