@@ -222,6 +222,27 @@ for completing one feature through an end-to-end check. The shared plan
 shape combines those practices with this toolkit's approval and testing
 rules. Keep source links and required provenance when adapting guidance.
 
+Other kits give an agent a planning and review workflow:
+[Superpowers](https://github.com/obra/superpowers),
+[OpenSpec](https://github.com/Fission-AI/OpenSpec) and the
+[BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD), besides
+Spec Kit. Felipe Fontoura
+[ran one small feature through all four](https://felipefontoura.com/articles/spec-driven-development-tools-compared/)
+in October 2026, and two of his results match choices made here. The
+heaviest process cost about nine times the lightest and passed the same
+thirteen acceptance checks, so here the plan grows with the task and a
+small fix skips the approval stop. None of the four recorded a human
+approval that code could check, so here the plan approval, the evidence
+for each acceptance criterion and each review thread are records on the
+board, and the review section does not offer Mark done while a criterion
+lacks evidence or a thread is open.
+
+The command guard is closest to [guard](https://github.com/TracineHQ/guard)
+and [Leash](https://github.com/hoophq/leash), hooks that stop a harmful
+command before it runs. guard calls itself defense in depth and not a
+security boundary. The same holds here: a hook reads the text of a
+command, so the sandbox and the deny lists are the boundary.
+
 ---
 
 ## Cloud sessions
