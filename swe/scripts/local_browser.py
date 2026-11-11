@@ -115,6 +115,14 @@ def size(text):
     return tuple(int(n) for n in text.split("x"))
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect from the app is an answer, never a second request: the
+    app chooses the target, and it need not be on this machine."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 class App:
     """The app under test, started here because a sandboxed localhost is private."""
 
@@ -123,7 +131,7 @@ class App:
         with open(self.log, "w") as log:
             self.process = subprocess.Popen(command, shell=True, start_new_session=True,
                                             stdout=log, stderr=subprocess.STDOUT)
-        direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
         deadline = time.monotonic() + timeout
         while True:
             try:
