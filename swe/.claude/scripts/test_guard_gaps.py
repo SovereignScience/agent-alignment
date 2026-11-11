@@ -172,6 +172,23 @@ class WrappedCommandCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+class RefusalWording(unittest.TestCase):
+    def reason(self, command):
+        result = subprocess.run(["/usr/bin/python3", "-I", str(GUARD)], input=json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": command}}), text=True,
+            capture_output=True, check=True, timeout=10)
+        return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_a_refusal_opens_with_its_own_reason_and_says_to_carry_on(self):
+        for command, opening in (("git commit -n -m x", "Blocked: git commit -n, the short form of --no-verify."),
+                                 ("git push origin main", "Blocked: git push.")):
+            with self.subTest(command=command):
+                reason = self.reason(command)
+                self.assertTrue(reason.startswith(opening), reason)
+                self.assertIn("Do not retry it another way.", reason)
+                self.assertTrue(reason.endswith("Carry on with the work that does not need it."), reason)
+
+
 class SplitCommandCases(unittest.TestCase):
     def test_a_continued_line_is_read_as_one_command(self):
         commands = [
