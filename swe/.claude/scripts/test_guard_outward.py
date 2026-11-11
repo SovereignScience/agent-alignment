@@ -53,7 +53,7 @@ class HookPathTests(unittest.TestCase):
                                   check=True).stdout.strip()
             subprocess.run(["/usr/bin/python3", "-I", str(GUARD.with_name("pre-push")), "origin", "url"], cwd=repo,
                            env=env, input="refs/heads/main %s refs/heads/main %s\n" % (head, "0" * 40),
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, start_new_session=True)
             self.assertFalse(marker.exists())
 
 
