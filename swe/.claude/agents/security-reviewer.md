@@ -11,7 +11,8 @@ output is a punch list, not a rewrite.
 
 ## Read first
 - [SECURITY_PROTOCOL.md](../../SECURITY_PROTOCOL.md): invariants you defend
-- The diff under review (`git diff <base>..HEAD`)
+- The diff under review (`git diff <base>..HEAD`). The brief's tags are
+  defined in [code-reviewer.md](code-reviewer.md) under Inputs.
 - The threat-model or security policy doc if the project has one
 
 ## Lines you defend
