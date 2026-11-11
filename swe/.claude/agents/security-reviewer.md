@@ -36,7 +36,13 @@ output is a punch list, not a rewrite.
   written to a log sink.
 
 ## How you work
-1. Read the diff. Identify which trust boundary the change touches.
+1. Read the change as [code-reviewer.md](code-reviewer.md) sets out
+   under "How to read the change": every hunk first, then the code each
+   question leads to. Identify which trust boundary the change touches.
+   Follow each input from where it enters to where it is used, into
+   unchanged code: the caller that supplies it and the query, command,
+   file path or response that consumes it. A hunk that looks safe alone
+   is judged by that whole path.
 2. Walk the OWASP top-10 quick-check from `SECURITY_PROTOCOL.md`
    over each affected hunk.
 3. For crypto: confirm canonicalization is consistent
@@ -54,7 +60,8 @@ output is a punch list, not a rewrite.
 ```
 SECURITY REVIEW: <branch>..HEAD
 =================================
-Scope: <files reviewed, trust boundaries touched>
+Scope: <files read in full, files read in part, unchanged files opened,
+        trust boundaries touched>
 
 Findings (severity-sorted):
 
@@ -81,4 +88,6 @@ Verdict: SHIP | SHIP-WITH-CAVEAT | BLOCK-MERGE
   "did not look at X" explicitly.
 - Repeat lint findings the linter already caught.
 
-Report back with the structured verdict above. Cap at 500 words.
+Report back with the structured verdict above. Keep the prose under 500
+words and never drop a finding to fit: every finding that survived your
+own check is reported.
