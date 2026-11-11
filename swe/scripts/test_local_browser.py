@@ -3,6 +3,7 @@
 The browser tests skip where no headless shell is installed. Set
 SWE_HEADLESS_SHELL to a headless shell build to run them elsewhere.
 """
+import http.server
 import json
 import os
 import pathlib
@@ -12,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import zlib
 
@@ -86,6 +88,42 @@ class Addresses(unittest.TestCase):
                     "http://user@example.com@127.0.0.1.evil.test/", "javascript:alert(1)", "http:///nohost"):
             with self.subTest(url=url):
                 self.assertFalse(local_browser.is_local(url))
+
+
+class Readiness(unittest.TestCase):
+    def test_a_redirect_from_the_app_is_not_followed(self):
+        asked = []
+
+        class Elsewhere(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                asked.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        elsewhere = http.server.HTTPServer(("127.0.0.1", 0), Elsewhere)
+        self.addCleanup(elsewhere.server_close)
+        threading.Thread(target=elsewhere.serve_forever, daemon=True).start()
+        self.addCleanup(elsewhere.shutdown)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        app = pathlib.Path(tmp.name, "app.py")
+        app.write_text(
+            "import http.server\n"
+            "class Redirect(http.server.BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        self.send_response(302)\n"
+            "        self.send_header('Location', 'http://127.0.0.1:%d/elsewhere')\n"
+            "        self.end_headers()\n"
+            "http.server.HTTPServer(('127.0.0.1', %d), Redirect).serve_forever()\n" % (elsewhere.server_port, port))
+        started = local_browser.App("%s %s" % (sys.executable, app), "http://127.0.0.1:%d/" % port, 15, tmp.name)
+        started.stop()
+        self.assertEqual(asked, [])
 
 
 class Refusals(unittest.TestCase):
