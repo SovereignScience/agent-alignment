@@ -15,13 +15,21 @@ git rev-parse "${1:-main}" HEAD
 git diff "${1:-main}"...HEAD --stat
 ```
 
-Then spawn `security-reviewer` with the base and head revisions. Brief:
-"review the change between <base> and <head> per the format defined in
-your agent definition. Read the diff yourself, and follow each input
-into the unchanged code that supplies or consumes it. Walk the OWASP
-top-10 quick-check on every hunk that touches a trust boundary. Output
+Then spawn `security-reviewer`. Write the brief in the tags
+`code-reviewer` lists under Inputs, with the instruction last:
+
+```text
+<revisions>base <sha>, head <sha>; uncommitted: yes or no; untracked: <files or none></revisions>
+<request><what the owner asked for, in the owner's words where you have them></request>
+<acceptance_criteria><the task's criteria, one per line, or "none given"></acceptance_criteria>
+<author_claims><the author's summary, validation results and known limits, or "none"></author_claims>
+Review the change between the revisions per the format defined in your
+agent definition. Read the diff yourself, and follow each input into
+the unchanged code that supplies or consumes it. Walk the OWASP top-10
+quick-check on every hunk that touches a trust boundary. Output
 findings only; do not modify code. Keep the prose under 500 words and
-never drop a finding to fit."
+never drop a finding to fit.
+```
 
 Surface the findings to the user verbatim. If there is a P0 or P1
 finding, recommend BLOCK-MERGE. If the worst is P2, recommend

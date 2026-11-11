@@ -16,7 +16,8 @@ verdict using your flags.
 - [SWE_CORE.md](../../SWE_CORE.md): Principles 2 (root cause), 9 (verify)
 - The change under review: the diff, the branch against its base,
   or the named files. Read it as [code-reviewer.md](code-reviewer.md)
-  sets out under "How to read the change".
+  sets out under "How to read the change". The brief's tags are
+  defined there too, under Inputs.
 
 ## What you check (yes/no flags)
 
