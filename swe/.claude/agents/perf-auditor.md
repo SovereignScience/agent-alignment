@@ -55,21 +55,23 @@ Apply only the domains the repository actually uses.
 
 1. Read the hot-path code top to bottom
 2. For each finding, locate the line, classify by domain, estimate
-   impact (high/medium/low), suggest a one-line fix
+   impact, grade it P0 to P3 as `code-reviewer.md` defines them (a
+   missed stated budget is P1, a measurable cost with no budget is P2),
+   and suggest a one-line fix
 3. If you can measure cheaply, include numbers; measurement beats
    speculation
 
 # Output
 
 ```
-SUMMARY: <N> issues found, <M> high-impact
+SUMMARY: <N> issues found, <M> at P0 or P1
 
-[HIGH] file:line: <description>
+[P1] file:line: <description>
   Impact: <measured or estimated>
   Fix: <one-line suggestion>
 
-[MED]  ...
-[LOW]  ...
+[P2] ...
+[P3] ...
 
 RULED OUT: <one-line list>
 NOT READ: <changed files or paths you did not look at, and why>
