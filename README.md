@@ -86,6 +86,7 @@ agent-alignment/
 │   └── .claude/                      # alignment-only settings, agents, commands, scripts
 │
 ├── docs/
+│   ├── ADR-INDEX.md                  # every decision record, generated
 │   └── ADR-0001-dual-track.md        # why two tracks coexist
 ├── presentations/
 └── media/
