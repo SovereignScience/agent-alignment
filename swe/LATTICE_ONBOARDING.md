@@ -153,7 +153,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   | Docs | how to run it | also how to deploy, recover and roll back |
   | Old data and old callers | kept only where real data or users exist | kept, with a tested migration |
   | Monitoring | none | a health check, and an alert for each failure a user would feel |
-  | Review findings | BLOCKER and MAJOR | MINOR too on a path a user reaches |
+  | Review findings acted on | blocking ones | optional ones too on a path a user reaches |
   | New features | when the task asks | none: only changes that lower risk |
 
 - Cut for now: what the stage leaves out is not built, not planned and
@@ -332,10 +332,15 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   Evidence, posted with `--role validation` and `--criterion` for each
   criterion it covers:
 
-      Result: <what now works, in one sentence the owner can check>
+      Met: <what now works, in one sentence the owner can check>
       Checked: <each command and its result, and the commit it ran on>
       Not checked: <what was mocked, and what never ran>
       Remains: <the owner's next step, or none>
+
+  When the criterion is still open, the first line is
+  `Not met: <what is missing>` instead. The review section reads that
+  first word: a criterion whose newest note says Not met cannot be
+  marked done.
 
   Handover, the round summary posted before in_review:
 
@@ -347,6 +352,12 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
       Not checked: <as in Evidence>
       Look first at: <the file or decision most worth the owner's time>
       Remains: <what is left for the owner>
+
+  Paused, when a session stops part way through a task:
+
+      Paused: <what is done and checked so far>
+      Next: <the exact next step>
+      Open: <what is still uncertain, or none>
 
   Blocked, when a step is refused or cannot be done from the session:
 
@@ -368,6 +379,19 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   rule refusal is the owner's to lift and is never worked around. When
   one step waits on the owner, finish every step that does not depend on
   it, then stop once.
+- Context: a chat may run long and cover several tasks. Never ask the
+  owner to start a new one; keep the chat sound yourself.
+  - When the task changes, or after the chat has been compacted, read
+    the task again (lattice show, its plan and its comments) and work
+    from that record, not from memory of the chat.
+  - Before stopping part way, post a Paused note, so this chat or any
+    other can resume from the board.
+  - Give work that needs none of this chat's history to a subagent,
+    with a brief that stands alone: the goal, the paths, what to return
+    and a word limit. A search, a long log and a bug reproduction are
+    such work. Keep the raw output out of this chat.
+  - If an answer contradicts the task record or an earlier result, say
+    so in one line and read the record again.
 - Sessions talk through the board. To use another session's result, read
   its note with lattice comments. Each session writes its own results;
   no note repeats what another session said, and the owner is never
@@ -378,8 +402,10 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   source. Every choice left to the owner has options and a
   recommendation, and a choice that is cheap to undo is already taken
   and listed under Assumptions.
-- Keeping review small: from an agent's review, only a BLOCKER or MAJOR
-  finding holds a merge. A MINOR or NIT is fixed in passing or dropped;
+- Keeping review small: a finding is blocking or optional, and there is
+  no other scale. Blocking means wrong behaviour, a failed criterion, or
+  a risk to security, data or anything hard to undo; only that holds a
+  merge. An optional finding is fixed in passing or dropped;
   if it matters later it becomes a task the owner authorizes. Tests
   cover each behaviour in the acceptance criteria and each fixed bug,
   nothing more; a request for another test names the behaviour left
@@ -419,6 +445,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 
 Use this plan shape on every board created or updated from this guide.
 Update existing boards through authorized work in their own projects.
+
+A plan fits one screen, about sixty lines. When it would run longer, the
+task is too big: say where it splits and plan the first part.
 
 For a small fix with no unresolved design choice, write only Need,
 Acceptance criteria, Steps and Coverage boundary. State the problem,
