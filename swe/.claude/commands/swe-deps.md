@@ -22,7 +22,7 @@ CVEs and maintenance signal. For REMOVE, grep for remaining
 imports. Confirm lockfile and manifest agree. Keep the prose under 400
 words and never drop a finding to fit."
 
-Surface the verdict to the user. If CRITICAL or HIGH findings,
+Surface the verdict to the user. If there is a P0 or P1 finding,
 recommend BLOCK-MERGE.
 
 Do not modify any manifest or lockfile.

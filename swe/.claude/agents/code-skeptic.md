@@ -1,6 +1,6 @@
 ---
 name: code-skeptic
-description: Anti-sycophancy check on a code change. Run only when the user requests it by name or invokes its command. Reads the change, never a draft review of it, and returns yes/no flags against the SKEPTIC checklist; does not write the verdict. Read-only.
+description: Anti-sycophancy check on a code change. Run only when the user requests it by name or invokes its command, or the board's rules call for it. Reads the change, never a draft review of it, and returns yes/no flags against the SKEPTIC checklist; does not write the verdict. Read-only.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---

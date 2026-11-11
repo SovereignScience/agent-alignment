@@ -34,11 +34,11 @@ Steps:
    the plan, the acceptance criteria and the SWE_CORE invariants.
    Output findings only; do not modify code."
 5. Write the scorecard, one row per candidate: checks passed, failed
-   and not run; criteria met, each with its evidence; reviewer findings,
-   blocking and optional; lines added and removed; files changed outside the
+   and not run; criteria met, each with its evidence; reviewer findings
+   by grade; lines added and removed; files changed outside the
    plan's scope.
 6. Rank by the first rule that separates them: fails no check; meets
-   more criteria; has no blocking finding; changes fewer files
+   more criteria; has no P0 or P1 finding; changes fewer files
    outside scope. If none of these separates two candidates, report
    "no clear winner" and what each does better.
 7. Return the scorecard, the pick with the one rule that decided it,

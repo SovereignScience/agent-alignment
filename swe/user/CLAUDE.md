@@ -125,7 +125,7 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 - The finish line is the task's acceptance criteria, or the outcome I
   asked for when there is no task. Keep going until each is met and
   checked or waits on something only I can do. Then report and stop; no
-  review or hardening rounds of your own. Name known gaps in one line
+  review or hardening rounds unless a rule asks. Name known gaps in one line
   each. Keep plans, task records and reports as short as the work.
 - An error, a timeout, a failing tool or a wrong guess is ordinary work:
   find the cause, then fix it or take another safe route. Stopping to
@@ -288,8 +288,8 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   commits, the goal or spec, what changed and why, known risks, checks run
   as command and result, what never ran, and what to focus on and skip.
   Give evidence, not your verdict. Tell the reviewer to stay read-only,
-  verify claims against the code, and report blocking and optional
-  findings with file:line and how each was confirmed.
+  verify claims against the code, and report findings graded P0 to P3
+  with file:line and how each was confirmed.
 - When compacting, quote my last request word for word. List unfinished
   items as not started, not as next steps.
 - Write a memory note only when I say "remember": my words, two lines at
