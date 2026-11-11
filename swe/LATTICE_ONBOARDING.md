@@ -136,6 +136,36 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 ## Conventions
 
 - Tags name the area: <tag list, lowercase, one word each>.
+- Stage: <build or lock down>. The owner sets it for the project, and a
+  task's description may name the other one. It decides what is left
+  out, not how safe the work is. The same at both stages: security,
+  secrets, data loss, money, anything hard to undo, the guard and
+  sandbox limits, a test for each behaviour changed and each bug fixed,
+  and honest claims about what was checked.
+
+  | | build: the first version that works | lock down: before and in production |
+  |---|---|---|
+  | Scope | one path that works end to end for the first user | every path a user can reach, and each failure case |
+  | Options, settings, abstractions | none until a second use exists | only where an operator needs one |
+  | Error handling | fail loudly where it happens | recovery, and messages a user can act on |
+  | Tests | the acceptance criteria and each fixed bug | also failure paths, upgrade and rollback |
+  | Performance | only what a user would notice | measured against a named budget |
+  | Docs | how to run it | also how to deploy, recover and roll back |
+  | Old data and old callers | kept only where real data or users exist | kept, with a tested migration |
+  | Monitoring | none | a health check, and an alert for each failure a user would feel |
+  | Review findings | BLOCKER and MAJOR | MINOR too on a path a user reaches |
+  | New features | when the task asks | none: only changes that lower risk |
+
+- Cut for now: what the stage leaves out is not built, not planned and
+  not made into a task. Name each item in one line under "Cut for now"
+  in the plan, so the owner can pull any of it back. Before a task goes
+  to in_review, ask whether the stage needs it at all; if it does not,
+  say so in one line and propose parking it.
+- Parking: a task that does not make the cut is archived, not left in
+  backlog or review: a note that starts "Cut:" and says what would bring
+  it back, then `lattice archive <ID>`. It keeps its record and returns
+  with `lattice unarchive <ID>`. Parking is the owner's choice: a session
+  proposes cuts in one list and archives only the tasks the owner names.
 - backlog is captured. todo is selected by the owner; selected work that
   waits for plan approval stays todo with needs_human set. in_progress is
   active implementation, or a research deliverable the owner authorized.
@@ -419,6 +449,8 @@ before code".
 - Acceptance criteria: the outcomes the owner will check, each added
   with lattice criterion add and checkable without reading the code.
 - Out of scope: what the task leaves alone, and the task that owns it.
+- Cut for now: what the project's stage leaves out of this task, one
+  line each.
 - Assumptions: guesses made instead of asking, one sentence each, so the
   owner can reject any of them.
 - Owner decisions: at most three, one per line, each with the
