@@ -14,12 +14,13 @@ import sys
 import urllib.parse
 
 REASON = (
-    "Blocked by the user's standing rule: remote writes are owner-run "
-    "(push, PR, review, comment, merge, cluster, hosts, cloud, Slack, email) and "
-    "never read secret values. Stop. Tell the user what was blocked and why you "
-    "wanted it. If the task needs it, give the exact command for the user to run, "
-    "and let the user decide whether it should happen at all. Do not retry it "
-    "another way."
+    "Blocked: %s. This is one of the user's standing limits: remote writes are "
+    "owner-run (push, PR, review, comment, merge, cluster, hosts, cloud, Slack, email), "
+    "secret values are never read, and hooks and guardrails are not skipped or changed "
+    "from a session. Tell the user in one line what was blocked and why you wanted it. "
+    "If the task needs it, give the exact command for the user to run, and let the user "
+    "decide whether it should happen at all. Do not retry it another way. Carry on with "
+    "the work that does not need it."
 )
 
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
@@ -1071,7 +1072,7 @@ def main():
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
-                "permissionDecisionReason": "%s [%s]" % (REASON, b),
+                "permissionDecisionReason": REASON % b,
             }
         }))
 

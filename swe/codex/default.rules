@@ -20,12 +20,12 @@
 prefix_rule(
     pattern = ["rm", ["-r", "-R", "-rf", "-fr", "-Rf", "-fR", "-rfv", "-frv", "--recursive"]],
     decision = "forbidden",
-    justification = "Recursive delete is irreversible. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Recursive delete is irreversible. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["rm", "-f", ["-r", "-R"]],
     decision = "forbidden",
-    justification = "Recursive delete is irreversible. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Recursive delete is irreversible. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 
 prefix_rule(
@@ -56,13 +56,13 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "push", ["--force", "-f", "--force-with-lease", "--force-if-includes", "--mirror"]],
     decision = "forbidden",
-    justification = "Rewrites remote history. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Rewrites remote history. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 
 prefix_rule(
     pattern = [["sudo", "su", "doas", "pkexec"]],
     decision = "forbidden",
-    justification = "Needs the user's password. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Needs the user's password. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 # WSL only; harmless elsewhere.
 prefix_rule(
@@ -74,22 +74,22 @@ prefix_rule(
 prefix_rule(
     pattern = ["terraform", "destroy"],
     decision = "forbidden",
-    justification = "Deletes cloud infrastructure. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Deletes cloud infrastructure. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["terraform", "apply", "-destroy"],
     decision = "forbidden",
-    justification = "Deletes cloud infrastructure. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Deletes cloud infrastructure. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["doctl", "compute", ["droplet", "volume", "snapshot"], ["delete", "rm", "d"]],
     decision = "forbidden",
-    justification = "Deletes a server, disk or snapshot. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Deletes a server, disk or snapshot. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["gh", "repo", "delete"],
     decision = "forbidden",
-    justification = "Deletes a repository. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Deletes a repository. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 
 
@@ -97,7 +97,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "push"],
     decision = "forbidden",
-    justification = "Agents never push. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Agents never push. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["gh", "pr", ["create", "merge", "review", "comment", "close", "edit", "ready", "reopen"]],
@@ -122,7 +122,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["kubectl", ["apply", "create", "delete", "patch", "edit", "replace", "scale", "rollout", "annotate", "label", "cordon", "drain", "uncordon", "taint", "exec", "cp"]],
     decision = "forbidden",
-    justification = "Agents never change the cluster. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Agents never change the cluster. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["helm", ["install", "upgrade", "uninstall", "rollback"]],
@@ -140,7 +140,7 @@ prefix_rule(
 prefix_rule(
     pattern = [["ssh", "scp", "sftp"]],
     decision = "forbidden",
-    justification = "Agents never touch hosts. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Agents never touch hosts. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = [["terraform", "tofu"], ["apply", "import", "taint", "state"]],
@@ -158,7 +158,7 @@ prefix_rule(
 prefix_rule(
     pattern = ["git", "commit", ["-n", "--no-verify"]],
     decision = "forbidden",
-    justification = "Commits run the repository's hooks. Stop and explain the blocked action; do not retry or delegate it.",
+    justification = "Commits run the repository's hooks. Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it.",
 )
 prefix_rule(
     pattern = ["git", "worktree", "prune"],
