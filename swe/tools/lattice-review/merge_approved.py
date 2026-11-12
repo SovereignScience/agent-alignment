@@ -6,8 +6,10 @@
 The owner runs this in the main checkout. Each task's linked branch is
 merged in the order given, with a merge commit, only while the owner's
 latest review on that task approves exactly the commits about to land and
-every review thread is resolved. Every --check command must pass on the
-merged files before the push.
+every review thread is resolved. Every commit the branch carries must name
+its task in a Task trailer (a merge may name none), and a commit of another
+task needs that task's own standing approval. Every --check command must
+pass on the merged commit, in a temporary worktree, before the push.
 
 Nothing is undone here. A stop leaves what was done in place, says where
 things stand and prints the command that takes it back. A rerun continues
@@ -40,7 +42,7 @@ def run_checks(repo, commit, checks, say):
     tree = os.path.join(str(repo), ".worktrees", "check-" + commit[:12])
     if os.path.isdir(tree):
         write_git(repo, "worktree", "remove", "--force", tree)
-    added = write_git(repo, "worktree", "add", "-q", "--detach", tree, commit)
+    added = write_git(repo, "worktree", "add", "-q", "--force", "--detach", tree, commit)
     if added.returncode:
         raise Stop("could not make a worktree to run the checks in: %s" % added.stderr.strip())
     try:
@@ -100,10 +102,10 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print,
         return confirmed is not None and sid in tasks and sid not in confirmed
 
     def approves(other, sha):
-        """Whether the task's own recorded review covers the commit."""
+        """Whether the task's own approval, still standing, covers the commit."""
         if other not in covered:
             found = tasks.get(other) or lr.find_task(board, other)
-            covered[other] = lr.approved_commits(repo, notes.get(other) or comments_of(other)) if found else set()
+            covered[other] = lr.standing_approvals(repo, notes.get(other) or comments_of(other)) if found else set()
         return sha in covered[other]
 
     def foreign(sid, head):

@@ -290,11 +290,19 @@ accepts a merge already on local main only when it has the same two
 parents and the same files as the one it would make. `--no-push` stops
 after the checks, and `--skip-unapproved` leaves out a task whose review
 does not cover its commits, together with every task whose branch
-contains that task's branch or a commit carrying its trailer.
+contains that task's branch or a commit carrying its trailer. Every
+commit a branch carries must name its task in a `Task:` trailer (a merge
+may name none), and a commit of another task lands only while that
+task's own approval stands, whether or not the run names it. The checks
+run on the merged commit in a temporary worktree, so files left in the
+checkout do not count. `--confirmed` names the tasks answered yes in
+this run; any other task it is given is left out.
 
 `owner_review.py` takes the same decisions in the terminal. `approve`
-shows a task's head commit and a one-line summary, lets you resolve an
-open thread, and records a yes as a review bound to those commits. The
+asks about every task on every run, shows a task's head commit and a
+one-line summary, names any approval already recorded and every other
+task whose commits the branch carries, lets you resolve an open thread,
+and records a yes as a review bound to those commits. The
 record starts "Owner approved (terminal", so it says no diff was opened
 in Plannotator. `close` marks done what Mark done would allow, and asks
 before clearing a flag that still asks you something.

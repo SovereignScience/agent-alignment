@@ -66,8 +66,10 @@ def approve(board, sids, ask=input, say=print):
     never taken as this run's answer. Returns the IDs answered yes."""
     approved, declined = [], []
     heads = {}
+    pushed = "refs/remotes/origin/" + board.main
+    base = pushed if lr.rev(board.repo, pushed) else board.main
     for sid in sids:
-        waiting = lr.resolve_range(board.repo, board.task(sid), board.main)
+        waiting = lr.resolve_range(board.repo, board.task(sid), base)
         if waiting["mode"] == "branch":
             heads[sid] = waiting["head_sha"]
 
@@ -76,11 +78,11 @@ def approve(board, sids, ask=input, say=print):
 
     for sid in sids:
         task = board.task(sid)
-        rng = lr.resolve_range(board.repo, task, board.main)
+        rng = lr.resolve_range(board.repo, task, base)
         if rng["mode"] != "branch":
-            say("%s: nothing to approve, its linked branch has no commits past %s" % (sid, board.main))
+            say("%s: nothing to approve, its linked branch has no commits past %s" % (sid, base))
             continue
-        recorded = lr.review_block(board.repo, task, board.main, board.comments(sid)) is None
+        recorded = lr.review_block(board.repo, task, base, board.comments(sid)) is None
         try:
             for thread in lr.review_threads(board.comments(sid)):
                 if thread["state"] == "resolved":
@@ -97,19 +99,21 @@ def approve(board, sids, ask=input, say=print):
                 continue
             stat = first_line(lr.run_git(board.repo, "diff", "--shortstat", rng["base_sha"], rng["head_sha"]))
             say("%s  %s  %s" % (sid, rng["head_sha"], task.get("title") or ""))
-            say("    %d commit(s) past %s; %s" % (len(rng["commits"]), board.main, stat or "no file changed"))
+            say("    %d commit(s) past %s; %s" % (len(rng["commits"]), base, stat or "no file changed"))
             if recorded:
                 review = lr.latest_review(board.comments(sid))
                 say("    an approval is already recorded: by %s at %s; answer again for this run"
                     % (review.get("author"), review.get("created_at")))
-            owners = {other for _, ids, _ in lr.range_owners(board.repo, rng["base_sha"], rng["head_sha"]) for other in ids}
+            carried = lr.range_owners(board.repo, rng["base_sha"], rng["head_sha"])
+            owners = {other for _, ids, _ in carried for other in ids}
             inner = sorted((owners | {other for other in sids if other in heads and other != sid and contains(sid, other)})
-                           - {sid}, key=lambda other: [int(n) if n.isdigit() else n for n in other.split("-")])
+                           - {sid})
             if inner:
                 say("    its branch also holds the work of %d other task(s): %s" % (len(inner), " ".join(inner)))
                 say("    a yes here merges their commits too, so each of them must be approved as well")
                 waiting = [other for other in inner if other in declined or not board.find(other)
-                           or lr.review_block(board.repo, board.find(other), board.main, board.comments(other))]
+                           or not {sha for sha, ids, _ in carried if other in ids}
+                           <= lr.standing_approvals(board.repo, board.comments(other))]
                 if waiting:
                     say("    not approved themselves: %s; this task is not merged until they are" % " ".join(waiting))
             answer = "d"
