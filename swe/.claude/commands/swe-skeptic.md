@@ -28,12 +28,19 @@ establish that prepared work is empty.
 
 Steps:
 
-1. Spawn `code-skeptic` with the base and head revisions and any
-   visible context (the original request, the acceptance criteria,
-   prior turns of this review). Brief: "read the
-   change and return your flag list per the format defined in your
-   agent definition. SILENT if no flags fire."
-2. Spawn `code-arbiter` with the same revisions and the flag list (or
+1. Spawn `code-skeptic`. Open the brief with these tags, defined in
+   `code-reviewer` under Inputs, and put prior turns of this review in
+   `<author_claims>`:
+
+   ```text
+   <revisions>base <sha>, head <sha>; uncommitted: yes or no; untracked: <files or none></revisions>
+   <request><what the owner asked for, in the owner's words where you have them></request>
+   <acceptance_criteria><the task's criteria, one per line, or "none given"></acceptance_criteria>
+   <author_claims><the author's summary, validation results and known limits, or "none"></author_claims>
+   Read the change and return your flag list per the format defined in
+   your agent definition. SILENT if no flags fire.
+   ```
+2. Spawn `code-arbiter` with the same tagged block and the flag list (or
    `SILENT`). Brief: "produce the final verdict on the change,
    calibrated to flag severity. Cite file:line evidence, name
    severity, no hedge-burial."
