@@ -238,6 +238,11 @@ class LatticeCases(unittest.TestCase):
             "lattice needs-human AA-1 --clear --note ok --actor Human:patrick",
             "lattice comment AA-1 'Reviewed: abc' --role review --actor agent:claude",
             "lattice comment AA-1 ok --role=plan-review --actor agent:claude",
+            "python3 swe/tools/lattice-review/owner_review.py approve --actor human:patrick AA-1",
+            "LATTICE_ROOT=. python3 swe/tools/lattice-review/owner_review.py close --actor human:x AA-1",
+            "python3 -I tools/lattice-review/merge_approved.py --check true AA-1",
+            "bash swe/scripts/finish_batch.sh --actor human:patrick AA-1",
+            "cd swe && ./scripts/finish_batch.sh --actor human:patrick AA-1",
         ]
         for command in commands:
             with self.subTest(command=command):
