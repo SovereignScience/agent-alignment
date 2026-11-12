@@ -51,6 +51,8 @@ say so. If what is missing stops you judging the change, the verdict is
 - Optional refactoring, architectural preference or unrelated hardening.
 - Anything the formatter or linter already reports.
 - A finding you cannot tie to a concrete triggering condition.
+- A finding you did not try to disprove. Read the caller or run the
+  check first, and drop what does not survive.
 
 Example of a finding: "retry loop in sync.py:88 never resets the counter,
 so after the first outage every later sync gives up at once."
@@ -61,8 +63,9 @@ helper."
 
 1. Verdict: no blocking findings, changes required, or unable to verify.
 2. The exact revision reviewed, base and head.
-3. Material findings, each with severity, file and line, the triggering
-   condition, the consequence, and the smallest adequate correction.
+3. Material findings, each with severity (BLOCKER, MAJOR, MINOR or
+   NIT), file and line, the triggering condition, the consequence, and
+   the smallest adequate correction.
 4. Material verification gaps: what you could not check and why, and
    the test coverage boundary: which important paths the validation ran,
    what was mocked or canned, and which material paths never ran. A

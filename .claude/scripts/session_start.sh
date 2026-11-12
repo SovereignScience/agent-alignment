@@ -11,7 +11,7 @@ cat <<EOF
 agent-alignment (repo root): this folder is a router. Two tracks:
 
   swe/         agentic software-engineering toolkit
-               (12 SWE subagents, 14 SWE slash commands, language-aware hooks)
+               (specialist subagents, slash commands, language-aware hooks)
                cd swe/ && cat README.md
 
   flourishing/ Inner Commons + Flourishing alignment-prompt library
