@@ -19,7 +19,7 @@ case $1 in
     status)
         [ "$2" = --exit-code ] || exit 64
         [ ! -f "$HOME/blocked" ] || { echo "collision in the rules"; exit 2; }
-        [ -f "$HOME/installed" ] || { echo "would install the hooks"; exit 1; } ;;
+        [ -f "$HOME/installed" ] || { echo "would install the hooks"; exit 3; } ;;
     apply) touch "$HOME/installed" ;;
 esac
 """
@@ -175,7 +175,7 @@ class FinishBatch(unittest.TestCase):
             self.lattice("status", "T-3", status, "--no-auto-review")
         ids = ("T-1", "T-2", "T-3")
         code, out = self.finish("n\ny\ny\n\n", ids=ids)
-        self.assertIn("its branch also holds 1 other task(s) of this batch: T-1", out)
+        self.assertIn("its branch also holds the work of 1 other task(s): T-1", out)
         self.assertIn("T-3: skipped, its branch contains T-1, which is not approved", out)
         self.assertEqual(self.git("rev-list", "--count", "--first-parent", self.start + "..main"), "1")
         self.assertFalse((self.root / "one.txt").exists())
