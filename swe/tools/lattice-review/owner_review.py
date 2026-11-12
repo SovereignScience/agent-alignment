@@ -20,7 +20,8 @@ every task the review section would let you mark done, and says why for the
 rest; where a task's flag still asks you something it shows the flag and
 closes the task only if you clear it there. summary says where each task stands, and branches prints each task's
 linked branch. approve, evidence and close read every answer from the
-terminal, never stdin; with no terminal they stop and write nothing.
+terminal, not stdin; with no terminal they stop and write nothing. That
+stops a piped answer, not a program that makes a terminal of its own.
 """
 import argparse
 import os
@@ -63,7 +64,7 @@ def first_line(text):
 
 
 def terminal():
-    """The owner's answers, read from /dev/tty and never from stdin, so piped
+    """The owner's answers, read from /dev/tty and not from stdin, so piped
     input cannot answer for the owner."""
     try:
         tty_in, tty_out = open("/dev/tty"), open("/dev/tty", "w")
