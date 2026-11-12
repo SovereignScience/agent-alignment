@@ -55,8 +55,11 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
   changes. Hooks are best-effort guards; the deny lists, and in
   `swe/` the sandbox, are the boundary.
 - No AI attribution anywhere: no AI co-author trailers, no
-  "generated with" footers, badges or emoji. Keep human co-author
-  trailers.
+  "generated with" footers, session links, badges or emoji. Keep human
+  co-author trailers. Every commit carries the owner's name and email
+  as author and committer: use the identity Git already has and never
+  set or override it. If it is missing or names a tool, stop and ask.
+  Name branches for the work, never for a tool.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing a track.
   It has track-specific rubrics.
 

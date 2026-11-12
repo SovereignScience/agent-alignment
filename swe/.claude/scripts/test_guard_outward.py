@@ -2,6 +2,7 @@
 
 Run: python3 -m unittest discover -s swe/.claude/scripts -p 'test_*.py'
 """
+import importlib.util
 import json
 import os
 import pathlib
@@ -52,8 +53,80 @@ class HookPathTests(unittest.TestCase):
                                   check=True).stdout.strip()
             subprocess.run(["/usr/bin/python3", "-I", str(GUARD.with_name("pre-push")), "origin", "url"], cwd=repo,
                            env=env, input="refs/heads/main %s refs/heads/main %s\n" % (head, "0" * 40),
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, start_new_session=True)
             self.assertFalse(marker.exists())
+
+
+class PrePushTests(unittest.TestCase):
+    """With no terminal the hook refuses whatever it would have asked about."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = pathlib.Path(self.tmp.name)
+        self.git("init", "-q")
+        self.git("config", "user.name", "Owner")
+        self.git("config", "user.email", "owner@example.com")
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def push(self, ref="refs/heads/main", delete=False):
+        line = "%s %s %s %s\n" % (ref, "0" * 40 if delete else self.git("rev-parse", "HEAD"), ref, "0" * 40)
+        return subprocess.run(["/usr/bin/python3", "-I", str(GUARD.with_name("pre-push")), "origin", "url"],
+                              cwd=self.repo, input=line, capture_output=True, text=True, timeout=60,
+                              start_new_session=True)
+
+    def test_the_owners_own_commit_passes(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_commit_by_someone_else_is_held(self):
+        self.git("-c", "user.name=Claude", "-c", "user.email=noreply@anthropic.com", "commit", "-q",
+                 "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Not authored and committed by you: Claude <noreply@anthropic.com>", result.stderr)
+
+    def test_a_branch_named_for_an_agent_is_held(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        result = self.push("refs/heads/claude/fix-empty-input")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Branch named for an agent: refs/heads/claude/fix-empty-input", result.stderr)
+
+    def test_the_owners_email_under_another_name_is_held(self):
+        self.git("commit", "-q", "--allow-empty", "--author", "Claude <owner@example.com>", "-m",
+                 "fix: handle empty input")
+        result = self.push()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Not authored and committed by you: Claude <owner@example.com>", result.stderr)
+
+    def test_a_work_branch_that_starts_with_a_tool_name_passes(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        self.assertEqual(self.push("refs/heads/cursor-pagination-fix").returncode, 0)
+
+    def test_deleting_an_agent_branch_passes(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: handle empty input")
+        self.assertEqual(self.push("refs/heads/claude/old", delete=True).returncode, 0)
+
+    def test_attribution_without_the_emoji_and_human_names_are_told_apart(self):
+        spec = importlib.util.spec_from_file_location("tells", GUARD.with_name("tells_check.py"))
+        tells = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tells)
+        for text in ("Generated with [Claude Code](https://claude.com/claude-code)",
+                     "Co-authored-by: Cursor Agent <cursoragent@cursor.com>"):
+            self.assertIn("AI attribution", tells.find_tells(text), text)
+        self.assertNotIn("AI attribution",
+                         tells.find_tells("Co-authored-by: Jean-Claude Martin <jc@example.com>"))
+
+    def test_a_session_link_in_a_message_is_a_tell(self):
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 "fix: handle empty input\n\nClaude-Session: https://claude.ai/code/session_x")
+        result = self.push()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("AI attribution", result.stderr)
 
 
 class WebFetchTests(unittest.TestCase):
