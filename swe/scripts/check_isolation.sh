@@ -31,7 +31,7 @@
 # status line, MCP servers).
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-workspace="${SWE_WORKSPACE:-$HOME/projects}"
+workspace="${SWE_WORKSPACE:-$(dirname "$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")")}"
 etc="${SWE_ETC:-/etc/claude-code}"
 codex_etc="${SWE_CODEX_ETC:-/etc/codex}"
 sentinel_text="agent-alignment sentinel"
