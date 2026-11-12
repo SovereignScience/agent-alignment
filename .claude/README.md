@@ -15,7 +15,8 @@ track subtrees:
 
 | Path | Purpose |
 |---|---|
-| [settings.json](settings.json) | Minimal allowlist for read-only navigation; SessionStart + statusLine hooks only. No agents, no commands, no language hooks. |
+| [settings.json](settings.json) | Minimal allowlist for read-only navigation; SessionStart + statusLine hooks only. No agents, no commands, no language hooks. Switches off harness attribution on commits and pull requests, and runs the SWE track's guard as a PreToolUse hook when `CLAUDE_CODE_REMOTE` is true. Both are for a one-repository cloud session, which reads this file and nothing from the machine layer. |
+| [scripts/cloud_push.sh](scripts/cloud_push.sh) | The one way a cloud session pushes, and only when the owner asks: the current `feature/<ID>-<slug>` branch, or the board with `--board`. It refuses outside a cloud session. |
 | [scripts/session_start.sh](scripts/session_start.sh) | Prints a "you're at the router, `cd swe/` or `cd flourishing/`" message at session start. |
 | [scripts/statusline.sh](scripts/statusline.sh) | Status line that shows `(router)` to remind that real work happens in a subtree. |
 
