@@ -1,6 +1,6 @@
 ---
 name: dashboard-probe
-description: Headless-browser probe of a running web dashboard. Run only when the user requests it by name or invokes its command. Returns a JSON report and screenshots.
+description: Headless-browser probe of a local web page or dashboard. Run only when the user requests it by name or invokes its command. Returns a JSON report and screenshots.
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
 ---
@@ -11,15 +11,47 @@ complete the loop.
 
 # Pre-flight
 
-1. Read the project's existing browser test or probe setup. Most repos
-   already have one; extend it rather than rebuilding from scratch.
-2. Find the dashboard address from the repository's config, its
-   documented environment variables, or the task. If none says, ask once.
-   Never guess a port or page.
-3. Confirm the dashboard is running. If it's not, STOP and tell the
-   user; don't start a server you don't own.
-4. Confirm the data source is alive (mock running, device connected,
-   whatever the repo uses). Same rule: don't start it without confirmation.
+1. Read the project's own browser test or probe setup. Use it when it
+   runs in this session. Otherwise use `scripts/local_browser.py`, below.
+2. Find the page address and the command that starts the app from the
+   repository's config, its documented environment variables, or the
+   task. If none says, ask once. Never guess a port or page.
+3. Start the app in the same command as the browser, with `--app`. In a
+   sandboxed session a command's localhost is its own: a server the user
+   started elsewhere cannot be reached, and the one you start is private
+   to your command and stops with it. Use the development app and seeded
+   data only.
+4. If the app needs a data source that is not running (a device, a mock,
+   a database), stop and tell the user. Do not start one without
+   confirmation.
+
+# The browser
+
+`scripts/local_browser.py`, in the agent-alignment `swe/` folder, is the
+one browser route. It applies security rule 12: the headless shell only,
+a fresh profile, local addresses only, every other request failed. Do not
+use Playwright, Puppeteer, another browser or a debugging port. If it
+says the headless shell is missing, ask the user to install it.
+
+```bash
+python3 scripts/local_browser.py --app '<command that starts the app>' \
+    --out "$TMPDIR/probe" http://127.0.0.1:<port>/<page> \
+    'wait:<readiness selector>' shot:before \
+    'click:<selector>' shot:after \
+    'eval:document.querySelector("<selector>").getBoundingClientRect().toJSON()'
+```
+
+- Steps run in order: `shot:NAME`, `wait:SELECTOR`, `click:SELECTOR`,
+  `text:STRING`, `dialog:accept` or `dialog:dismiss`, `eval:JAVASCRIPT`,
+  `goto:URL`. `--help` has the rest.
+- The report on stdout lists screenshots, eval values, dialogs, console
+  messages, page errors and requests that failed or were blocked.
+- Save under the working folder or `$TMPDIR`. `/tmp` is not writable in
+  the sandbox.
+- A page that sets no background comes out white. If its text is light,
+  pass `--background '#1e1e1e'`, and `--scheme dark` for a page that
+  follows the system theme.
+- A page inside an iframe is probed at its own address.
 
 # What to capture
 
@@ -29,7 +61,7 @@ For every probe, capture at minimum:
 - Computed styles for any element whose layout you're verifying
   (`getComputedStyle`, not `style.foo`)
 - Bounding rects for parent, canvas and sidebar to confirm alignment
-- Console errors, forwarded from `page.on("console", ...)`
+- Console messages and page errors, from the report
 - A screenshot
 
 If verifying invariants under interaction (drag, click, resize),
@@ -49,10 +81,12 @@ either snapshot alone.
 
 # Readiness
 
-Wait for the repository's observable readiness condition (an element,
-a status value, a request) with a bounded timeout. Never use a fixed
-sleep as the readiness check. If the condition never comes, report that
-as the finding rather than lengthening the wait.
+Wait for the repository's observable readiness condition with a `wait:`
+step (an element) or an `eval:` step (a status value); each is bounded by
+`--timeout`. Never use a fixed sleep as the readiness check. If the
+condition never comes, report that as the finding rather than
+lengthening the wait. Pages with long-lived connections still load:
+the script does not wait for the network to go quiet.
 
 # Output
 
@@ -72,28 +106,3 @@ SCREENSHOTS:
 
 If the fix is incomplete, say so plainly. Never claim success without
 the measurement that shows it.
-
-# Probe template (Playwright + Node)
-
-```js
-const { chromium } = require('playwright');
-const URL = process.env.PROBE_URL;            // from the repo config or the task
-const READY = process.env.PROBE_READY_SELECTOR; // the repo's readiness element
-if (!URL || !READY) throw new Error('PROBE_URL and PROBE_READY_SELECTOR are required');
-(async () => {
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
-  page.on('console', (m) => console.log(`[page] ${m.type()}: ${m.text()}`));
-  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForSelector(READY, { timeout: 30000 });
-  const report = await page.evaluate(() => ({ /* your measurements */ }));
-  console.log(JSON.stringify(report, null, 2));
-  if (process.env.PROBE_SCREENSHOT) {
-    await page.screenshot({ path: process.env.PROBE_SCREENSHOT });
-  }
-  await browser.close();
-})();
-```
-
-Use `domcontentloaded`, not `networkidle`: long-lived connections keep
-`networkidle` from ever firing.
