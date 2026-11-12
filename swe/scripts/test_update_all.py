@@ -77,12 +77,63 @@ class UpdateAll(unittest.TestCase):
     def hook(self, name):
         return self.work / name / ".git/hooks/pre-push"
 
-    def run_it(self, answers, *args, skip=("--skip", "private")):
+    def run_it(self, answers, *args, skip=("--skip", "private"), cwd=None, **extra):
         env = dict(os.environ, HOME=str(self.home))
         env.pop("SWE_WORKSPACE", None)
+        env.update(extra)
         done = subprocess.run(["bash", str(self.kit / "swe/scripts/update_all.sh"), *skip, *args],
-                              env=env, input=answers, capture_output=True, text=True, timeout=120)
+                              env=env, input=answers, capture_output=True, text=True, timeout=120, cwd=cwd)
         return done.returncode, done.stdout + done.stderr
+
+    def test_a_project_that_links_into_a_skipped_one_never_writes_there(self):
+        excluded = self.work / "excluded"
+        (excluded / ".claude/agents").mkdir(parents=True)
+        (excluded / ".claude/agents/code-reviewer.md").write_text("an old copy of the kit's reviewer\n")
+        (excluded / ".lattice").mkdir()
+        (excluded / ".lattice/config.json").write_text("{}")
+        self.hook("excluded").write_text(WRAPPER)
+        (self.hook("excluded").parent / "tells_check.py").write_text("excluded's own\n")
+        for name in ("via-git", "via-hooks", "via-hook-file", "via-claude", "via-agents", "via-board"):
+            self.git(self.work, "init", "-q", "-b", "main", name)
+        shutil.rmtree(self.work / "via-git/.git")
+        (self.work / "via-git/.git").symlink_to(excluded / ".git")
+        shutil.rmtree(self.work / "via-hooks/.git/hooks")
+        (self.work / "via-hooks/.git/hooks").symlink_to(excluded / ".git/hooks")
+        self.hook("via-hook-file").write_text(WRAPPER)
+        (self.hook("via-hook-file").parent / "tells_check.py").symlink_to(excluded / ".git/hooks/tells_check.py")
+        (self.work / "via-claude/.claude").symlink_to(excluded / ".claude")
+        (self.work / "via-agents/.claude").mkdir()
+        (self.work / "via-agents/.claude/agents").symlink_to(excluded / ".claude/agents")
+        (self.work / "via-board/.lattice").symlink_to(excluded / ".lattice")
+        self.git(self.work, "init", "-q", "-b", "main", "via-hard-link")
+        (self.work / "via-hard-link/.claude/agents").mkdir(parents=True)
+        os.link(excluded / ".claude/agents/code-reviewer.md", self.work / "via-hard-link/.claude/agents/code-reviewer.md")
+        before = {p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}
+        _, out = self.run_it("", "--yes")
+        self.assertEqual({p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}, before, out)
+        self.assertNotIn("board_update --apply in via-board", out)
+        for path, count in ((".git", 1), (".git/hooks", 1), (".claude/agents", 2), (".lattice", 1)):
+            self.assertEqual(out.count("note     %s leads out of this project through a link; left alone" % path), count, out)
+        self.assertIn("note     the push hook or tells_check.py is a link (left alone)", out)
+
+    def test_with_a_relative_workspace_a_tracked_copy_with_edits_is_kept(self):
+        root = self.project("edited")
+        (root / ".claude/agents/code-reviewer.md").write_text("a local edit\n")
+        head = self.git(root, "rev-parse", "HEAD")
+        _, out = self.run_it("", "--yes", cwd=self.home, SWE_WORKSPACE="work")
+        self.assertEqual((root / ".claude/agents/code-reviewer.md").read_text(), "a local edit\n")
+        self.assertEqual(self.git(root, "rev-parse", "HEAD"), head)
+        self.assertIn("kept     .claude/agents/code-reviewer.md: it has uncommitted edits", out)
+
+    def test_the_push_sends_no_tags_even_where_push_follow_tags_is_on(self):
+        root = self.project("tagged")
+        self.git(root, "tag", "-a", "-m", "not for the remote", "internal-note")
+        self.git(root, "config", "push.followTags", "true")
+        _, out = self.run_it("", "--yes", "--push")
+        self.assertIn("pushed   main to origin", out)
+        remote = str(pathlib.Path(self.tmp.name, "tagged.git"))
+        self.assertEqual(self.git(self.tmp.name, "--git-dir", remote, "rev-parse", "main"), self.git(root, "rev-parse", "HEAD"))
+        self.assertEqual(self.git(self.tmp.name, "--git-dir", remote, "tag"), "")
 
     def test_without_a_skip_list_or_with_a_name_that_matches_nothing_it_stops_before_any_project(self):
         skip = self.home / ".config/agent-alignment/skip"
