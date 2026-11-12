@@ -32,8 +32,11 @@ class UpdateAll(unittest.TestCase):
             shutil.copy(SWE / ".claude/scripts" / name, kit / "swe/.claude/scripts" / name)
         self.git(kit, "init", "-q", "-b", "main")
         (self.home / "machine").write_text("0")
-        for name in ("old-hook", "no-hook", "declined", "broken", "private", "foreign", "husky", "wrapped"):
+        for name in ("old-hook", "no-hook", "declined", "broken", "private", "foreign", "husky", "wrapped", "excluded"):
             self.git(self.work, "init", "-q", "-b", "main", name)
+        # Listed in the owner's skip file: never touched, so it never asks about a push check.
+        (self.home / ".config/agent-alignment").mkdir(parents=True)
+        (self.home / ".config/agent-alignment/skip").write_text("excluded\n")
         self.hook("old-hook").write_text('#!/usr/bin/env python3\n"""pre-push: show what is about to leave this machine, older."""\n')
         self.hook("wrapped").write_text(WRAPPER)
         self.hook("private").write_text("private hook\n")
@@ -115,6 +118,7 @@ class UpdateAll(unittest.TestCase):
                 "scripts/ or tools/) are in %s, whichever project you are in." % (self.kit / "swe"))
         self.assertEqual((self.work / "old-hook/.claude/agents/code-reviewer.md").read_text(),
                          "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:]))
+        self.assertNotIn("== excluded", out)
         self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
         self.assertEqual([p.read_text() for p in (self.work / "old-hook/.claude/agents").glob("code-reviewer.md.*.bak")],
                          ["an old copy of the kit's reviewer\n"])

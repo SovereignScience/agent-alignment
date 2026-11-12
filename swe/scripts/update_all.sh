@@ -5,8 +5,9 @@
 #   update_all.sh [--skip <folder>]... [--yes] [--push]
 #
 # The workspace is SWE_WORKSPACE, else the folder this kit's main checkout
-# is in. For each Git repository directly inside it, other than this kit and
-# the folders named with --skip, it:
+# is in. For each Git repository directly inside it, other than this kit, the
+# folders named with --skip and those listed in ~/.config/agent-alignment/skip
+# (one name a line), it:
 #   1. refreshes the kit's push check where it is installed, or where the old
 #      agent-safety wrapper is, keeping the old copy as .bak, and asks before
 #      installing it where there is no push hook (--yes installs without
@@ -46,6 +47,12 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument $1; usage: $0 [--skip <folder>]... [--yes] [--push]" ;;
     esac
 done
+skip_file="$HOME/.config/agent-alignment/skip"
+if [ -f "$skip_file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] || skip+=("$line")
+    done < "$skip_file"
+fi
 # The push hook installed before this kit's own: it runs an older copy of the
 # push check from /etc/claude-code/hooks that nothing updates any more.
 old_wrapper=23f9cb1e867513f69d570947f290386d14f06d39e185faa33b0f8744d89bae1b
@@ -64,11 +71,11 @@ problems=0
 for root in "$workspace"/*/; do
     root=${root%/}
     name=$(basename "$root")
-    [ ! -L "$root" ] || continue
-    [ "$(cd "$root" && pwd -P)" != "$kit_physical" ] || continue
     skipped=no
     for s in "${skip[@]}"; do [ "$name" != "$s" ] || skipped=yes; done
     [ "$skipped" = no ] || continue
+    [ ! -L "$root" ] || continue
+    [ "$(cd "$root" && pwd -P)" != "$kit_physical" ] || continue
     [ -d "$root/.git" ] || continue
     echo
     echo "== $name"
