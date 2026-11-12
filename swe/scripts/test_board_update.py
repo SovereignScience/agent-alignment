@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = pathlib.Path(__file__).parent
 BASH = shutil.which("bash")
@@ -18,7 +19,8 @@ class BoardUpdate(unittest.TestCase):
         home = pathlib.Path(self.tmp.name, "home")
         home.mkdir()
         (home / ".gitconfig").write_text("[user]\n\tname = Owner\n\temail = owner@example.com\n")
-        self.env = dict(os.environ, HOME=str(home), LATTICE_NO_UPDATE_CHECK="1")
+        self.env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        self.env.update(HOME=str(home), LATTICE_NO_UPDATE_CHECK="1")
         self.env.pop("LATTICE_ROOT", None)
         self.remote = pathlib.Path(self.tmp.name, "board.git")
         self.run_in(self.tmp.name, "git", "init", "-q", "--bare", "-b", "main", str(self.remote))
@@ -50,6 +52,18 @@ class BoardUpdate(unittest.TestCase):
 
     def task(self, repo, title):
         self.run_in(repo, "lattice", "create", title, "--actor", "human:owner")
+
+    def test_the_fixture_ignores_inherited_git_configuration(self):
+        inherited = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotePath", "GIT_CONFIG_VALUE_0": "false"}
+        with mock.patch.dict(os.environ, inherited):
+            fixture = BoardUpdate()
+            self.addCleanup(fixture.doCleanups)
+            fixture.setUp()
+            code, out = fixture.run_in(fixture.here, "git", "config", "--default", "fixture-default", "--get", "core.quotePath")
+            self.assertEqual(out.strip(), "fixture-default")
+            fixture.task(fixture.here, "isolated configuration")
+            code, out = fixture.script("board_update.sh", "--apply", cwd=fixture.here)
+            self.assertEqual(code, 0, out)
 
     def test_without_apply_it_says_what_is_behind_and_changes_no_file(self):
         self.task(self.here, "first")
@@ -179,6 +193,161 @@ class BoardUpdate(unittest.TestCase):
         code, out = self.script("board_update.sh", "--apply", cwd=bare, check=False)
         self.assertEqual(code, 1)
         self.assertIn("board_setup.sh makes one", out)
+
+    def test_git_redirections_are_refused_before_git_runs(self):
+        other_git = self.there / ".lattice/.git"
+        index = (other_git / "index").read_bytes()
+        objects = set((other_git / "objects").rglob("*"))
+        trace = pathlib.Path(self.tmp.name, "outside-trace")
+        trace.write_text("keep this trace\n")
+        self.task(self.here, "first")
+        for name, path in (("GIT_INDEX_FILE", other_git / "index"),
+                           ("GIT_OBJECT_DIRECTORY", other_git / "objects"),
+                           ("GIT_TRACE", trace), ("GIT_TRACE2_EVENT", trace)):
+            self.env[name] = str(path)
+            try:
+                code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+            finally:
+                del self.env[name]
+            self.assertEqual(code, 1, out)
+            self.assertIn(name + " is set", out)
+            self.assertEqual((other_git / "index").read_bytes(), index)
+            self.assertEqual(set((other_git / "objects").rglob("*")), objects)
+            self.assertEqual(trace.read_text(), "keep this trace\n")
+        bin_dir = pathlib.Path(self.tmp.name, "bin")
+        bin_dir.mkdir()
+        marker = bin_dir / "git-was-called"
+        git = bin_dir / "git"
+        git.write_text('#!/bin/sh\nprintf called > "$PROBE_MARKER"\nexit 91\n')
+        git.chmod(0o755)
+        self.env.update(PATH=str(bin_dir) + os.pathsep + self.env["PATH"], PROBE_MARKER=str(marker))
+        for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+                     "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                     "GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS",
+                     "GIT_CONFIG_GLOBAL", "GIT_NAMESPACE", "GIT_TRACE", "GIT_TRACE2_EVENT"):
+            for value in (str(self.there / ".lattice/.git"), ""):
+                with self.subTest(name=name, empty=not value):
+                    self.env[name] = value
+                    try:
+                        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+                    finally:
+                        del self.env[name]
+                    self.assertEqual(code, 1, out)
+                    self.assertIn(name + " is set", out)
+                    if value:
+                        self.assertNotIn(value, out)
+                    self.assertFalse(marker.exists())
+
+    def test_an_incoming_link_stops_before_a_fast_forward(self):
+        victim = pathlib.Path(self.tmp.name, "victim")
+        victim.write_text("outside board\n")
+        link = self.there / ".lattice/notes/remote-link"
+        link.parent.mkdir(exist_ok=True)
+        link.symlink_to(victim)
+        self.run_in(self.there / ".lattice", "git", "add", "--", "notes/remote-link")
+        self.run_in(self.there / ".lattice", "git", "commit", "-q", "-m", "add fixture link")
+        self.run_in(self.there / ".lattice", "git", "push", "-q", "origin", "main")
+        before, pushed = self.head(self.here / ".lattice"), self.head(self.remote)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("the remote board holds a symbolic link", out)
+        self.assertEqual(self.head(self.here / ".lattice"), before)
+        self.assertEqual(self.head(self.remote), pushed)
+        self.assertFalse((self.here / ".lattice/notes/remote-link").is_symlink())
+        self.assertEqual(victim.read_text(), "outside board\n")
+
+    def test_configured_trace_targets_are_refused_without_opening_them(self):
+        config = pathlib.Path(self.env["HOME"], ".gitconfig")
+        original = config.read_text()
+        victim = pathlib.Path(self.tmp.name, "outside-trace")
+        victim.write_text("keep this trace\n")
+        included = pathlib.Path(self.tmp.name, "trace-config")
+        for target in ("normalTarget", "perfTarget", "eventTarget"):
+            trace = "\n[trace2]\n\t%s = %s\n" % (target, victim)
+            included.write_text(trace)
+            conditional = '\n[includeIf "gitdir:%s"]\n\tpath = %s\n' % (
+                self.here / ".lattice/.git", included)
+            for settings in (trace, conditional):
+                with self.subTest(target=target, conditional=settings == conditional):
+                    config.write_text(original + settings)
+                    try:
+                        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+                    finally:
+                        config.write_text(original)
+                    self.assertEqual(code, 1, out)
+                    self.assertIn("trace2." + target.lower() + " is configured", out)
+                    self.assertNotIn(str(victim), out)
+                    self.assertEqual(victim.read_text(), "keep this trace\n")
+
+    def test_an_unreadable_git_configuration_stops_without_printing_it(self):
+        config = pathlib.Path(self.env["HOME"], ".gitconfig")
+        original = config.read_text()
+        config.write_text(original + "\n[do-not-print-this-config-content\n")
+        try:
+            code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        finally:
+            config.write_text(original)
+        self.assertEqual(code, 1, out)
+        self.assertIn("Git tracing configuration could not be read", out)
+        self.assertNotIn("do-not-print-this-config-content", out)
+
+    def test_an_unreadable_remote_tree_stops_before_a_merge(self):
+        self.task(self.here, "first")
+        before = self.head(self.remote)
+        bin_dir = pathlib.Path(self.tmp.name, "bin")
+        bin_dir.mkdir()
+        git = bin_dir / "git"
+        git.write_text('#!/bin/sh\nfor arg; do [ "$arg" != ls-tree ] || exit 74; done\n'
+                       'exec "' + shutil.which("git") + '" "$@"\n')
+        git.chmod(0o755)
+        self.env["PATH"] = str(bin_dir) + os.pathsep + self.env["PATH"]
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("could not inspect the remote board", out)
+        self.assertEqual(self.head(self.remote), before)
+        self.assertEqual(self.run_in(self.here / ".lattice", "git", "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False)[0], 1)
+
+    def test_an_incoming_merge_link_cannot_overwrite_another_board(self):
+        self.task(self.here, "first")
+        self.script("board_update.sh", "--apply", cwd=self.here)
+        self.script("board_update.sh", "--apply", cwd=self.there)
+        self.run_in(self.here, "lattice", "comment", "DP-1", "said here", "--actor", "human:owner")
+        self.run_in(self.there, "lattice", "comment", "DP-1", "said there", "--actor", "human:owner")
+        event = next((self.here / ".lattice/events").glob("task_*.jsonl")).name
+        victim = pathlib.Path(self.tmp.name, "victim")
+        victim.write_text("outside board\n")
+        (self.there / ".lattice/events" / (event + ".ours")).symlink_to(victim)
+        self.run_in(self.there / ".lattice", "git", "add", "--", "events", "tasks")
+        self.run_in(self.there / ".lattice", "git", "commit", "-q", "-m", "add fixture link")
+        self.run_in(self.there / ".lattice", "git", "push", "-q", "origin", "main")
+        pushed = self.head(self.remote)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("the remote board holds a symbolic link", out)
+        self.assertEqual(victim.read_text(), "outside board\n")
+        self.assertEqual(self.head(self.remote), pushed)
+        self.assertEqual(self.run_in(self.here / ".lattice", "git", "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False)[0], 1)
+        self.assertIn("said here", self.run_in(self.here, "lattice", "comments", "DP-1", "--json")[1])
+        self.assertEqual(self.run_in(self.here / ".lattice", "git", "status", "--porcelain")[1], "")
+
+    def test_event_merge_keeps_files_named_like_old_merge_scratch(self):
+        self.task(self.here, "first")
+        self.script("board_update.sh", "--apply", cwd=self.here)
+        self.script("board_update.sh", "--apply", cwd=self.there)
+        self.run_in(self.here, "lattice", "comment", "DP-1", "said here", "--actor", "human:owner")
+        self.run_in(self.there, "lattice", "comment", "DP-1", "said there", "--actor", "human:owner")
+        event = next((self.here / ".lattice/events").glob("task_*.jsonl")).name
+        saved = self.there / ".lattice/events" / (event + ".ours")
+        saved.write_text("keep this file\n")
+        self.run_in(self.there / ".lattice", "git", "add", "--", "events", "tasks")
+        self.run_in(self.there / ".lattice", "git", "commit", "-q", "-m", "keep fixture file")
+        self.run_in(self.there / ".lattice", "git", "push", "-q", "origin", "main")
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.here / ".lattice/events" / saved.name).read_text(), "keep this file\n")
+        comments = self.run_in(self.here, "lattice", "comments", "DP-1", "--json")[1]
+        self.assertIn("said here", comments)
+        self.assertIn("said there", comments)
 
 
 if __name__ == "__main__":
