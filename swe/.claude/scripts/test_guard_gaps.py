@@ -238,10 +238,31 @@ class LatticeCases(unittest.TestCase):
             "lattice needs-human AA-1 --clear --note ok --actor Human:patrick",
             "lattice comment AA-1 'Reviewed: abc' --role review --actor agent:claude",
             "lattice comment AA-1 ok --role=plan-review --actor agent:claude",
+            "python3 swe/tools/lattice-review/owner_review.py approve --actor human:patrick AA-1",
+            "LATTICE_ROOT=. python3 swe/tools/lattice-review/owner_review.py close --actor human:x AA-1",
+            "python3 -I tools/lattice-review/merge_approved.py --check true AA-1",
+            "bash swe/scripts/finish_batch.sh --actor human:patrick AA-1",
+            "cd swe && ./scripts/finish_batch.sh --actor human:patrick AA-1",
+            "python3 -I -m owner_review approve --actor human:x AA-1",
+            "python3 -c 'import owner_review; owner_review.main([])'",
+            "python3 swe/tools/lattice-review/owner_review.p? approve --actor human:x AA-1",
+            "env LATTICE_ROOT=. python3 merge_approved.py --check true AA-1",
         ]
         for command in commands:
             with self.subTest(command=command):
                 self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_reading_testing_and_staging_the_owner_scripts_pass(self):
+        for command in ("cat swe/tools/lattice-review/owner_review.py",
+                        "grep -n merge swe/tools/lattice-review/merge_approved.py",
+                        "git diff -- swe/scripts/finish_batch.sh",
+                        "git add swe/tools/lattice-review/owner_review.py swe/scripts/finish_batch.sh",
+                        "python3 -m py_compile swe/tools/lattice-review/owner_review.py",
+                        "bash -n swe/scripts/finish_batch.sh",
+                        "python3 -m unittest test_owner_review test_merge_approved",
+                        "lattice comment AA-1 'Changed merge_approved.py' --actor agent:claude"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
 
     def test_agent_board_work_passes(self):
         commands = [

@@ -19,7 +19,7 @@ case $1 in
     status)
         [ "$2" = --exit-code ] || exit 64
         [ ! -f "$HOME/blocked" ] || { echo "collision in the rules"; exit 2; }
-        [ -f "$HOME/installed" ] || { echo "would install the hooks"; exit 1; } ;;
+        [ -f "$HOME/installed" ] || { echo "would install the hooks"; exit 3; } ;;
     apply) touch "$HOME/installed" ;;
 esac
 """
@@ -141,6 +141,17 @@ class FinishBatch(unittest.TestCase):
         self.assertIn("nothing to install", out)
         self.assertEqual((self.remote_main(), self.git("rev-parse", "HEAD", cwd=self.board)), settled)
 
+    def test_a_rerun_before_the_push_keeps_the_earlier_merges_and_asks_again(self):
+        self.finish("y\ny\n\n")
+        merged = self.git("rev-parse", "main")
+        code, out = self.finish("y\ny\n\n")
+        self.assertEqual(code, 1, out)
+        self.assertIn("an approval is already recorded", out)
+        self.assertIn("T-1: merged here by an earlier run", out)
+        self.assertIn("T-2: merged here by an earlier run", out)
+        self.assertIn("STOP: main is not on the remote yet", out)
+        self.assertEqual(self.git("rev-parse", "main"), merged)
+
     def test_a_task_answered_no_is_left_out_and_stays_open(self):
         self.finish("y\nn\n\n")
         self.assertEqual(self.git("rev-list", "--count", "--first-parent", self.start + "..main"), "1")
@@ -175,7 +186,7 @@ class FinishBatch(unittest.TestCase):
             self.lattice("status", "T-3", status, "--no-auto-review")
         ids = ("T-1", "T-2", "T-3")
         code, out = self.finish("n\ny\ny\n\n", ids=ids)
-        self.assertIn("its branch also holds 1 other task(s) of this batch: T-1", out)
+        self.assertIn("its branch also holds the work of 1 other task(s): T-1", out)
         self.assertIn("T-3: skipped, its branch contains T-1, which is not approved", out)
         self.assertEqual(self.git("rev-list", "--count", "--first-parent", self.start + "..main"), "1")
         self.assertFalse((self.root / "one.txt").exists())

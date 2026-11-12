@@ -276,10 +276,22 @@ def task_commits(repo, short_id, refs):
     return sorted(seen.values(), key=lambda c: run_git(repo, "rev-list", "--count", c["hash"]).strip().zfill(9))
 
 
+def range_owners(repo, base, head):
+    """Each commit in base..head as (sha, task IDs from its Task trailers, whether it is a merge)."""
+    out = run_git(repo, "log", "--format=%H%x1f%P%x1f%(trailers:key=Task,valueonly,separator=%x2C)%x1e",
+                  base + ".." + head)
+    rows = []
+    for record in out.split("\x1e"):
+        parts = record.strip("\n").split("\x1f")
+        if len(parts) == 3:
+            ids = [part.strip() for part in parts[2].replace("\n", ",").split(",") if part.strip()]
+            rows.append((parts[0], ids, len(parts[1].split()) > 1))
+    return rows
+
+
 def carried_tasks(repo, base, head, short_ids):
     """Which of the tasks have a commit of their own, by its Task trailer, in base..head."""
-    named = run_git(repo, "log", "--format=%(trailers:key=Task,valueonly,separator=%x2C)", base + ".." + head)
-    found = {part.strip() for line in named.splitlines() for part in line.split(",")}
+    found = {sid for _, ids, _ in range_owners(repo, base, head) for sid in ids}
     return [sid for sid in short_ids if sid in found]
 
 
@@ -904,6 +916,18 @@ def approved_commits(repo, comments):
         elif review_decision(review.get("body") or "") == "approved" and not qualifier:
             ranges.append((base, head))
     return {sha for base, head in ranges for sha in run_git(repo, "rev-list", base + ".." + head, check=False).split()}
+
+
+def standing_approvals(repo, comments):
+    """The commits the task's approvals cover, but only while they stand: the
+    latest review by a person is an approval and every review thread is
+    resolved. A later request for changes or an open thread withdraws them."""
+    review = latest_review(comments)
+    if not review or review.get("deleted") or review_decision(review.get("body") or "") != "approved":
+        return set()
+    if any(thread["state"] != "resolved" for thread in review_threads(comments)):
+        return set()
+    return approved_commits(repo, comments)
 
 
 def adds_nothing(repo, sha):

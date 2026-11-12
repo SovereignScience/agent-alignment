@@ -265,7 +265,8 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   commands, rules and instruction files: any CLAUDE.md or AGENTS.md, the
   protocols, anything under .claude/ or codex/, the installers. For any
   other task that changes behaviour, the session writes the plan in the
-  plan shape below to the file `lattice plan <ID>` names, sets
+  plan shape below to the task's plan file (`lattice plan <ID> --json`
+  gives its path), sets
   `needs-human <ID> "Need: approve plan"` and stops, in todo. A task the
   owner selected skips that stop, with no flag, when its plan fits the
   small-fix form (Need, Acceptance criteria, Steps, Coverage boundary),
@@ -617,8 +618,8 @@ and rules for answering review threads.
 - Plan before code. Before the first edit to a guardrail file (settings,
   hooks, scripts, agents, commands, rules, instruction files) there is a
   board task with an approved plan, however small the request. For any
-  other task that changes behaviour, write the plan to
-  the file lattice plan <CODE>-<n> names, set
+  other task that changes behaviour, write the plan to the task's plan
+  file (lattice plan <CODE>-<n> --json gives its path), set
   lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
   owner approves it. A small fix on a task the owner selected goes ahead
   without that stop, under the conditions in .lattice/context.md.
