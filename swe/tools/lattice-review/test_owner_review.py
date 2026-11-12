@@ -100,6 +100,22 @@ class OwnerReview(unittest.TestCase):
         self.assertEqual(self.status(), "done")
         self.assertEqual(orv.summary(self.board, ["T-1"], say=self.said.append), [])
 
+    def test_d_lists_the_commits_and_files_before_the_answer(self):
+        self.assertEqual(self.approve("d", "y"), ["T-1"])
+        self.assertTrue(any("feat: one" in line for line in self.said), self.said)
+        self.assertTrue(any("1 file changed" in line for line in self.said), self.said)
+
+    def test_a_branch_that_holds_another_task_of_the_batch_says_so(self):
+        self.lattice("create", "second task")
+        self.git("checkout", "-q", "-b", "feature/T-2-second", "feature/T-1-first")
+        self.commit("two", "feat: two\n\nTask: T-2")
+        self.git("checkout", "-q", "main")
+        self.lattice("branch-link", "T-2", "feature/T-2-second")
+        answers = iter(["n", "y"])
+        orv.approve(self.board, ["T-1", "T-2"], ask=lambda prompt: next(answers), say=self.said.append)
+        self.assertIn("    its branch also holds 1 other task(s) of this batch: T-1", self.said)
+        self.assertIn("    not approved themselves: T-1; this task is not merged until they are", self.said)
+
     def test_a_no_or_no_answer_records_nothing(self):
         self.assertEqual(self.approve("n"), [])
         self.assertEqual(self.approve(), [])

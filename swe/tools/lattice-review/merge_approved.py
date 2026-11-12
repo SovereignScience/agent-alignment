@@ -38,7 +38,11 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print,
     """Merge, check and push. Returns the checked commit ID, or None when
     there was nothing to merge. Raises Stop before anything is pushed.
     With push off it stops after the checks. With skip_unapproved a task
-    whose review does not cover its commits is left out, not a Stop."""
+    whose review does not cover its commits is left out, not a Stop, and so
+    is every task whose branch contains that task's branch or any commit
+    carrying that task's trailer, wherever it comes in the order: a yes on
+    the outer branch must not carry in work that was not approved on its own
+    task."""
     def out(*args):
         return lr.run_git(repo, *args).strip()
 
@@ -62,11 +66,18 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print,
         raise Stop("%s does not contain origin/%s; bring it up to date first" % (main, main))
     local = out("rev-list", "--first-parent", "--reverse", start + ".." + main).split()
     at = start
+    tasks, notes, held = {}, {}, {}
+    for sid in short_ids:
+        tasks[sid] = lr.find_task(board, sid)
+        if not tasks[sid]:
+            raise Stop("%s is not on the board at %s" % (sid, board))
+        notes[sid] = comments_of(sid)
+        waiting = lr.resolve_range(repo, tasks[sid], start)
+        if skip_unapproved and waiting["mode"] == "branch" and lr.review_block(repo, tasks[sid], start, notes[sid]):
+            held[sid] = waiting["head_sha"]
 
     for sid in short_ids:
-        task = lr.find_task(board, sid)
-        if not task:
-            raise Stop("%s is not on the board at %s" % (sid, board))
+        task = tasks[sid]
         rng = lr.resolve_range(repo, task, at)
         if rng["mode"] != "branch":
             if not any(lr.rev(repo, link["branch"]) for link in task.get("branch_links", [])):
@@ -74,9 +85,17 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print,
             say("%s: already in %s" % (sid, main))
             continue
         head = rng["head_sha"]
-        block = lr.review_block(repo, task, at, comments_of(sid))
+        carried = lr.carried_tasks(repo, at, head, [other for other in held if other != sid])
+        holds = [other for other, other_head in held.items()
+                 if other != sid and (other in carried or inside(other_head, head))]
+        if holds:
+            say("%s: skipped, its branch contains %s, which is not approved" % (sid, ", ".join(holds)))
+            held[sid] = head
+            continue
+        block = lr.review_block(repo, task, at, notes[sid])
         if block and skip_unapproved:
             say("%s: skipped, not approved: %s" % (sid, block))
+            held[sid] = head
             continue
         if block:
             raise Stop("%s (%s at %s) is not approved for merge: %s" % (sid, rng["branch"], head[:12], block))
@@ -100,7 +119,7 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print,
     if local:
         raise Stop("%s has %d commit(s) this run would not make, starting at %s" % (main, len(local), local[0][:12]))
     if at == start:
-        say("nothing to merge: every task is already in origin/%s" % main)
+        say("nothing was merged: %s" % ("no task left is approved" if held else "every task is already in origin/%s" % main))
         return None
     for command in checks:
         say("check: " + command)

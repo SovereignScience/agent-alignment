@@ -276,6 +276,13 @@ def task_commits(repo, short_id, refs):
     return sorted(seen.values(), key=lambda c: run_git(repo, "rev-list", "--count", c["hash"]).strip().zfill(9))
 
 
+def carried_tasks(repo, base, head, short_ids):
+    """Which of the tasks have a commit of their own, by its Task trailer, in base..head."""
+    named = run_git(repo, "log", "--format=%(trailers:key=Task,valueonly,separator=%x2C)", base + ".." + head)
+    found = {part.strip() for line in named.splitlines() for part in line.split(",")}
+    return [sid for sid in short_ids if sid in found]
+
+
 def resolve_range(repo, task, main):
     """Where a task's work lives: its linked branch, or its trailer commits.
 
