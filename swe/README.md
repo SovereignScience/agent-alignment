@@ -27,10 +27,9 @@ this file, then act.
   Write and Edit; `session_start.sh` prints the branch, the protocol
   hashes and the agent and command roster; `after_summary.sh` runs on
   SessionStart for compact, resume and fork; `post_edit_verify.sh`
-  runs available file checks (ruff and mypy for `.py`, eslint for
-  `.js/.ts/.tsx`, gofmt for `.go`, clang-format for C/C++, and a
-  checkpoint reminder for `.rs` and `.go`) when they are installed
-  and does nothing when they are absent. Plus a status line.
+  names the check that fits the edited file for the session to run
+  itself, and reminds it when a protocol or a dependency manifest
+  changed; it runs no tool. Plus a status line.
 - Permissions: the allow list runs interpreters and build tools
   (pytest, ruff, mypy, npm, eslint, tsc, cargo, go, make, docker, gh
   reads, rg). The deny list and the sandbox are the boundary:
@@ -226,8 +225,9 @@ bash swe/scripts/switch_rules.sh apply    # saves what is installed, then instal
 bash swe/scripts/switch_rules.sh revert   # puts the saved state back
 ```
 
-A session may run `status` and explain the result. `apply` and `revert`
-are yours: they use sudo and change the rules every session runs under.
+Run `status` in your own terminal: inside a session the sandbox hides
+your home folder and remaps /etc, so its answer there is wrong. `apply`
+and `revert` are yours: they use sudo and change the rules every session runs under.
 Each `apply` keeps a snapshot in `~/.config/agent-alignment/snapshots/`,
 a folder sessions cannot read or write. `revert` goes back to the state
 before the first `apply` you have not reverted, or to the snapshot you
