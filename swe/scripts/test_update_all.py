@@ -30,10 +30,13 @@ class UpdateAll(unittest.TestCase):
             shutil.copy(SWE / ".claude/scripts" / name, kit / "swe/.claude/scripts" / name)
         self.git(kit, "init", "-q", "-b", "main")
         (self.home / "machine").write_text("0")
-        for name in ("old-hook", "no-hook", "declined", "broken", "private"):
+        for name in ("old-hook", "no-hook", "declined", "broken", "private", "foreign", "husky"):
             self.git(self.work, "init", "-q", "-b", "main", name)
-        self.hook("old-hook").write_text("old hook\n")
+        self.hook("old-hook").write_text('#!/usr/bin/env python3\n"""pre-push: show what is about to leave this machine, older."""\n')
         self.hook("private").write_text("private hook\n")
+        self.hook("foreign").write_text('#!/bin/sh\ngit lfs pre-push "$@"\n')
+        self.git(self.work / "husky", "config", "core.hooksPath", ".husky/_")
+        (self.work / "linked").symlink_to(self.work / "old-hook")
         for name in ("old-hook", "broken"):
             (self.work / name / ".lattice").mkdir()
             (self.work / name / ".lattice/config.json").write_text("{}")
@@ -74,12 +77,18 @@ class UpdateAll(unittest.TestCase):
         self.assertNotIn("== kit", out)
         self.assertNotIn("== private", out)
         self.assertNotIn("== not-a-repo", out)
+        self.assertNotIn("== linked", out)
+        self.assertEqual(self.hook("foreign").read_text(), '#!/bin/sh\ngit lfs pre-push "$@"\n')
+        self.assertEqual(list(self.hook("foreign").parent.glob("pre-push.*.bak")), [])
+        self.assertIn("note     another tool's push hook is here (left alone)", out)
+        self.assertFalse(self.hook("husky").exists())
+        self.assertIn("(core.hooksPath); push check left alone", out)
         self.assertIn("machine  the installed rules, agents and commands match the kit", out)
         self.assertIn("stale    .claude/agents/code-reviewer.md", out)
         lines = (SWE / ".claude/agents/code-reviewer.md").read_text().split("\n")
         end = lines.index("---", 1)
-        note = ("The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) "
-                "are in %s, whichever project you are in." % (self.kit / "swe"))
+        note = ("The kit's files that this names (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under "
+                "scripts/ or tools/) are in %s, whichever project you are in." % (self.kit / "swe"))
         self.assertEqual((self.work / "old-hook/.claude/agents/code-reviewer.md").read_text(),
                          "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:]))
         self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
