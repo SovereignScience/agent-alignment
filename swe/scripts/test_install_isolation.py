@@ -148,7 +148,8 @@ class Installer(unittest.TestCase):
         self.assertNotIn("mcp_servers", config)
         self.assertEqual(config["shell_environment_policy"]["inherit"], "core")
         self.assertFalse(config["shell_environment_policy"]["ignore_default_excludes"])
-        self.assertEqual(config["shell_environment_policy"].get("set"), {"SSL_CERT_FILE": CA_FILE})
+        self.assertEqual(config["shell_environment_policy"].get("set"), {
+            "SSL_CERT_FILE": CA_FILE, "REQUESTS_CA_BUNDLE": CA_FILE})
         self.assertEqual(managed["env"]["SSL_CERT_FILE"], CA_FILE)
         self.assertNotIn("made-up-read-token", out)
         fs = req["permissions"]["alignment_workstation"]["filesystem"]
@@ -174,11 +175,54 @@ class Installer(unittest.TestCase):
         first = (self.home / ".codex/config.toml").read_text()
         policy = tomllib.loads(first)["shell_environment_policy"]
         self.assertEqual(policy["inherit"], "none")
-        self.assertEqual(policy["set"], {"KEEP": "made-up-control", "SSL_CERT_FILE": CA_FILE})
+        self.assertEqual(policy["set"], {"KEEP": "made-up-control", "SSL_CERT_FILE": CA_FILE,
+                                         "REQUESTS_CA_BUNDLE": CA_FILE})
         self.assertEqual(policy["filters"]["AGENT_GITHUB_READ_TOKEN"], "exclude")
         code, out = self.run_installer(codex=first, apply=True)
         self.assertEqual(code, 0, out)
         self.assertEqual((self.home / ".codex/config.toml").read_text(), first)
+
+    def test_requests_default_repairs_existing_ssl_file_and_is_idempotent(self):
+        config = PROFILE + '\n[shell_environment_policy.set]\nSSL_CERT_FILE = "' + CA_FILE + '"\n'
+        code, out = self.run_installer(codex=config, apply=True)
+        self.assertEqual(code, 0, out)
+        first = (self.home / ".codex/config.toml").read_text()
+        self.assertEqual(tomllib.loads(first)["shell_environment_policy"]["set"], {
+            "SSL_CERT_FILE": CA_FILE, "REQUESTS_CA_BUNDLE": CA_FILE})
+        self.assertIn("set shell_environment_policy.set.REQUESTS_CA_BUNDLE", out)
+        code, out = self.run_installer(codex=first, apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.home / ".codex/config.toml").read_text(), first)
+
+    def test_requests_trust_conflicts_stop_with_ssl_file_already_set(self):
+        for name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT"):
+            for inherited in (False, True):
+                with self.subTest(name=name, inherited=inherited):
+                    value = "/tmp/made-up-custom-requests-store"
+                    config = PROFILE + '\n[shell_environment_policy.set]\nSSL_CERT_FILE = "' + CA_FILE + '"\n'
+                    extra = {name: value} if inherited else {}
+                    if not inherited:
+                        config += name + ' = "' + value + '"\n'
+                    code, out = self.run_installer(codex=config, apply=True, **extra)
+                    self.assertNotEqual(code, 0, out)
+                    self.assertIn(name, out)
+                    self.assertIn("Nothing was written", out)
+                    self.assertNotIn(value, out)
+                    self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                    self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+                    self.assertEqual((self.home / ".codex/config.toml").read_text(), config)
+
+    def test_requests_explicit_choice_preserves_other_ca_settings(self):
+        config = PROFILE + '\n[shell_environment_policy.set]\n' + (
+            'SSL_CERT_FILE = "' + CA_FILE + '"\nREQUESTS_CA_BUNDLE = "' + CA_FILE +
+            '"\nCURL_CA_BUNDLE = "/tmp/made-up-curl-store"\n')
+        code, out = self.run_installer(codex=config, apply=True,
+                                       REQUESTS_CA_BUNDLE="/tmp/made-up-inherited-store")
+        self.assertEqual(code, 0, out)
+        updated = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(updated["shell_environment_policy"]["set"], {
+            "SSL_CERT_FILE": CA_FILE, "REQUESTS_CA_BUNDLE": CA_FILE,
+            "CURL_CA_BUNDLE": "/tmp/made-up-curl-store"})
 
     def test_instruction_table_headers_stop_before_installed_writes(self):
         for table in ("shell_environment_policy", "shell_environment_policy.filters",
