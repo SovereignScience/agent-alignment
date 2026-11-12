@@ -113,7 +113,7 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual({p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}, before, out)
         self.assertNotIn("board_update --apply in via-board", out)
         for path, count in ((".git", 1), (".git/hooks", 1), (".claude/agents", 2), (".lattice", 1)):
-            self.assertEqual(out.count("note     %s leads out of this project through a link; left alone" % path), count, out)
+            self.assertEqual(out.count("note     %s is a link or not a plain folder; left alone" % path), count, out)
         self.assertIn("note     the push hook or tells_check.py is a link (left alone)", out)
 
     def test_with_a_relative_workspace_a_tracked_copy_with_edits_is_kept(self):
