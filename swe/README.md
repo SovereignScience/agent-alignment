@@ -149,6 +149,22 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 
 ---
 
+## Keeping a project's board context current
+
+Each project's `.lattice/context.md` is this kit's template with the
+project's own names and edits. When the template gains a rule, run this
+from a checkout of the kit, naming the project:
+
+| Goal | Command |
+|---|---|
+| See whether a project is behind | `python3 swe/scripts/board_context.py status <project>` |
+| Merge the template's changes in | `python3 swe/scripts/board_context.py apply <project>` |
+
+A change that collides with the project's own edits leaves the context
+untouched and writes the merge beside it as `context.md.proposed`.
+
+---
+
 ## Decision records
 
 A choice that is hard to undo, or that rejects an option someone will
