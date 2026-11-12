@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,8 @@ import merge_approved as ma
 import owner_review as orv
 
 LATTICE = shutil.which("lattice")
+TOOL = Path(__file__).resolve().with_name("owner_review.py")
+NO_TERMINAL = "owner_review: no terminal to answer on; nothing was written. Run it yourself at a terminal.\n"
 
 
 @unittest.skipUnless(LATTICE, "lattice is not installed")
@@ -66,15 +69,27 @@ class OwnerReview(unittest.TestCase):
         self.git("commit", "-q", "-m", message)
         return self.git("rev-parse", "HEAD")
 
-    def approve(self, *answers):
-        left = list(answers)
+    def answers(self, *given):
+        left = list(given)
 
         def ask(prompt):
             self.said.append(prompt)
             if not left:
                 raise EOFError
             return left.pop(0)
-        return orv.approve(self.board, ["T-1"], ask=ask, say=self.said.append)
+        return ask
+
+    def approve(self, *answers):
+        return orv.approve(self.board, ["T-1"], ask=self.answers(*answers), say=self.said.append)
+
+    def refused_without_a_terminal(self, *args):
+        done = subprocess.run([sys.executable, str(TOOL), *args, "--repo", str(self.repo), "--board", str(self.repo),
+                               "--actor", "human:owner"], input="y\n" * 3, capture_output=True, text=True,
+                              timeout=60, start_new_session=True)
+        self.assertEqual((done.returncode, done.stderr), (1, NO_TERMINAL), done.stdout)
+
+    def validation_notes(self):
+        return [c for c in self.board.comments("T-1") if c.get("role") == "validation"]
 
     def blocked(self):
         return lr.review_block(self.repo, lr.find_task(self.repo, "T-1"), "main", self.board.comments("T-1"))
@@ -99,7 +114,7 @@ class OwnerReview(unittest.TestCase):
         self.assertEqual(len([c for c in self.board.comments("T-1") if c.get("role") == "review"]), 1)
         self.assertEqual(self.approve("n"), [])
         self.merge()
-        self.assertEqual(orv.close(self.board, ["T-1"], say=self.said.append), ["T-1"])
+        self.assertEqual(orv.close(self.board, ["T-1"], ask=self.answers(), say=self.said.append), ["T-1"])
         self.assertEqual(self.status(), "done")
         self.assertEqual(orv.summary(self.board, ["T-1"], say=self.said.append), [])
 
@@ -161,25 +176,49 @@ class OwnerReview(unittest.TestCase):
         self.lattice("status", "T-2", "in_progress", "--no-auto-review")
         self.approve("y")
         self.merge()
-        self.assertEqual(orv.close(self.board, ["T-2", "T-1"], say=self.said.append), ["T-1"])
+        self.assertEqual(orv.close(self.board, ["T-2", "T-1"], ask=self.answers(), say=self.said.append), ["T-1"])
         self.assertIn("T-2: left open: it is in_progress, and only a task in review can be marked done", self.said)
 
     def test_a_task_with_a_criterion_closes_only_once_it_has_evidence(self):
         self.lattice("criterion", "add", "T-1", "The checks pass on the integration branch after the merge.")
         self.approve("y")
-        orv.evidence(self.board, ["T-1:AC-1"], "Met: too early.", say=self.said.append)
+        orv.evidence(self.board, ["T-1:AC-1"], "Met: too early.", ask=self.answers(), say=self.said.append)
         self.assertIn("T-1 AC-1: not recorded, the task is not in origin/main yet", self.said)
         self.merge()
-        self.assertEqual(orv.close(self.board, ["T-1"], say=self.said.append), [])
+        self.assertEqual(orv.close(self.board, ["T-1"], ask=self.answers(), say=self.said.append), [])
         self.assertTrue(any("left open: no evidence is recorded yet for AC-1" in line for line in self.said), self.said)
         self.assertEqual(orv.summary(self.board, ["T-1"], say=self.said.append), ["T-1"])
-        orv.evidence(self.board, ["T-1:AC-1"], "Met: the checks passed on main.", say=self.said.append)
-        orv.evidence(self.board, ["T-1:AC-1"], "Met: the checks passed on main.", say=self.said.append)
+        orv.evidence(self.board, ["T-1:AC-1"], "Met: the checks passed on main.", ask=self.answers("y"), say=self.said.append)
+        orv.evidence(self.board, ["T-1:AC-1"], "Met: the checks passed on main.", ask=self.answers(), say=self.said.append)
         self.assertIn("T-1 AC-1: already has evidence", self.said)
-        notes = [c for c in self.board.comments("T-1") if c.get("role") == "validation"]
-        self.assertEqual(len(notes), 1)
-        self.assertEqual(orv.close(self.board, ["T-1"], say=self.said.append), ["T-1"])
+        self.assertEqual(len(self.validation_notes()), 1)
+        self.assertEqual(orv.close(self.board, ["T-1"], ask=self.answers(), say=self.said.append), ["T-1"])
         self.assertEqual(self.status(), "done")
+
+    def test_evidence_asks_once_naming_the_task_criterion_and_actor_before_it_records(self):
+        self.lattice("criterion", "add", "T-1", "The checks pass on the integration branch after the merge.")
+        self.lattice("criterion", "add", "T-1", "It is installed.")
+        self.approve("y")
+        self.merge()
+        pairs = ["T-1:AC-1", "T-1:AC-2"]
+        orv.evidence(self.board, pairs, "Met: the checks passed on main.", ask=self.answers("n"), say=self.said.append)
+        self.assertEqual(self.said[-2:], ["    Record it as human:owner on T-1 AC-1, T-1 AC-2? [y/N] ", "no evidence recorded"])
+        self.assertEqual(self.validation_notes(), [])
+        orv.evidence(self.board, pairs, "Met: the checks passed on main.", ask=self.answers("y"), say=self.said.append)
+        self.assertEqual(len(self.validation_notes()), 2)
+        self.assertEqual(len([line for line in self.said if line.startswith("    Record it as")]), 2)
+
+    def test_without_a_terminal_piped_answers_count_for_nothing_and_nothing_is_written(self):
+        self.lattice("criterion", "add", "T-1", "The checks pass on the integration branch after the merge.")
+        self.refused_without_a_terminal("approve", "T-1")
+        self.assertIsNone(lr.latest_review(self.board.comments("T-1")))
+        self.approve("y")
+        self.merge()
+        self.refused_without_a_terminal("evidence", "--note", "Met: piped in.", "T-1:AC-1")
+        self.assertEqual(self.validation_notes(), [])
+        orv.evidence(self.board, ["T-1:AC-1"], "Met: the checks passed on main.", ask=self.answers("y"), say=self.said.append)
+        self.refused_without_a_terminal("close", "T-1")
+        self.assertEqual(self.status(), "in_review")
 
     def test_a_task_whose_flag_still_asks_something_closes_only_when_the_owner_clears_it(self):
         self.run_in(self.repo, LATTICE, "needs-human", "T-1", "Need: decide the name", "--actor", "agent:x")
