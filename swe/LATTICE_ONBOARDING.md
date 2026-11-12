@@ -360,7 +360,9 @@ wider consequences. Either form keeps every required plan approval.
   or style.
 - Approach: the files, commands and dependencies the change touches, and
   how it follows the project's engineering and testing rules. Name any
-  departure from them and say why.
+  departure from them and say why. Where more than one approach would
+  work, or the choice is hard to undo, name the one you rejected and
+  what it would have cost.
 - Steps: in order, the first usable version first. Each names the files
   it touches and the check that shows it worked, with the result
   expected. For a bug fix, prefer a test that fails before the step and
