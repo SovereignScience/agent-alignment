@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = pathlib.Path(__file__).resolve().parent
 SWE = HERE.parent
@@ -53,8 +54,13 @@ class UpdateAll(unittest.TestCase):
         (own / "their-own.md").write_text("an agent of this project\n")
         self.kit = kit
 
+    def env(self):
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env["HOME"] = str(self.home)
+        return env
+
     def git(self, cwd, *args):
-        env = dict(os.environ, HOME=str(self.home))
+        env = self.env()
         return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
     def project(self, name):
@@ -78,12 +84,140 @@ class UpdateAll(unittest.TestCase):
         return self.work / name / ".git/hooks/pre-push"
 
     def run_it(self, answers, *args, skip=("--skip", "private"), cwd=None, **extra):
-        env = dict(os.environ, HOME=str(self.home))
+        env = self.env()
         env.pop("SWE_WORKSPACE", None)
         env.update(extra)
         done = subprocess.run(["bash", str(self.kit / "swe/scripts/update_all.sh"), *skip, *args],
                               env=env, input=answers, capture_output=True, text=True, timeout=120, cwd=cwd)
         return done.returncode, done.stdout + done.stderr
+
+    def test_the_fixture_ignores_inherited_git_configuration(self):
+        inherited = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.quotePath", "GIT_CONFIG_VALUE_0": "false"}
+        with mock.patch.dict(os.environ, inherited):
+            fixture = UpdateAll()
+            self.addCleanup(fixture.doCleanups)
+            fixture.setUp()
+            self.assertEqual(fixture.git(fixture.kit, "config", "--default", "fixture-default", "--get", "core.quotePath"),
+                             "fixture-default")
+            (fixture.work / "broken").rename(fixture.work / "mended")
+            code, out = fixture.run_it("", "--yes")
+            self.assertEqual(code, 0, out)
+
+    def fixed_date(self):
+        folder = self.home / "bin"
+        folder.mkdir(exist_ok=True)
+        date = folder / "date"
+        date.write_text("#!/bin/sh\nprintf '%s\\n' 20260101T000000Z\n")
+        date.chmod(0o755)
+        return str(folder) + ":" + os.environ["PATH"]
+
+    def copy_target(self, name, part):
+        root = self.work / name
+        self.git(self.work, "init", "-q", "-b", "main", name)
+        (root / ".claude/agents").mkdir(parents=True)
+        (root / ".claude/agents/code-reviewer.md").write_text("an old copy of the kit's reviewer\n")
+        (root / ".git/hooks/pre-push").write_text(WRAPPER)
+        (root / ".git/hooks/tells_check.py").write_text("old tells check\n")
+        target = root / part
+        source = SWE / (".claude/agents/code-reviewer.md" if part.startswith(".claude/")
+                        else ".claude/scripts/" + target.name)
+        return root, target, source
+
+    def test_staged_copies_do_not_write_through_planted_links(self):
+        path = self.fixed_date()
+        for kind in ("symbolic", "hard"):
+            for part in (".git/hooks/pre-push", ".git/hooks/tells_check.py", ".claude/agents/code-reviewer.md"):
+                with self.subTest(kind=kind, part=part):
+                    root, target, source = self.copy_target("staged-case", part)
+                    outside = self.work / "excluded/payload"
+                    outside.write_text("keep this text\n")
+                    staged = target.with_name(target.name + ".20260101T000000Z.new")
+                    if kind == "symbolic":
+                        staged.symlink_to(outside)
+                    else:
+                        os.link(outside, staged)
+                    try:
+                        _, out = self.run_it("", "--yes", PATH=path)
+                        self.assertEqual(outside.read_text(), "keep this text\n", out)
+                        self.assertEqual(target.read_bytes(), source.read_bytes(), out)
+                        self.assertEqual(staged.read_text(), "keep this text\n", out)
+                    finally:
+                        shutil.rmtree(root)
+
+    def test_backups_refuse_existing_paths_and_keep_the_original(self):
+        path = self.fixed_date()
+        for kind in ("symbolic", "hard", "plain", "symbolic-directory", "directory"):
+            for part in (".git/hooks/pre-push", ".git/hooks/tells_check.py", ".claude/agents/code-reviewer.md"):
+                with self.subTest(kind=kind, part=part):
+                    root, target, _ = self.copy_target("backup-case", part)
+                    old = target.read_bytes()
+                    mode = target.stat().st_mode
+                    outside = self.work / "excluded/payload"
+                    outside.write_text("keep this text\n")
+                    outside_dir = self.work / "excluded/payload-directory"
+                    outside_dir.mkdir(exist_ok=True)
+                    (outside_dir / "keep").write_text("keep this text\n")
+                    outside_names = sorted(p.name for p in outside_dir.iterdir())
+                    backup = target.with_name(target.name + ".20260101T000000Z.bak")
+                    if kind == "symbolic":
+                        backup.symlink_to(outside)
+                    elif kind == "hard":
+                        os.link(outside, backup)
+                    elif kind == "symbolic-directory":
+                        backup.symlink_to(outside_dir, target_is_directory=True)
+                    elif kind == "directory":
+                        backup.mkdir()
+                        (backup / "keep").write_text("keep this text\n")
+                    else:
+                        backup.write_text("keep this text\n")
+                    try:
+                        code, out = self.run_it("", "--yes", PATH=path)
+                        self.assertEqual(code, 1, out)
+                        self.assertEqual(outside.read_text(), "keep this text\n", out)
+                        self.assertEqual(sorted(p.name for p in outside_dir.iterdir()), outside_names, out)
+                        self.assertEqual((outside_dir / "keep").read_text(), "keep this text\n", out)
+                        if backup.is_dir():
+                            self.assertEqual(sorted(p.name for p in backup.iterdir()), ["keep"], out)
+                            self.assertEqual((backup / "keep").read_text(), "keep this text\n", out)
+                        else:
+                            self.assertEqual(backup.read_text(), "keep this text\n", out)
+                        self.assertEqual(target.read_bytes(), old, out)
+                        self.assertEqual(target.stat().st_mode, mode, out)
+                    finally:
+                        shutil.rmtree(root)
+
+    def test_redirecting_git_environment_stops_before_git_runs(self):
+        folder = self.home / "bin"
+        folder.mkdir(exist_ok=True)
+        marker = self.home / "git-ran"
+        git = folder / "git"
+        git.write_text("#!/bin/sh\nprintf ran > \"$HOME/git-ran\"\nexit 98\n")
+        git.chmod(0o755)
+        for name in ("GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_CONFIG_COUNT", "GIT_NAMESPACE"):
+            for value in ("", str(self.work / "excluded/private")):
+                with self.subTest(name=name, empty=not value):
+                    code, out = self.run_it("", "--yes", PATH=str(folder) + ":" + os.environ["PATH"],
+                                            **{name: value})
+                    self.assertEqual(code, 1, out)
+                    self.assertIn(name, out)
+                    self.assertIn("nothing was done", out)
+                    self.assertNotIn(str(self.work / "excluded/private"), out)
+                    self.assertFalse(marker.exists(), out)
+
+    def test_conditional_git_tracing_does_not_write_into_a_skipped_project(self):
+        target = self.work / "excluded/trace.json"
+        settings = self.home / "trace-settings"
+        settings.write_text('[trace2]\n    eventTarget = "' + str(target) + '"\n')
+        for root in (self.kit, self.work / "old-hook"):
+            with self.subTest(repository=root.name):
+                target.write_text("keep this text\n")
+                (self.home / ".gitconfig").write_text(
+                    '[includeIf "gitdir:' + str(root / ".git") + '"]\n'
+                    '    path = "' + str(settings) + '"\n')
+                _, out = self.run_it("", "--yes", cwd=self.home)
+                self.assertEqual(target.read_text(), "keep this text\n", out)
+                self.assertIn("Git tracing may write elsewhere", out)
+                self.assertNotIn(str(target), out)
 
     def test_a_project_that_links_into_a_skipped_one_never_writes_there(self):
         excluded = self.work / "excluded"
@@ -180,6 +314,7 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual(code, 1, out)
         kit_hook = (SWE / ".claude/scripts/pre-push").read_bytes()
         self.assertEqual(self.hook("old-hook").read_bytes(), kit_hook)
+        self.assertTrue(os.access(self.hook("old-hook"), os.X_OK))
         self.assertEqual(len(list(self.hook("old-hook").parent.glob("pre-push.*.bak"))), 1)
         self.assertEqual(self.hook("broken").read_bytes(), kit_hook)
         self.assertFalse(self.hook("declined").exists())

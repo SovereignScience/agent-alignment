@@ -25,22 +25,23 @@ case "${1:-}" in
     *) die "unknown argument $1; usage: $0 [--apply]" ;;
 esac
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$here/git_elsewhere.sh"
+if held=$(git_environment_elsewhere); then die "$held; nothing was done"; fi
 command -v lattice >/dev/null || die "lattice is not on PATH"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in a Git repository"
 [ "$root" = "$PWD" ] || die "run this from the top of the repository: $root"
 [ -f .lattice/config.json ] || die "this project has no board; board_setup.sh makes one"
 git check-ignore -q .lattice/config.json || die "source Git can still see the board"
+# A link in the board, or Git files that lead to another repository, would take
+# these writes into another project's board.
+held=$(find -P .lattice -path .lattice/.git -prune -o \( -type l -o -type f -links +1 \) -print -quit)
+[ -z "$held" ] || die "$held is a link; nothing was done"
+if held=$(git_elsewhere "$(pwd -P)/.lattice"); then die "$held; nothing was done"; fi
 board() { git -C .lattice "$@"; }
 [ -z "$(board rev-parse --show-cdup 2>/dev/null || echo none)" ] \
     || die "the board has no repository of its own; see step 3b of LATTICE_ONBOARDING.md"
 [ "$(board branch --show-current)" = main ] || die "the board is not on its main branch"
 ! board rev-parse -q --verify MERGE_HEAD >/dev/null || die "a merge is already in progress in .lattice"
-# A link in the board, or Git files that lead to another repository, would take
-# these writes into another project's board.
-held=$(find -P .lattice -path .lattice/.git -prune -o \( -type l -o -type f -links +1 \) -print -quit)
-[ -z "$held" ] || die "$held is a link; nothing was done"
-source "$here/git_elsewhere.sh"
-if held=$(git_elsewhere "$(pwd -P)/.lattice"); then die "$held; nothing was done"; fi
 doctor() { LATTICE_ROOT=$PWD LATTICE_NO_UPDATE_CHECK=1 lattice doctor >/dev/null 2>&1; }
 kept=(events tasks plans artifacts notes archive ids.json config.json context.md .gitignore)
 
@@ -68,10 +69,16 @@ done
 board diff --cached --quiet || board commit -q -m "chore(board): record local updates before sync"
 if [ "$remote" = yes ]; then
     board fetch -q origin main || die "the board remote could not be reached; the board's changes are committed, nothing else changed"
+    held=$(board ls-tree -r FETCH_HEAD | sed -n '/^120000 /p') \
+        || die "could not inspect the remote board; local changes are committed, nothing was merged or pushed"
+    [ -z "$held" ] \
+        || die "the remote board holds a symbolic link; local changes are committed, nothing was merged or pushed"
     if board merge-base --is-ancestor FETCH_HEAD HEAD; then :
     elif board merge-base --is-ancestor HEAD FETCH_HEAD; then
         board merge -q --ff-only FETCH_HEAD || die "an uncommitted board file is in the way of the pull"
     else
+        merge_tmp=$(mktemp -d)
+        trap 'rm -f -- "$merge_tmp/ours" "$merge_tmp/theirs"; rmdir -- "$merge_tmp"' EXIT
         board merge --no-ff --no-commit FETCH_HEAD >/dev/null 2>&1 || true
         board rev-parse -q --verify MERGE_HEAD >/dev/null || die "the merge could not start; run git -C .lattice status"
         while IFS= read -r file; do
@@ -81,9 +88,9 @@ if [ "$remote" = yes ]; then
             fi
             case $file in
                 events/*.jsonl)
-                    board show ":2:$file" > ".lattice/$file.ours"
-                    board show ":3:$file" > ".lattice/$file.theirs"
-                    python3 - ".lattice/$file.ours" ".lattice/$file.theirs" ".lattice/$file" <<'PY'
+                    board show ":2:$file" > "$merge_tmp/ours"
+                    board show ":3:$file" > "$merge_tmp/theirs"
+                    python3 - "$merge_tmp/ours" "$merge_tmp/theirs" ".lattice/$file" <<'PY'
 import json, sys
 seen, rows = set(), []
 for name in sys.argv[1:3]:
@@ -94,7 +101,6 @@ for name in sys.argv[1:3]:
 rows.sort(key=lambda line: json.loads(line).get("ts", ""))
 open(sys.argv[3], "w").writelines(rows)
 PY
-                    rm ".lattice/$file.ours" ".lattice/$file.theirs"
                     board add -- "$file" ;;
                 tasks/*.json) board checkout -q --ours -- "$file" ;;
                 *) board merge --abort
