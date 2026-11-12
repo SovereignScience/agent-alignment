@@ -141,6 +141,20 @@ class BoardUpdate(unittest.TestCase):
         self.assertIn("board_context.py failed (exit 3)", out)
         self.assertEqual(self.head(self.here / ".lattice"), before)
 
+    def test_a_board_that_holds_a_link_is_left_alone(self):
+        elsewhere = pathlib.Path(self.tmp.name, "elsewhere.md")
+        elsewhere.write_text("another board's context\n")
+        context = self.here / ".lattice/context.md"
+        before = self.head(self.here / ".lattice")
+        for make in (context.symlink_to, lambda target: os.link(target, context)):
+            context.unlink()
+            make(elsewhere)
+            code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+            self.assertEqual(code, 1, out)
+            self.assertIn(".lattice/context.md is a link, or points to another repository; nothing was done", out)
+            self.assertEqual(elsewhere.read_text(), "another board's context\n")
+            self.assertEqual(self.head(self.here / ".lattice"), before)
+
     def test_a_project_without_a_board_is_sent_to_the_setup_command(self):
         bare = self.project("three")
         code, out = self.script("board_update.sh", "--apply", cwd=bare, check=False)
