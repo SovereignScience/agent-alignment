@@ -141,6 +141,39 @@ class BoardUpdate(unittest.TestCase):
         self.assertIn("board_context.py failed (exit 3)", out)
         self.assertEqual(self.head(self.here / ".lattice"), before)
 
+    def test_a_board_that_holds_a_link_is_left_alone(self):
+        elsewhere = pathlib.Path(self.tmp.name, "elsewhere.md")
+        elsewhere.write_text("another board's context\n")
+        context = self.here / ".lattice/context.md"
+        before = self.head(self.here / ".lattice")
+        for make in (context.symlink_to, lambda target: os.link(target, context)):
+            context.unlink()
+            make(elsewhere)
+            code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+            self.assertEqual(code, 1, out)
+            self.assertIn(".lattice/context.md is a link; nothing was done", out)
+            self.assertEqual(elsewhere.read_text(), "another board's context\n")
+            self.assertEqual(self.head(self.here / ".lattice"), before)
+
+    def test_a_board_whose_git_files_lead_elsewhere_is_left_alone(self):
+        git = self.here / ".lattice/.git"
+        before = self.head(self.here / ".lattice")
+        objects = pathlib.Path(self.tmp.name, "objects")
+        shutil.move(git / "objects", objects)
+        (git / "objects").symlink_to(objects)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn(".lattice/.git/objects is a link; nothing was done", out)
+        (git / "objects").unlink()
+        shutil.move(objects, git / "objects")
+        (git / "commondir").write_text(str(self.remote) + "\n")
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("Git finds the repository or work tree of .lattice elsewhere; nothing was done", out)
+        (git / "commondir").unlink()
+        self.assertEqual(self.head(self.here / ".lattice"), before)
+        self.assertEqual(self.head(self.remote), before)
+
     def test_a_project_without_a_board_is_sent_to_the_setup_command(self):
         bare = self.project("three")
         code, out = self.script("board_update.sh", "--apply", cwd=bare, check=False)
