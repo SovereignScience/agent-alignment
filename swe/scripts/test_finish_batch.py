@@ -16,7 +16,10 @@ SUITES = ("swe/.claude/scripts", "swe/scripts", "swe/tools/lattice-review", "flo
 PASSES = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_it(self):\n        pass\n"
 INSTALLER = """#!/usr/bin/env bash
 case $1 in
-    status) [ -f "$HOME/installed" ] || echo "would install the hooks" ;;
+    status)
+        [ "$2" = --exit-code ] || exit 64
+        [ ! -f "$HOME/blocked" ] || { echo "collision in the rules"; exit 2; }
+        [ -f "$HOME/installed" ] || { echo "would install the hooks"; exit 1; } ;;
     apply) touch "$HOME/installed" ;;
 esac
 """
@@ -159,6 +162,38 @@ class FinishBatch(unittest.TestCase):
         code, out = self.finish("y\n")
         self.assertEqual(code, 0, out)
         self.assertEqual(self.status("T-1"), "done")
+
+    def test_a_no_keeps_out_every_branch_that_contains_the_declined_one(self):
+        self.lattice("create", "task T-3")
+        self.git("checkout", "-q", "-b", "feature/T-3-three", "feature/T-1-one")
+        self.write("three.txt", "three\n")
+        self.git("add", "three.txt")
+        self.git("commit", "-q", "-m", "feat: add three.txt\n\nTask: T-3")
+        self.git("checkout", "-q", "main")
+        self.lattice("branch-link", "T-3", "feature/T-3-three")
+        for status in ("todo", "in_progress", "in_review"):
+            self.lattice("status", "T-3", status, "--no-auto-review")
+        ids = ("T-1", "T-2", "T-3")
+        code, out = self.finish("n\ny\ny\n\n", ids=ids)
+        self.assertIn("its branch also holds 1 other task(s) of this batch: T-1", out)
+        self.assertIn("T-3: skipped, its branch contains T-1, which is not approved", out)
+        self.assertEqual(self.git("rev-list", "--count", "--first-parent", self.start + "..main"), "1")
+        self.assertFalse((self.root / "one.txt").exists())
+        self.assertFalse((self.root / "three.txt").exists())
+        self.git("push", "-q", "origin", "main")
+        code, out = self.finish("n\n", ids=ids)
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, r"merged +1  T-2\nskipped +2  T-1 T-3\nclosed +1  T-2\nstill open +2  T-1 T-3")
+
+    def test_an_installer_that_cannot_say_where_the_machine_stands_stops_the_run(self):
+        self.finish("y\ny\n\n")
+        self.git("push", "-q", "origin", "main")
+        (self.home / "blocked").write_text("")
+        code, out = self.finish("")
+        self.assertEqual(code, 1, out)
+        self.assertIn("STOP: the installer could not say where this machine stands (exit 2)", out)
+        self.assertNotIn("== Phase 6", out)
+        self.assertFalse((self.home / "installed").exists())
 
     def test_a_failing_check_stops_before_the_push_and_takes_nothing_back(self):
         self.git("checkout", "-q", "feature/T-2-two")
