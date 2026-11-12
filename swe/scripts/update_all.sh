@@ -7,10 +7,11 @@
 # The workspace is SWE_WORKSPACE, else the folder this kit's main checkout
 # is in. For each Git repository directly inside it, other than this kit and
 # the folders named with --skip, it:
-#   1. refreshes the kit's push check where it is installed, keeping the old
-#      copy as .bak, and asks before installing it where there is no push hook
-#      (--yes installs without asking). Another tool's push hook, or hooks
-#      that core.hooksPath takes from elsewhere, are named and left alone;
+#   1. refreshes the kit's push check where it is installed, or where the old
+#      agent-safety wrapper is, keeping the old copy as .bak, and asks before
+#      installing it where there is no push hook (--yes installs without
+#      asking). Another tool's push hook, or hooks that core.hooksPath takes
+#      from elsewhere, are named and left alone;
 #   2. finds copies of the kit's agents and slash commands in the
 #      repository's own .claude folder that differ from the kit, and asks
 #      before bringing them up to date (a project's copy wins over the one
@@ -37,6 +38,9 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument $1; usage: $0 [--skip <folder>]... [--yes]" ;;
     esac
 done
+# The push hook installed before this kit's own: it runs an older copy of the
+# push check from /etc/claude-code/hooks that nothing updates any more.
+old_wrapper=23f9cb1e867513f69d570947f290386d14f06d39e185faa33b0f8744d89bae1b
 [ -d "$workspace" ] || die "no workspace at $workspace"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 
@@ -78,7 +82,8 @@ for root in "$workspace"/*/; do
         else
             problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"
         fi
-    elif ! grep -qF "$kit_hook_mark" "$hooks/pre-push"; then
+    elif ! grep -qF "$kit_hook_mark" "$hooks/pre-push" \
+            && [ "$(sha256sum < "$hooks/pre-push" | cut -d' ' -f1)" != "$old_wrapper" ]; then
         echo "note     another tool's push hook is here (left alone)"
     elif cmp -s "$hooks/pre-push" "$swe/.claude/scripts/pre-push" && cmp -s "$hooks/tells_check.py" "$swe/.claude/scripts/tells_check.py"; then
         echo "current  push check"
