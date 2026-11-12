@@ -244,8 +244,9 @@ decides. "Mark done" appears only when that review is an approval, its
 commit IDs are the task's current work, every one of its notes was
 recorded as a thread and every review thread is resolved. Once work is
 merged, its commits need not be one range: each must lie in a range a
-person approved since the last deleted review, or be a merge whose
-combined diff is empty. A later
+person approved since the last deleted review, or be a merge with
+nothing of its own: Git's automatic merge of its two parents, or one
+whose combined diff is empty. A later
 annotated review, a deleted review, a moved branch, a new trailer
 commit, a review of uncommitted changes from an older version, a note whose recording failed or an open
 code or plan thread all withdraw it, and the section says why. It also
@@ -419,7 +420,7 @@ edit the files and the board.
 From `swe/tools/lattice-review`:
 
 ```
-python3 -m unittest test_lattice_review
+python3 -m unittest test_lattice_review test_merge_approved test_owner_review
 <python with lattice installed> -m unittest test_lattice_review
 ```
 
