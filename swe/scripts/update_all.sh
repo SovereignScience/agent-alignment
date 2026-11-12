@@ -84,11 +84,12 @@ case $state in
     *) echo "machine  could not tell (switch_rules.sh status exit $state); run it to see why" ;;
 esac
 
-# A folder of the project being updated that a link takes elsewhere, perhaps into
-# a skipped project. $root is a physical path, so any link shows as a difference.
+# A part of the project being updated that is a link or not a plain folder, so
+# writes there could land in another project, perhaps a skipped one. $root is a
+# physical path, so any link shows as a difference.
 linked() {
     { [ -e "$1" ] || [ -L "$1" ]; } && [ "$(cd "$1" 2>/dev/null && pwd -P)" != "$1" ] || return 1
-    echo "note     ${1#"$root"/} leads out of this project through a link; left alone"
+    echo "note     ${1#"$root"/} is a link or not a plain folder; left alone"
 }
 # Put the kit's file $1 in place of $2 by renaming a new file over it, so a hard
 # link to $2 from elsewhere keeps its old text.
