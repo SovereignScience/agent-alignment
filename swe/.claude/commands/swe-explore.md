@@ -1,5 +1,5 @@
 ---
-description: Map an unfamiliar codebase fast. Hands off to architecture-explorer; returns a 200-400 word brief with layout, entry points, build/test commands, conventions, and gaps. Use as the first command in any new repo.
+description: Map an unfamiliar codebase fast. Hands off to architecture-explorer; returns a 200-400 word brief with layout, entry points, build/test commands, conventions, and gaps.
 argument-hint: "[path-to-repo]"
 allowed-tools: Bash, Read, Agent
 model: inherit
