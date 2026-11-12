@@ -12,7 +12,7 @@ instructions; the Codex profile and rules live in ../codex/.
 | managed-settings.example.json | The admin-enforced layer for /etc/claude-code/managed-settings.json. |
 | managed-local.example.json | Template for one machine's own paths, installed as managed-settings.d/50-local.json. |
 | agents/ | 13 specialist subagent definitions, each run by name. |
-| commands/ | 14 slash commands. |
+| commands/ | 16 slash commands. |
 | scripts/ | Hooks and the status line. Need bash, python3, git and sha256sum. |
 
 Personal overrides go in .claude/settings.local.json, which is ignored in

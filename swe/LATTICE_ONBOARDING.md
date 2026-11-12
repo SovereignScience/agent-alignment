@@ -165,6 +165,16 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   one owning task; dependent tasks link to it and inherit them, and a
   proposed deviation is a needs_human on the owning task. Run lattice
   doctor after a reconciliation round.
+- Ask before the plan. Read the task, the code it touches and the
+  related tasks first, and ask only what they cannot answer. A task is
+  clear when you can say who needs the change, what goes wrong today,
+  the result they expect, how the owner will check it and what is out
+  of scope. Until then ask one question at a time, the one whose answer
+  changes the most first, each with two to four options and your
+  recommendation, answerable in a few words. Leave out style and
+  anything cheap to undo; those are Assumptions in the plan. Stop when
+  the task is clear or after five questions, write each answer into
+  the task in the owner's words, then write the plan.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan in the plan shape below to the file `lattice plan <ID>` names, sets
   `needs-human <ID> "Need: approve plan"` and stops, in todo. The owner
@@ -192,6 +202,22 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   LATTICE_ROOT=<board directory> set. The main checkout stays on <branch>
   for the owner's merges and board writes; no session edits files there.
   At most three sessions or workers at once.
+- One version is the default. A plan proposes competing versions, and
+  the owner decides when approving it, only when the approach is open
+  and the plan cannot settle it, a mistake would be costly (security,
+  data, money, hard to undo), or a first attempt failed review; and
+  only when the acceptance criteria can tell the versions apart. Then
+  two candidates, three at most, in .worktrees/<CODE>-<n>-a, -b and -c
+  on branches feature/<CODE>-<n>-<slug>-a and so on, all from the same
+  commit and the same approved plan. One session builds each, from a
+  different tool where possible, and sees no other candidate's work.
+  Candidate branches are not linked to the task: the review section
+  reads only the first linked branch that has commits.
+  A session that built none of them compares them against the plan and
+  the criteria and attaches the scorecard. The owner picks, links that
+  one branch with lattice branch-link and reviews it like any other
+  task. Without a clear winner, say so. The rest are removed after the
+  merge.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging
@@ -256,6 +282,14 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - After answering: one top-level round summary listing each thread
   answered (place, Status, one line), the checks run and what remains;
   then move the task to in_review.
+- Keeping review small: from an agent's review, only a BLOCKER or MAJOR
+  finding holds a merge. A MINOR or NIT is fixed in passing or dropped;
+  if it matters later it becomes a task the owner authorizes. Tests
+  cover each behaviour in the acceptance criteria and each fixed bug,
+  nothing more; a request for another test names the behaviour left
+  unpinned. A thread gets two rounds: if the owner's note after the
+  second reply still disagrees, set one Need: flag that gives both
+  positions, and the owner decides.
 - The board is versioned separately from source, in its own private
   repository at .lattice/. A board checkpoint requires an explicit request;
   remote creation and pushing remain the owner's.
@@ -320,6 +354,10 @@ wider consequences. Either form keeps every required plan approval.
 - Owner decisions: at most three, one per line, each with the
   options and a recommendation, answered when the owner reviews the
   plan.
+- Candidates, only when the plan proposes competing versions: which
+  reason in the conventions applies, what each one tries and which
+  criteria will tell them apart. Drop one that differs only in wording
+  or style.
 - Approach: the files, commands and dependencies the change touches, and
   how it follows the project's engineering and testing rules. Name any
   departure from them and say why.
@@ -422,7 +460,8 @@ necessary step, give the owner its exact command without widening policy.
 
 Capture only items the owner explicitly authorizes. Findings and earlier
 session notes are input, not permission to create or start more tasks.
-Keep one record per authorized task.
+Keep one record per authorized task. `/swe-intake` checks that a report
+is real and drafts the task; the owner still authorizes it.
 
 Every create carries `--actor agent:<tool>` and a description in this
 shape:
@@ -438,13 +477,17 @@ Remaining: not started.
 Rules for the fields:
 
 - Title: imperative, under 80 characters, no ticket prefix.
+- Request, for a bug: what was run, what happened and what was expected.
 - Type: `task` for a change, `bug` for broken behaviour, `chore` for
   cleanup, `spike` for research with no change.
 - Priority: `high` for exposure or data risk, `medium` for correctness and
   robustness, `low` for cleanup and nice-to-have.
 - Tags: areas from `context.md`, two or three at most.
 - Criteria: `lattice criterion add <ID> "<observable outcome>"` for each
-  thing a reviewer can check. Skip criteria that restate the title.
+  thing a reviewer can check. Skip criteria that restate the title. For
+  a code change, add one criterion that the project's checks pass on
+  the integration branch after the merge; its evidence is the command
+  run there and its result.
 - Decisions: `lattice needs-human <ID> "Need: <the exact question>"`.
   One question per flag.
 
@@ -468,7 +511,9 @@ task records remain private unless the owner asks to share them.
    feature/<ID>-<slug> --actor agent:<tool>`. Edit, test and run
    dev servers only there. Lattice finds the board by walking up from the
    working directory, so the session sets `LATTICE_ROOT=<board
-   directory>`.
+   directory>`. The owner can make the worktree with
+   `<agent-alignment>/swe/scripts/task_worktree.sh add <ID> <slug>`,
+   adding `--candidates 2` when the approved plan has competing versions.
 4. Before handing over: the round summary, a top-level comment with each
    thread answered and its Status, the checks run, their results, what
    was mocked, what never ran, and what remains for the owner.
@@ -524,6 +569,11 @@ otherwise. Merge and push first, then Mark done. After the merge the
 task's work is found only through its `Task:` trailers, and earlier
 approvals still cover the commits they reviewed, so give every commit
 the trailer.
+
+After Mark done, clear the task's worktrees:
+`<agent-alignment>/swe/scripts/task_worktree.sh remove <ID>` shows what
+it would do and `--apply` does it. It removes merged branches only;
+`--drop-unmerged` also discards the candidates that were not picked.
 
 Feedback that needs more work: "Move to in progress" in the section, or
 the status control when the section offers no button, then give the

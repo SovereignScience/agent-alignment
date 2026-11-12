@@ -4,8 +4,8 @@ This repo serves two tracks. Pick the one your change belongs to;
 the rubric below has a section for each.
 
 - Track A, agentic software engineering, lives under `swe/`.
-  Files: the five SWE canonical protocols, the 12 SWE subagents
-  (in `swe/.claude/agents/`), the 14 SWE slash commands.
+  Files: the five SWE canonical protocols, the SWE subagents
+  (in `swe/.claude/agents/`), the SWE slash commands.
 - Track B, Inner Commons + Flourishing alignment, lives under
   `flourishing/`. Files: the four alignment canonical modules,
   the four derived files, the 10 alignment subagents (in

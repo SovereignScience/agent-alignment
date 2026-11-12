@@ -8,7 +8,7 @@ Two independent agentic toolkits in one repository. Pick a track,
 
 ### `swe/`: agentic software-engineering toolkit
 
-Drop-in protocols + a 12-subagent / 14-command Claude Code setup
+Drop-in protocols + a subagent and slash-command Claude Code setup
 for keeping agentic coding work correct, reversible, verifiable and
 minimal. Use when you are doing software engineering: review,
 debug, test, refactor, audit, ship.

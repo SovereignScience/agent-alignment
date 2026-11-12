@@ -16,7 +16,7 @@ the root, you do not need to read anything outside this subtree.
 ## What this folder is
 
 A complete agentic-coding toolkit: five canonical protocols, thirteen
-specialist subagents, fourteen slash commands, language-aware hooks,
+specialist subagents, sixteen slash commands, language-aware hooks,
 sane permissions. Drop into this folder and you have everything
 you need; the only other file to visit is `CONTRIBUTING.md` at the
 root.
@@ -93,7 +93,12 @@ affected protocol.
 | Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
 | Five-specialist review of the branch | (orchestrator) | `/swe-swarm-review` |
+| Check a reported issue is real, then draft its task | `debugger` | `/swe-intake` |
+| Compare candidate versions of one task | `code-reviewer` | `/swe-compare` |
 | Install the five protocols in another repo | (orchestrator) | `/swe-init` |
+
+Codex has no slash commands: open the command's file in
+`.claude/commands/` and follow it.
 
 Use subagents to keep research out of the main context, a few at a
 time and at most three at once. Run the review and audit agents only
@@ -139,7 +144,7 @@ swe/
     ├── settings.json             # permissions, sandbox, hooks, status line
     ├── README.md                 # hook architecture, how to add agents and commands
     ├── agents/                   # 13 specialists
-    ├── commands/                 # 14 slash commands
+    ├── commands/                 # 16 slash commands
     └── scripts/                  # hooks and status line
 ```
 
