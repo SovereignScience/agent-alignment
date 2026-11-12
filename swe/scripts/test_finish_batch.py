@@ -14,6 +14,8 @@ BASH = shutil.which("bash")
 LATTICE = shutil.which("lattice")
 SUITES = ("swe/.claude/scripts", "swe/scripts", "swe/tools/lattice-review", "flourishing/.claude/scripts")
 PASSES = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_it(self):\n        pass\n"
+NEEDS_LATTICE = "import importlib.util\n" + PASSES.replace(
+    "class", "@unittest.skipUnless(importlib.util.find_spec('lattice'), 'lattice not importable')\nclass")
 INSTALLER = """#!/usr/bin/env bash
 case $1 in
     status)
@@ -140,6 +142,23 @@ class FinishBatch(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("nothing to install", out)
         self.assertEqual((self.remote_main(), self.git("rev-parse", "HEAD", cwd=self.board)), settled)
+
+    def test_the_evidence_counts_the_tests_and_lattice_review_runs_on_the_python_lattice_runs_on(self):
+        self.write("swe/tools/lattice-review/test_dashboard.py", NEEDS_LATTICE)
+        self.write("swe/scripts/test_skips.py", PASSES.replace("pass", "self.skipTest('not on this machine')"))
+        self.git("add", "swe/tools/lattice-review/test_dashboard.py", "swe/scripts/test_skips.py")
+        self.git("commit", "-q", "-m", "test: add a dashboard test and a skipped test")
+        self.git("push", "-q", "origin", "main")
+        self.finish("y\ny\n\n")
+        self.git("push", "-q", "origin", "main")
+        code, out = self.finish("")
+        self.assertEqual(code, 0, out)
+        notes = [event["data"]["body"] for path in (self.board / "events").glob("*.jsonl")
+                 for event in map(json.loads, path.read_text().splitlines())
+                 if event["type"] == "comment_added" and event["data"].get("role") == "validation"]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("ran the four test suites (6 tests, 1 skipped)", notes[0])
+        self.assertIn("and none failed.", notes[0])
 
     def test_a_rerun_before_the_push_keeps_the_earlier_merges_and_asks_again(self):
         self.finish("y\ny\n\n")
