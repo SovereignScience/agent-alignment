@@ -41,12 +41,19 @@ Then dispatch the five agents, at most three at once:
    (no surprise abstractions, no surprise dependencies between
    layers).
 
-Each agent receives the same brief, with the base and head revisions,
-the original request, the acceptance criteria and any validation
-results: "Review the change between <base> and <head>. Read the diff
-yourself and open the code around it as far as each question needs.
-Output findings and what you read; do not modify code. Keep the prose
-short and never drop a finding to fit a length."
+Each agent receives the same brief, in the tags `code-reviewer` lists
+under Inputs, with the instruction last:
+
+```text
+<revisions>base <sha>, head <sha>; uncommitted: yes or no; untracked: <files or none></revisions>
+<request><what the owner asked for, in the owner's words where you have them></request>
+<acceptance_criteria><the task's criteria, one per line, or "none given"></acceptance_criteria>
+<author_claims><the author's summary, validation results and known limits, or "none"></author_claims>
+Review the change between the revisions. Read the diff yourself and
+open the code around it as far as each question needs. Output findings
+and what you read; do not modify code. Keep the prose short and never
+drop a finding to fit a length.
+```
 
 After all five return, synthesize:
 

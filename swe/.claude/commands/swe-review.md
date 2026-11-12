@@ -25,14 +25,20 @@ source files, leaving out credentials and generated binaries. State the
 base, HEAD and working-tree boundary; an empty committed diff does not
 establish that prepared work is empty.
 
-Then spawn `code-reviewer` with the base and head revisions, whether
-uncommitted and untracked files are in scope, the original request, the
-acceptance criteria and any validation results. Brief: "review the
-change between <base> and <head> against the SWE_CORE invariants. Read
-the diff yourself as your agent definition sets out, and open the code
-around it as far as each question needs. Output findings and coverage
-only; do not modify code. Use the format defined in your agent
-definition."
+Then spawn `code-reviewer`. Write the brief in the tags its agent
+definition lists under Inputs, with the instruction last:
+
+```text
+<revisions>base <sha>, head <sha>; uncommitted: yes or no; untracked: <files or none></revisions>
+<request><what the owner asked for, in the owner's words where you have them></request>
+<acceptance_criteria><the task's criteria, one per line, or "none given"></acceptance_criteria>
+<author_claims><the author's summary, validation results and known limits, or "none"></author_claims>
+Review the change between the revisions against the SWE_CORE
+invariants. Read the diff yourself as your agent definition sets out,
+and open the code around it as far as each question needs. Output
+findings and coverage only; do not modify code. Use the format defined
+in your agent definition.
+```
 
 Surface the verdict and findings to the user verbatim. Recommend the next
 agent if findings indicate one (`security-reviewer` for trust-
