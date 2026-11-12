@@ -76,8 +76,8 @@ affected protocol.
 Where a command or agent is not loaded, as in Codex or a window opened
 at the main checkout, open its file under `.claude/` and follow it.
 
-Run at most three subagents at once, and the review and audit agents
-only when the user asks. `/swe-swarm-review` runs five independent
+Run at most three subagents at once, and review and audit agents only
+when the user or a board rule asks. `/swe-swarm-review` runs five independent
 reviews (code, security, perf, deps, architecture), three at a time.
 
 ## Build, verify

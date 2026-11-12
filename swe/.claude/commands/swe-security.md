@@ -1,5 +1,5 @@
 ---
-description: Independent security review of the current branch (or a named diff). Hands off to security-reviewer; returns severity-sorted CRITICAL/HIGH/MEDIUM/LOW findings against the OWASP top-10. Read-only, no edits.
+description: Independent security review of the current branch (or a named diff). Hands off to security-reviewer; returns findings graded P0 to P3 against the OWASP top-10. Read-only, no edits.
 argument-hint: "[base-branch]"
 allowed-tools: Bash, Read, Agent
 model: inherit
@@ -23,8 +23,9 @@ top-10 quick-check on every hunk that touches a trust boundary. Output
 findings only; do not modify code. Keep the prose under 500 words and
 never drop a finding to fit."
 
-Surface the findings to the user verbatim. If there are CRITICAL or
-HIGH findings, recommend BLOCK-MERGE. If only LOW/INFO, recommend
-SHIP-WITH-NOTE.
+Surface the findings to the user verbatim. If there is a P0 or P1
+finding, recommend BLOCK-MERGE. If the worst is P2, recommend
+SHIP-WITH-NOTE, or BLOCK-MERGE when the board is in lock down and the
+finding is on a path a user reaches. If only P3, recommend SHIP.
 
 Do not commit. Do not auto-apply fixes.

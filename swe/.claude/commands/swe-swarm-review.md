@@ -50,7 +50,7 @@ short and never drop a finding to fit a length."
 
 After all five return, synthesize:
 
-- Deduplicated findings, blocking ones first.
+- Deduplicated findings, highest grade first.
 - Conflicts between agents (one says fix X, another says X is fine).
 - Items deliberately not reviewed (handoff gaps).
 - Final recommendation: SHIP / SHIP-WITH-NOTE / BLOCK.
