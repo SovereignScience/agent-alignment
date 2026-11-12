@@ -19,9 +19,11 @@ class UpdateAll(unittest.TestCase):
         self.home = pathlib.Path(self.tmp.name, "home")
         self.work = self.home / "work"
         kit = self.work / "kit"
-        for folder in ("swe/scripts", "swe/.claude/scripts"):
+        for folder in ("swe/scripts", "swe/.claude/scripts", "swe/.claude/agents"):
             (kit / folder).mkdir(parents=True)
-        shutil.copy(HERE / "update_all.sh", kit / "swe/scripts/update_all.sh")
+        for name in ("update_all.sh", "kit_files.sh"):
+            shutil.copy(HERE / name, kit / "swe/scripts" / name)
+        shutil.copy(SWE / ".claude/agents/code-reviewer.md", kit / "swe/.claude/agents/code-reviewer.md")
         (kit / "swe/scripts/switch_rules.sh").write_text(STATUS)
         (kit / "swe/scripts/board_update.sh").write_text(BOARD)
         for name in ("pre-push", "tells_check.py"):
@@ -36,6 +38,10 @@ class UpdateAll(unittest.TestCase):
             (self.work / name / ".lattice").mkdir()
             (self.work / name / ".lattice/config.json").write_text("{}")
         (self.work / "not-a-repo").mkdir()
+        own = self.work / "old-hook/.claude/agents"
+        own.mkdir(parents=True)
+        (own / "code-reviewer.md").write_text("an old copy of the kit's reviewer\n")
+        (own / "their-own.md").write_text("an agent of this project\n")
         self.kit = kit
 
     def git(self, cwd, *args):
@@ -52,7 +58,7 @@ class UpdateAll(unittest.TestCase):
         return done.returncode, done.stdout + done.stderr
 
     def test_each_project_gets_the_push_check_and_its_board_brought_up_to_date(self):
-        code, out = self.run_it("y\nn\nn\n")
+        code, out = self.run_it("y\nn\nn\ny\n")
         self.assertEqual(code, 1, out)
         kit_hook = (SWE / ".claude/scripts/pre-push").read_bytes()
         self.assertEqual(self.hook("old-hook").read_bytes(), kit_hook)
@@ -69,15 +75,24 @@ class UpdateAll(unittest.TestCase):
         self.assertNotIn("== private", out)
         self.assertNotIn("== not-a-repo", out)
         self.assertIn("machine  the installed rules, agents and commands match the kit", out)
+        self.assertIn("stale    .claude/agents/code-reviewer.md", out)
+        lines = (SWE / ".claude/agents/code-reviewer.md").read_text().split("\n")
+        end = lines.index("---", 1)
+        note = ("The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) "
+                "are in %s, whichever project you are in." % (self.kit / "swe"))
+        self.assertEqual((self.work / "old-hook/.claude/agents/code-reviewer.md").read_text(),
+                         "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:]))
+        self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
 
     def test_a_second_run_changes_nothing_and_a_machine_behind_the_kit_is_named(self):
         (self.work / "broken").rename(self.work / "mended")
-        self.run_it("y\ny\ny\n")
+        self.run_it("y\ny\ny\ny\n")
         (self.home / "machine").write_text("3")
         code, out = self.run_it("", "--yes")
         self.assertEqual(code, 0, out)
         self.assertNotIn("updated", out)
         self.assertNotIn("installed", out)
+        self.assertNotIn("stale", out)
         self.assertIn("DONE: every project in %s is up to date" % self.work, out)
         self.assertIn("machine  BEHIND: run bash", out)
 
