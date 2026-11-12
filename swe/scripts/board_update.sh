@@ -12,7 +12,8 @@
 # line, and a task snapshot is rebuilt from its events. Anything else that
 # changed on both sides, such as two sessions that each created a task, stops
 # the merge before it is committed and names the file; the board's own
-# changes stay committed and nothing is pushed.
+# changes stay committed and nothing is pushed. A board that holds a link, or
+# whose .git is a file pointing to another repository, is left alone.
 set -euo pipefail
 
 die() { echo "board_update: $*" >&2; exit 1; }
@@ -28,6 +29,11 @@ command -v lattice >/dev/null || die "lattice is not on PATH"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in a Git repository"
 [ "$root" = "$PWD" ] || die "run this from the top of the repository: $root"
 [ -f .lattice/config.json ] || die "this project has no board; board_setup.sh makes one"
+# A link in the board, or a .git file that points to another repository, would
+# take these writes into another project's board.
+held=$(find -P .lattice -path .lattice/.git/objects -prune -o \
+    \( -type l -o -type f -links +1 -o -path .lattice/.git -type f \) -print -quit)
+[ -z "$held" ] || die "$held is a link, or points to another repository; nothing was done"
 git check-ignore -q .lattice/config.json || die "source Git can still see the board"
 board() { git -C .lattice "$@"; }
 [ -z "$(board rev-parse --show-cdup 2>/dev/null || echo none)" ] \
