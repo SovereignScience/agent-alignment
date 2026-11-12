@@ -37,6 +37,31 @@ Habits that matter most when an agent is doing the building:
   this one is full of dead ends.
 - Keep the context for the task. Send wide searches to a subagent, and
   hand a reviewer the evidence, never your conclusion.
+- Check the installed version before using an API. Models were trained
+  on old code and reach for calls that have since been deprecated.
+
+Choosing a dependency. Prefer, in order: the standard library, a
+dependency the repository already has, a well-kept package, your own
+code. Well kept means released within the last year, widely used or kept
+by more than one maintainer, under a licence the project accepts, and
+with no open advisory against the version you pin. Look the exact name
+up in the registry before installing: models invent package names often
+enough that attackers register them. Write your own when the job is a
+few lines, or the package would bring more code and risk than it saves.
+
+Before you hand over, read the whole diff as its reviewer:
+
+- Does every hunk serve the request? Take out debug output, unrelated
+  edits, reformatting, helpers and options used once, and comments that
+  narrate what the code does.
+- Would an engineer who knows this codebase have written it this way?
+  Compare it with the nearest similar code and with the library's own
+  documentation.
+- Is each acceptance criterion met, by a check run on this revision?
+- Can it be reviewed in one sitting? If not, split it: first the change
+  that makes it easy, with no change in behaviour, then the change.
+- Does the handover say what changed, why, how it was checked, what was
+  not, and where to look first?
 
 ## Reviewing
 
@@ -104,11 +129,25 @@ Warning signs in a design:
 | The choice | Works | The reason names the trade-off accepted, and what would make the other option right |
 | Reversibility | Not mentioned | Says how hard the choice is to undo, and puts the care there |
 
+## Measures
+
+Counts a reviewer can take from a diff. They show where to look. A change
+is judged by the rubrics above, never by a count.
+
+| Measure | What to count | Why |
+|---|---|---|
+| Size | Lines and files changed. About 100 lines reviews well and about 1,000 is too many; the same lines over many files count as more. | A large change is skimmed. |
+| Duplication | New blocks of five or more lines that repeat code already in the repository. | The fault that has grown most in agent-written code. |
+| Reuse | Existing functions called, extended or moved, against new ones written for the same job. | Reuse fell as duplication rose. |
+| Error masking | Catch blocks, default values and stubs that hide the cause of a failure. | Also rising; the bug surfaces later and further away. |
+| Rework | Lines changed again within weeks of being written. | The work was not finished the first time. |
+| Test strength | New tests that fail when the code they cover is broken. | A test that cannot fail shows nothing. |
+
 ## Sources
 
 - Google, Engineering Practices: the standard of code review, what to
-  look for in a review, and how to write review comments.
-  https://google.github.io/eng-practices/
+  look for in a review, how to write review comments, and the size of a
+  change in "Small CLs". https://google.github.io/eng-practices/
 - Martin Fowler, "Beck Design Rules", on Kent Beck's four rules of
   simple design. https://www.martinfowler.com/bliki/BeckDesignRules.html
 - John Ousterhout, A Philosophy of Software Design: deep modules,
@@ -124,3 +163,11 @@ Warning signs in a design:
 - GitClear, AI Copilot Code Quality reports: more copied code and less
   refactoring as assistants spread. A vendor study, read with that in
   mind.
+- Spracklen and others, "We Have a Package for You!" (USENIX Security
+  2025): about one in five packages recommended by code models did not
+  exist. A 2026 replication on frontier models measured about one in
+  twenty.
+- Wang and others, "LLMs Meet Library Evolution" (ICSE 2025): every
+  model tested suggested deprecated APIs. https://arxiv.org/abs/2406.09834
+- Anthropic, prompting best practices: the block against
+  over-engineering (scope, documentation, defensive code, abstractions).
