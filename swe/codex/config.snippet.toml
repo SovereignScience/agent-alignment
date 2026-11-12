@@ -16,6 +16,7 @@ project_doc_max_bytes = 65536
 # certifi's Mozilla bundle. It stays readable when PEM files are denied.
 [shell_environment_policy.set]
 SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 
 [history]
 persistence = "none"
