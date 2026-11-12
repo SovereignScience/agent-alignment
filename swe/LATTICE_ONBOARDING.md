@@ -750,6 +750,13 @@ in Plannotator (which clears that flag) and answer other `needs_human`
 questions by clearing the flag with a note
 (`lattice needs-human <ID> --clear --note "<decision>" --actor human:<name>`).
 
+Review rules: when you send the same thing back twice, write it down in
+a `REVIEW.md` at the top of the project. Give the thing that must stay
+true, where a diff hides it, and the safe way to do it. Keep it to what
+a formatter or a test cannot catch, and delete a rule that no longer
+changes a review. The reviewer agents read that file as it stood before
+the change they are reviewing.
+
 The agent: take only the task it was given, answer every thread that
 waits on the agent in the reply shape before changing code, keep the task record current
 (evidence, coverage boundary, remaining work), commit with the trailer,

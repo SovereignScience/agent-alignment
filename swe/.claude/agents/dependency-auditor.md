@@ -68,6 +68,8 @@ Findings (severity-sorted):
 [MEDIUM] <pkg>: license <name> (project is <name>)
 [LOW]    <pkg>: transitive footprint +200KB
 
+Not checked: <manifests, lockfiles or packages you did not look at, and why>
+
 Verdict: SHIP | SHIP-WITH-NOTE | BLOCK-MERGE
 ```
 
@@ -78,4 +80,5 @@ Verdict: SHIP | SHIP-WITH-NOTE | BLOCK-MERGE
 - Treat a `npm audit` warning as final. Triage by exploitability,
   not just by CVSS.
 
-Report back with the structured verdict above. Cap at 400 words.
+Report back with the structured verdict above. Keep the prose under 400
+words and never drop a finding to fit.
