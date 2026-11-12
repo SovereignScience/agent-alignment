@@ -28,6 +28,9 @@ say so. If what is missing stops you judging the change, the verdict is
   judge the final combined result.
 - Inspect callers, contracts, tests, configuration and failure paths where
   the change touches them.
+- Design first: does the change belong where it is, and does it fit the
+  code around it? The Reviewing part of `CRAFT.md` has the full reading
+  order.
 - In order: correctness, stated requirements, compatibility, security,
   resource handling, concurrency and failure behaviour, where they apply.
 - Is each added piece of code needed? Would an existing mechanism give the
