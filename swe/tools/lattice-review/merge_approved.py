@@ -34,9 +34,11 @@ def write_git(repo, *args):
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
 
 
-def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print):
-    """Merge, check and push. Returns the pushed commit ID, or None when
-    there was nothing to merge. Raises Stop before anything is pushed."""
+def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print, push=True, skip_unapproved=False):
+    """Merge, check and push. Returns the checked commit ID, or None when
+    there was nothing to merge. Raises Stop before anything is pushed.
+    With push off it stops after the checks. With skip_unapproved a task
+    whose review does not cover its commits is left out, not a Stop."""
     def out(*args):
         return lr.run_git(repo, *args).strip()
 
@@ -73,6 +75,9 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print)
             continue
         head = rng["head_sha"]
         block = lr.review_block(repo, task, at, comments_of(sid))
+        if block and skip_unapproved:
+            say("%s: skipped, not approved: %s" % (sid, block))
+            continue
         if block:
             raise Stop("%s (%s at %s) is not approved for merge: %s" % (sid, rng["branch"], head[:12], block))
         if local:
@@ -103,6 +108,9 @@ def merge_approved(repo, board, main, short_ids, checks, comments_of, say=print)
             raise Stop("this check failed on the merged files: " + command)
     if lr.rev(repo, "HEAD") != at or not clean():
         raise Stop("a check changed this checkout; what was checked is no longer what is here")
+    if not push:
+        say("merged and checked, not pushed: %s" % at[:12])
+        return at
     pushed = write_git(repo, "push", "origin", "%s:refs/heads/%s" % (at, main))
     if pushed.returncode:
         raise Stop("the push failed: %s" % pushed.stderr.strip())
@@ -118,6 +126,9 @@ def main(argv=None):
     parser.add_argument("--main", default="main", help="integration branch name")
     parser.add_argument("--check", action="append", required=True,
                         help="a shell command that must pass on the merged files before the push; repeat for more")
+    parser.add_argument("--no-push", action="store_true", help="stop after the checks; the push stays with the owner")
+    parser.add_argument("--skip-unapproved", action="store_true",
+                        help="leave out a task whose review does not cover its commits, and go on")
     parser.add_argument("tasks", nargs="+", help="task IDs, in merge order")
     args = parser.parse_args(argv)
     lattice = shutil.which("lattice")
@@ -126,7 +137,8 @@ def main(argv=None):
     repo, board = Path(args.repo).resolve(), Path(args.board).resolve()
     try:
         merge_approved(repo, board, args.main, args.tasks, args.check,
-                       lambda sid: lr.task_comments(lattice, board, sid))
+                       lambda sid: lr.task_comments(lattice, board, sid),
+                       push=not args.no_push, skip_unapproved=args.skip_unapproved)
     except Stop as stop:
         print("STOPPED, nothing was pushed: %s" % stop)
         ahead = lr.run_git(repo, "rev-list", "--count", "origin/%s..%s" % (args.main, args.main), check=False).strip()
