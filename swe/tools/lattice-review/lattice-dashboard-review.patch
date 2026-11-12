@@ -211,9 +211,9 @@ index 6507697..a859cfb 100644
 +var _viewRefreshDue = false;
 +var _panelRefreshDue = false;
 +function _editingIn(root) {
-+  var el = document.activeElement;
-+  return !!(root && el && root.contains(el) && /^(INPUT|TEXTAREA|SELECT|IFRAME)$/.test(el.tagName));
-+}
++  var el = document.activeElement, frame = !!(root && el && root.contains(el) && el.tagName === "IFRAME");
++  if (frame) { try { el = el.contentDocument.activeElement; } catch (e) { el = null; } }
++  return !!(el && (frame || (root && root.contains(el))) && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)); }
  
  function startAutoRefresh() {
    stopAutoRefresh();

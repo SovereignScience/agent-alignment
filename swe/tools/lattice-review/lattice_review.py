@@ -657,16 +657,22 @@ def cross_references(task, tasks, events_of):
     return out
 
 
-def commit_mentions(repo, short_id, exclude):
+def commit_mentions(repo, short_id, exclude, main=None):
     """Commits on any branch whose message mentions the task ID, other than
-    the task's own (GitHub's referenced events)."""
+    the task's own (GitHub's referenced events). A commit that is not on the
+    integration branch names the branch it sits on, so a candidate's commit is
+    not read as landed work."""
     out = []
     log = run_git(repo, "log", "--all", "-E", "--grep=%s([^0-9]|$)" % short_id, "--format=%H%x1f%cI%x1f%an%x1f%s")
     for line in log.splitlines():
         parts = line.split("\x1f")
         if len(parts) == 4 and parts[0] not in exclude:
+            on = ""
+            if main and not contains(repo, main, parts[0]):
+                branches = run_git(repo, "branch", "--contains", parts[0], "--format=%(refname:short)").split()
+                on = " (on %s, not merged)" % branches[0] if branches else " (not merged)"
             out.append({"ts": when(parts[1]), "raw_ts": parts[1], "actor": parts[2], "kind": "referenced", "cat": "change",
-                        "text": "mentioned this task in commit %s %s" % (parts[0][:12], parts[3]), "why": None, "behalf": None,
+                        "text": "mentioned this task in commit %s %s%s" % (parts[0][:12], parts[3], on), "why": None, "behalf": None,
                         "link": None, "details": None})
     return out
 
@@ -997,6 +1003,14 @@ def same_origin(origin, host):
 # state and actions
 # --------------------------------------------------------------------------
 
+def written(args):
+    """What a finished board write did, in the owner's words."""
+    if args[0] == "status":
+        return {"done": "Marked done.", "in_progress": "Moved to in progress."}.get(args[2], "Status changed.")
+    return {"react": "Thread resolved.", "unreact": "Thread reopened.", "comment": "Reply posted."}.get(
+        args[0], args[0] + " " + " ".join(args[1:3]))
+
+
 class Job:
     def __init__(self, key, what, out_path, err_path):
         self.key = key
@@ -1026,6 +1040,7 @@ class Context:
         self.token = secrets.token_hex(16)
         self.jobs = {}
         self.notices = {}
+        self.notice_at = {}
         self.drafts = {}
         self.runs = 0
         self.plannotator = shutil.which("plannotator")
@@ -1042,7 +1057,7 @@ class Context:
     def board_write(self, key, *args):
         """A lattice write whose failure is shown on the page instead of being dropped."""
         rc, msg = self.lattice_cmd(*args)
-        self.notices[key] = ("ok", args[0] + " " + " ".join(args[1:3])) if rc == 0 else ("err", "lattice %s failed: %s" % (args[0], msg))
+        self.notices[key] = ("ok", written(args)) if rc == 0 else ("err", "lattice %s failed: %s" % (args[0], msg))
         return rc == 0
 
     def events(self, task_id):
@@ -1255,7 +1270,7 @@ class Context:
         finally:
             path.unlink(missing_ok=True)
         if posted:
-            self.notices[sid] = ("ok", "reply posted")
+            self.notices[sid] = ("ok", "Reply posted.")
             self.drafts.pop((sid, parent), None)
         else:
             self.drafts[(sid, parent)] = text
@@ -1313,8 +1328,10 @@ form{display:inline}
 button{padding:.3rem .8rem;margin:.15rem .3rem .15rem 0;line-height:1.3;border:1px solid color-mix(in srgb,var(--accent-primary,#2b6cb0) 60%,var(--border,#3a4250));border-radius:var(--radius-sm,4px);background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 16%,var(--surface-raised,#252a33));color:var(--text-primary,#e4e7eb);font:600 .85rem var(--font-body,system-ui,sans-serif);cursor:pointer}
 button:hover{background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 32%,var(--surface-raised,#252a33))}
 button:focus-visible{outline:2px solid var(--accent-primary,#2b6cb0);outline-offset:2px}
-button.primary{background:var(--accent-primary,#2b6cb0);color:var(--text-on-accent,#fff);border-color:var(--accent-primary,#2b6cb0)}button.primary:hover{filter:brightness(1.15)}
-button.small{padding:.12rem .5rem;font-size:.78rem;font-weight:500}
+button.primary{border:2px solid var(--accent-primary,#2b6cb0);background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 34%,var(--surface-raised,#252a33))}button.primary:hover{filter:brightness(1.15)}
+button.small{padding:.25rem .6rem;font-size:.78rem;font-weight:500}button[disabled]{opacity:.55;cursor:default}
+code,pre{overflow-wrap:anywhere}td:last-child,td:first-child code,.when{white-space:nowrap}
+@media (max-width:480px){.when{display:none}td:last-child,td:first-child code{white-space:normal}}
 p{margin:.3rem 0}.muted{color:var(--text-muted,#9aa4b2)}.warn{color:var(--color-warning,#f6c343)}.err{color:var(--color-danger,#ff7b72)}.ok{color:var(--color-success,#7ee787)}
 .block,.thread{--hue:#94a3b8;margin:.6rem 0;padding:.55rem .75rem;border:1px solid color-mix(in srgb,var(--hue) 22%,transparent);border-left:3px solid color-mix(in srgb,var(--hue) 70%,transparent);border-radius:8px;background:color-mix(in srgb,var(--hue) 9%,transparent)}
 .block h4{margin:0 0 .35rem;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--hue) 60%,var(--text-primary,#e4e7eb))}
@@ -1326,6 +1343,7 @@ a{color:color-mix(in srgb,var(--accent-primary,#2b6cb0) 75%,var(--text-primary,#
 @keyframes lrflash{from{box-shadow:0 0 0 3px var(--accent-primary,#2b6cb0)}to{box-shadow:0 0 0 3px transparent}}.lr-flash{animation:lrflash 1.6s ease-out}
 body[data-f=change] .event.comment,body[data-f=comment] .event.change{display:none}.filters{margin:.2rem 0 .4rem}
 .event.group>details>summary{cursor:pointer}.event.group .event{margin-left:1rem}
+.next.ask{border-color:var(--color-warning,#f6c343);background:color-mix(in srgb,var(--color-warning,#f6c343) 12%,transparent)}
 .next{margin:.2rem 0 .6rem;padding:.55rem .75rem;border:1px solid var(--accent-primary,#2b6cb0);border-left-width:4px;border-radius:8px;background:color-mix(in srgb,var(--accent-primary,#2b6cb0) 12%,transparent)}
 .thread{--hue:var(--color-warning,#f6c343);border-left-width:4px}.thread.resolved{--hue:var(--color-success,#7ee787)}
 .msg{margin:.35rem 0;padding:.35rem .5rem;border-radius:6px;background:color-mix(in srgb,var(--hue,#94a3b8) 8%,transparent)}.msg .text{white-space:pre-wrap}
@@ -1344,18 +1362,32 @@ def e(value):
     return html.escape("" if value is None else str(value))
 
 
+# While a Plannotator session runs the section reloads to show its result, but
+# never while a reply is being typed or holds text. A form is sent once, after
+# its question if it has one. The result of an action is scrolled into view.
+RELOAD = """<script>setInterval(function(){var a=document.activeElement,t=document.querySelectorAll("textarea");
+if(a&&a.tagName==="TEXTAREA")return;for(var i=0;i<t.length;i++)if(t[i].value.trim())return;location.reload()},5000)</script>"""
+FORMS = """<script>document.addEventListener("submit",function(ev){var f=ev.target,q=f.getAttribute("data-confirm");
+if(f.dataset.sent||(q&&!confirm(q))){ev.preventDefault();ev.stopPropagation();return}
+f.dataset.sent="1";setTimeout(function(){delete f.dataset.sent},4000)},true);
+addEventListener("load",function(){var n=document.getElementById("notice");
+if(n)setTimeout(function(){n.scrollIntoView({block:"center"})},300)})</script>"""
+
+
 def page(title, body, refresh=False):
-    meta = "<meta http-equiv='refresh' content='5'>" if refresh else ""
-    return ("<!doctype html><html><head><meta charset='utf-8'><title>" + e(title) + "</title>" + meta + INHERIT
-            + "<style>" + STYLE + "</style></head><body>" + body + "</body></html>").encode()
+    return ("<!doctype html><html><head><meta charset='utf-8'><title>" + e(title) + "</title>" + INHERIT
+            + "<style>" + STYLE + "</style></head><body>" + body + FORMS + (RELOAD if refresh else "") + "</body></html>").encode()
 
 
-def button(ctx, action, label, fields=None, primary=False, tab=False, small=False):
+def button(ctx, action, label, fields=None, primary=False, tab=False, small=False, confirm=None):
     """A one-button form. tab=True submits into a new tab of the same browser
-    and reloads this page shortly after, so the section shows the new state."""
+    and reloads this page shortly after, so the section shows the new state.
+    confirm is a question the owner answers before the form is sent."""
     hidden = "".join("<input type='hidden' name='%s' value='%s'>" % (e(k), e(v)) for k, v in (fields or {}).items())
     cls = " class='%s'" % " ".join(c for c, on in (("primary", primary), ("small", small)) if on) if primary or small else ""
     target = " target='_blank' onsubmit=\"setTimeout(function(){location.reload()},1500)\"" if tab else ""
+    if confirm:
+        target += " data-confirm='%s'" % e(confirm)
     return ("<form method='post' action='%s'%s><input type='hidden' name='token' value='%s'>%s<button%s>%s</button></form>"
             % (e(action), target, ctx.token, hidden, cls, e(label)))
 
@@ -1370,8 +1402,9 @@ def is_plan_thread(thread):
     return thread["anchor"].startswith("plan,") or thread["anchor"] == "plan"
 
 
-def render_threads(ctx, sid, threads, title):
-    """Each review thread with its whole history, a reply box and Resolve."""
+def render_threads(ctx, sid, threads, title, notes=None):
+    """Each review thread with its whole history, a reply box and Resolve.
+    notes maps a thread's root comment to the result of the last action on it."""
     if not threads:
         return ""
     act = REVIEW_PATH + "/t/" + sid + "/"
@@ -1388,6 +1421,7 @@ def render_threads(ctx, sid, threads, title):
             owner = (m.get("author") or "").startswith("human:")
             out.append("<div class='msg%s'><span class='who'>%s</span> <span class='muted'>%s%s</span><div class='text'>%s</div></div>"
                        % (" owner" if owner else "", e(m.get("author")), e(m.get("created_at")), ", edited" if m.get("edited") else "", e(text)))
+        out.append((notes or {}).get(t["root"].get("id"), ""))
         if resolved:
             out.append(button(ctx, act + "reopen", "Reopen", {"comment": t["root"]["id"]}))
         else:
@@ -1407,7 +1441,7 @@ def task_history(ctx, task):
     own = [c["hash"] for c in rng["commits"]]
     entries = history(events_of(task["id"]), ctx.comments(task["short_id"]), commit_details(ctx.repo, own),
                       {t["id"]: t.get("short_id") for t in tasks})
-    entries += cross_references(task, tasks, events_of) + commit_mentions(ctx.repo, task["short_id"], set(own))
+    entries += cross_references(task, tasks, events_of) + commit_mentions(ctx.repo, task["short_id"], set(own), ctx.main)
     return fold_bursts(sorted(entries, key=lambda item: item["ts"], reverse=True))
 
 
@@ -1536,6 +1570,12 @@ def next_step(ctx, task, rng, review, threads, running, block, plan_state, comme
     act = REVIEW_PATH + "/t/" + sid + "/"
     on_agent = sum(1 for t in threads if t["state"] == "waiting on the agent")
     on_you = sum(1 for t in threads if t["state"] == "waiting on you")
+    if status == "done":
+        trees = sorted(p.name for p in (ctx.repo / ".worktrees").glob(sid + "*") if p.name in (sid, sid + "-a", sid + "-b", sid + "-c"))
+        if not trees:
+            return ""
+        return "<p class='next'>Done. Still on disk: %s. Remove each with <code>git worktree remove .worktrees/&lt;name&gt;</code>.</p>" % e(
+            ", ".join(".worktrees/" + name for name in trees))
     if running:
         text = ("Write your notes in the Plannotator tab, then Send Feedback or Approve. Plannotator then says the feedback "
                 "went back to the agent: close that tab and come back here. Each note becomes a thread below.")
@@ -1547,7 +1587,10 @@ def next_step(ctx, task, rng, review, threads, running, block, plan_state, comme
                 "also clears the agent's approval flag.")
     elif rng["mode"] == "none":
         if not rng.get("empty_branch"):
-            return ""
+            if plan_state != "approved":
+                return ""
+            return "<p class='next'>%s</p>" % e("Plan approved. Nothing for you to do until the agent commits its work and "
+                                                "returns the task to review.")
         text = "Nothing is committed for %s yet, so there is nothing to approve. " % sid
         text += "To complete the task, the agent commits the work with the trailer Task: %s." % sid
     elif review and review_decision(review.get("body") or "") == "approved" and not stale_reason(ctx.repo, task, ctx.main, review["body"], comments) \
@@ -1583,7 +1626,39 @@ def tool_notes(ctx):
 
 def notice(ctx, key):
     kind, text = ctx.notices.pop(key, (None, None))
-    return "<p class='%s'>%s</p>" % (kind, e(text)) if kind else ""
+    return "<p class='%s' id='notice' role='status'>%s</p>" % (kind, e(text)) if kind else ""
+
+
+def open_request(ctx, task, plan_state):
+    """The agent's open Need: flag, so a question is never below the fold or
+    behind a hover. The plan approval flag clears itself on Approve."""
+    flag = task.get("needs_human") or {}
+    if not flag.get("reason") or task.get("status") in ("done", "cancelled"):
+        return ""
+    how = ""
+    if not (plan_state != "approved" and waits_for_plan_approval(task)):
+        how = ("<br>When you have answered it, clear it: <code>lattice needs-human %s --clear --note \"&lt;your answer&gt;\" --actor %s</code>"
+               % (e(task["short_id"]), e(ctx.actor)))
+    return "<p class='next ask'><b>Open request from %s:</b> %s%s</p>" % (e(flag.get("flagged_by") or "the agent"), e(flag["reason"]), how)
+
+
+def branch_notes(ctx, task, rng):
+    """Branches the range does not read, named: unlinked branches of the task
+    (candidates), a linked branch that is missing, and further linked ones."""
+    sid, links = task["short_id"], [link["branch"] for link in task.get("branch_links", [])]
+    own = run_git(ctx.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/feature/%s-*" % sid).split()
+    out = []
+    unlinked = [b for b in own if b not in links]
+    if unlinked and task.get("status") not in ("done", "cancelled"):
+        out.append("<p class='warn'>Not linked, so not read here: %s. If these are competing versions, compare them, then link "
+                   "the one you pick: <code>lattice branch-link %s &lt;branch&gt; --actor %s</code></p>"
+                   % (", ".join("<code>%s</code>" % e(b) for b in unlinked), e(sid), e(ctx.actor)))
+    for branch in links:
+        if not rev(ctx.repo, branch):
+            out.append("<p class='err'>Linked branch <code>%s</code> is not in this repository. Fetch it, or unlink it.</p>" % e(branch))
+        elif rng["mode"] == "branch" and branch != rng["branch"]:
+            out.append("<p>Also linked and not read: <code>%s</code>. Only the first linked branch with commits is reviewed.</p>" % e(branch))
+    return out
 
 
 def contains(repo, ref, sha):
@@ -1639,6 +1714,9 @@ def range_summary(task, rng):
 def render_review(ctx, task):
     sid = task["short_id"]
     act = REVIEW_PATH + "/t/" + sid + "/"
+    if not rev(ctx.repo, ctx.main):
+        return page(sid + " review", "<p class='err'>The integration branch <code>%s</code> is not in this repository. "
+                                     "Restart the server with <code>--main &lt;branch&gt;</code>.</p>" % e(ctx.main))
     rng = resolve_range(ctx.repo, task, ctx.main)
     head_now = rev(ctx.repo, "HEAD")
     comments = ctx.comments(sid)
@@ -1649,6 +1727,8 @@ def render_review(ctx, task):
     block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
     job = ctx.jobs.get(sid)
     running = bool(job and not job.done)
+    said, at = notice(ctx, sid), ctx.notice_at.pop(sid, None)
+    notes = {at: said} if at in {t["root"].get("id") for t in threads} else {}
 
     plan_part = ["<p>Plan: <b>%s</b></p>" % e(plan_state or "none yet")]
     plan_buttons = []
@@ -1659,15 +1739,17 @@ def render_review(ctx, task):
         plan_buttons.append(button(ctx, act + "openplan", "Open the plan in VS Code" if plan_state else "Write the plan in VS Code"))
     if plan_buttons:
         plan_part.append("<p>" + " ".join(plan_buttons) + "</p>")
-    plan_part.append(render_threads(ctx, sid, [t for t in threads if is_plan_thread(t)], "Plan threads"))
+    plan_part.append(render_threads(ctx, sid, [t for t in threads if is_plan_thread(t)], "Plan threads", notes))
 
     code = ["<p>Work: %s</p>" % range_summary(task, rng)]
-    if task.get("status") in ("in_progress", "in_review") and not task.get("branch_links"):
+    named = branch_notes(ctx, task, rng)
+    code.extend(named)
+    if task.get("status") in ("in_progress", "in_review") and not task.get("branch_links") and not named:
         code.insert(0, "<p class='warn'>This task is %s but has no branch of its own. Task work belongs on its own branch in its "
                        "own worktree (see .lattice/context.md); work in the main checkout cannot be reviewed as this task.</p>"
                     % e(task["status"].replace("_", " ")))
     if rng["mode"] == "branch" and rng["branch"] != current_branch(ctx.repo):
-        code.append("<p class='warn'>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
+        code.append("<p>The repo is on <code>%s</code>, this task's branch is <code>%s</code>. The range review and the diffs use the task's branch.</p>"
                     % (e(current_branch(ctx.repo)), e(rng["branch"])))
     actions = []
     if ctx.plannotator:
@@ -1682,18 +1764,19 @@ def render_review(ctx, task):
         if running:
             link = "<a href='%s' target='_blank' rel='noopener'>Open the session</a>. " % e(url) if url else ""
             session.append("<p>%sNotes stay in that session until you click Send Feedback or Approve; then they land on the task and show here. %s</p>"
-                           % (link, button(ctx, act + "close", "Close session")))
+                           % (link, button(ctx, act + "close", "Close session",
+                                           confirm="Close the Plannotator session? Notes you have not sent are discarded.")))
         if job.error:
             session.append("<p class='err'>%s</p>" % e(job.error))
         elif job.done and not job.result_path:
             session.append("<p class='muted'>Plannotator closed without a review.</p>")
         (plan_part if job.what.startswith("plan of ") else code).extend(session)
     if rng["commits"]:
-        code.append("<table><tr><th>Commit</th><th>Subject</th><th>Date</th><th></th></tr>")
+        code.append("<table><tr><th>Commit</th><th>Subject</th><th class='when'>Date</th><th></th></tr>")
         for c in rng["commits"]:
-            code.append("<tr id='commit-%s'><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+            code.append("<tr id='commit-%s'><td><code>%s</code></td><td>%s</td><td class='when'>%s</td><td>%s</td></tr>" % (
                 e(c["hash"][:12]), e(c["hash"][:12]), e(c["subject"]), e(c["date"]),
-                button(ctx, act + "plannotator", "Plannotator", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True, small=True) if ctx.plannotator else ""))
+                button(ctx, act + "plannotator", "Review this commit", {"base": c["hash"] + "^", "head": c["hash"]}, tab=True, small=True) if ctx.plannotator else ""))
         code.append("</table>")
     if rng["base_sha"]:
         try:
@@ -1724,16 +1807,18 @@ def render_review(ctx, task):
                         % (recorded, expected))
     if task.get("status") not in ("done", "cancelled") and rng["mode"] != "none":
         if block:
-            code.append("<p class='muted'>Completion: %s.</p>" % e(block))
+            code.append("<p>Completion: %s.</p>" % e(block))
         else:
             code.append(closing_summary(ctx.repo, ctx.main, rng, comments, threads, plan_state))
-            code.append(button(ctx, act + "complete", "Mark done: approved at %s" % reviewed_revision(review["body"])[1][:12], primary=True))
-    code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads"))
+            ask = (task.get("needs_human") or {}).get("reason")
+            code.append(button(ctx, act + "complete", "Mark done: approved at %s" % reviewed_revision(review["body"])[1][:12], primary=True,
+                               confirm="Mark %s done? Done is final.%s" % (sid, " The open request is: " + ask if ask else "")))
+    code.append(render_threads(ctx, sid, [t for t in threads if not is_plan_thread(t)], "Code review threads", notes))
 
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
     deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
-    body = [tool_notes(ctx), notice(ctx, sid), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
+    body = [tool_notes(ctx), "" if notes else said, open_request(ctx, task, plan_state), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
             section("deps", "deps", "Dependencies", deps) if deps else "",
             section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
@@ -1865,7 +1950,8 @@ def make_handler(ctx, base=None, static_dir=None):
         def review_post(self, parts, raw):
             form = {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode()).items()}
             if form.get("token") != ctx.token:
-                return self.forbidden("bad token")
+                return self.forbidden("This page is from before the review server restarted (bad token). "
+                                      "Reload the dashboard page, then try again.")
             if len(parts) != 4 or parts[1] != "t":
                 return self.send_page(page("not found", "<p>not found</p>"), 404)
             sid, action = parts[2], parts[3]
@@ -1883,8 +1969,10 @@ def make_handler(ctx, base=None, static_dir=None):
                     ctx.close_session(sid)
                 elif action == "open":
                     ctx.code_open(ctx.repo_path(form["path"]))
+                    ctx.notices[sid] = ("ok", "Opened %s in VS Code." % form["path"])
                 elif action == "filediff":
                     ctx.code_diff(form["base"], form["head"], form["path"], form.get("old_path"), form.get("status", "M"))
+                    ctx.notices[sid] = ("ok", "Opened the diff of %s in VS Code." % form["path"])
                 elif action == "complete":
                     block = completion_block(ctx.repo, task, ctx.main, ctx.comments(sid))
                     if block:
@@ -1892,12 +1980,14 @@ def make_handler(ctx, base=None, static_dir=None):
                     else:
                         ctx.board_write(sid, "status", sid, "done", "--no-auto-review")
                 elif action == "reply":
+                    ctx.notice_at[sid] = form.get("parent")
                     posted = True
                     if form.get("body", "").strip() or form.get("resolve") != "1":
                         posted = ctx.post_reply(sid, form["parent"], form.get("body", ""))
                     if posted and form.get("resolve") == "1":
                         ctx.board_write(sid, "react", sid, form["parent"], RESOLVED)
                 elif action in ("resolve", "reopen"):
+                    ctx.notice_at[sid] = form.get("comment")
                     ctx.board_write(sid, "react" if action == "resolve" else "unreact", sid, form["comment"], RESOLVED)
                 elif action == "rework":
                     ctx.board_write(sid, "status", sid, "in_progress", "--no-auto-review")
