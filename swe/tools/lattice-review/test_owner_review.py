@@ -155,6 +155,15 @@ class OwnerReview(unittest.TestCase):
         self.assertEqual(self.approve("y", "y"), ["T-1"])
         self.assertIsNone(self.blocked())
 
+    def test_a_task_that_is_not_in_review_is_named_and_the_rest_still_close(self):
+        self.lattice("create", "second task")
+        self.lattice("status", "T-2", "todo", "--no-auto-review")
+        self.lattice("status", "T-2", "in_progress", "--no-auto-review")
+        self.approve("y")
+        self.merge()
+        self.assertEqual(orv.close(self.board, ["T-2", "T-1"], say=self.said.append), ["T-1"])
+        self.assertIn("T-2: left open: it is in_progress, and only a task in review can be marked done", self.said)
+
     def test_a_task_with_a_criterion_closes_only_once_it_has_evidence(self):
         self.lattice("criterion", "add", "T-1", "The checks pass on the integration branch after the merge.")
         self.approve("y")

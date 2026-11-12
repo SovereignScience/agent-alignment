@@ -13,7 +13,10 @@
 #      into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, keeping what you filled in;
 #   3. copies codex/default.rules to ~/.codex/rules/, if ~/.codex exists;
 #   4. refreshes the pre-push hook in this repository, if one is installed;
-#   5. with --context, installs that file as this repository's board context.
+#   5. with --context, installs that file as this repository's board context;
+#   6. installs every agent and slash command of the kit in the user-level
+#      folders that every project loads, each with a note naming this folder.
+#      A user-level agent or command that is not the kit's is left alone.
 # status --exit-code also answers by exit status, for a script: 0 when apply
 # would change nothing, 3 when it would change something, 2 when it could not
 # go ahead. Any other status is an error.
@@ -51,6 +54,23 @@ files=(
     "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}" "$codex_rules"
     "$hooks/pre-push" "$hooks/tells_check.py" "$root/.lattice/context.md"
 )
+# The kit's agents and slash commands, installed where every project loads them.
+kit_sources=("$swe"/.claude/agents/*.md "$swe"/.claude/commands/*.md)
+kit_targets=()
+for source in "${kit_sources[@]}"; do
+    kit_targets+=("$HOME/.claude/$(basename "$(dirname "$source")")/$(basename "$source")")
+done
+files+=("${kit_targets[@]}")
+kit_note="The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in."
+
+# A kit agent or command as it is installed: the note follows its front matter.
+render() {
+    awk -v note="$kit_note" '
+        NR == 1 && $0 == "---" { print; front = 1; next }
+        front && $0 == "---" { print; print ""; print note; front = 0; next }
+        NR == 1 { print note; print "" }
+        { print }' "$1"
+}
 
 usage() {
     echo "usage: $0 status [--exit-code] | apply [--context <file>] | revert [<snapshot>]" >&2
@@ -155,6 +175,17 @@ status)
         echo "would update $hooks/pre-push"
         pending=1
     fi
+    current=0
+    for i in "${!kit_sources[@]}"; do
+        if cmp -s <(render "${kit_sources[$i]}") "${kit_targets[$i]}"; then
+            current=$((current + 1))
+        elif [ -e "${kit_targets[$i]}" ]; then
+            echo "would update ${kit_targets[$i]}"; pending=1
+        else
+            echo "would install ${kit_targets[$i]}"; pending=1
+        fi
+    done
+    echo "unchanged  $current of ${#kit_sources[@]} kit agents and commands"
     if [ -f "$HOME/.codex/AGENTS.md" ]; then
         size=$({ cat "$HOME/.codex/AGENTS.md" "$root/AGENTS.md" "$swe/AGENTS.md" 2>/dev/null || true; } | wc -c)
         limit=$({ sed -n 's/^project_doc_max_bytes *= *\([0-9]*\).*/\1/p' "$HOME/.codex/config.toml" 2>/dev/null || true; } | head -n 1)
@@ -223,6 +254,13 @@ apply)
         cp "$context" "$root/.lattice/context.md"
         echo "installed  $root/.lattice/context.md"
     fi
+    for i in "${!kit_sources[@]}"; do
+        if ! cmp -s <(render "${kit_sources[$i]}") "${kit_targets[$i]}"; then
+            mkdir -p "$(dirname "${kit_targets[$i]}")"
+            render "${kit_sources[$i]}" > "${kit_targets[$i]}"
+            echo "installed  ${kit_targets[$i]}"
+        fi
+    done
     echo
     echo "Restart every Claude Code and Codex session. To go back: $0 revert"
     ;;
