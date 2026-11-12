@@ -320,9 +320,10 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   worktree and keep Lattice updated. Give the owner named-path staging
   and commit commands; never widen Git access or use another Git directory
   to bypass a refusal.
-- The comment roles review and plan-review are written by the review
-  server for the owner's Plannotator decisions. Agents use validation for
-  evidence and no role otherwise.
+- The comment roles review and plan-review record the owner's decisions:
+  the review server writes them after Plannotator, and owner_review.py
+  writes a review when the owner approves from the terminal. Agents use
+  validation for evidence and no role otherwise.
 - Commits for a task end with a trailer line `Task: <CODE>-<n>` so the
   review section can find them; it looks on the integration branch, the
   checkout's HEAD and linked branches, so branch work is linked with
@@ -857,7 +858,10 @@ is an approval of the task's current commits and every thread is
 resolved, the approved commits are merged into main and pushed, and
 every open acceptance criterion has evidence. The dashboard's status
 control refuses `done` under the same rule, and the section says why
-otherwise. Merge and push first, then Mark done. After the merge the
+otherwise. Merge and push first, then Mark done; `merge_approved.py` and
+`owner_review.py` in [tools/lattice-review/](tools/lattice-review/) do
+the merge, the approval and the closing from the terminal under the same
+rule. After the merge the
 task's work is found only through its `Task:` trailers, and earlier
 approvals still cover the commits they reviewed, so give every commit
 the trailer.
