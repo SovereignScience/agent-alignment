@@ -54,7 +54,9 @@ class BoardSetup(unittest.TestCase):
         self.assertTrue(context.startswith("# demo-project\n"))
         self.assertIn("Task: DP-<n>", context)
         self.assertIn("http://127.0.0.1:%d" % config["dashboard_port"], context)
-        for left in ("<name>", "<project>", "<path>", "<CODE>", "<port>"):
+        self.assertIn("The integration branch is main.", context)
+        self.assertIn("LATTICE_ROOT=%s set" % str(self.repo).replace(str(self.home), "~", 1), context)
+        for left in ("<name>", "<project>", "<path>", "<CODE>", "<port>", "<branch>", "<board directory>"):
             self.assertNotIn(left, context)
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual((self.repo / ".git/info/exclude").read_text().splitlines()[-2:], [".lattice/", "/.worktrees/"])

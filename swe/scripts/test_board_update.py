@@ -105,6 +105,42 @@ class BoardUpdate(unittest.TestCase):
         self.assertEqual(self.run_in(board, "git", "status", "--porcelain")[1], "")
         self.assertIn("made there", self.run_in(self.there, "lattice", "show", "DP-1")[1])
 
+    def conflicted(self, change_here, said):
+        self.task(self.here, "first")
+        self.script("board_update.sh", "--apply", cwd=self.here)
+        self.script("board_update.sh", "--apply", cwd=self.there)
+        change_here()
+        self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.run_in(self.there, "lattice", "comment", "DP-1", "said there", "--actor", "human:owner")
+        pushed = self.head(self.remote)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.there, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn(said, out)
+        self.assertIn("nothing was merged or pushed", out)
+        board = self.there / ".lattice"
+        self.assertEqual(self.run_in(board, "git", "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False)[0], 1)
+        self.assertEqual(self.run_in(board, "git", "status", "--porcelain")[1], "")
+        self.assertEqual(self.head(self.remote), pushed)
+
+    def test_a_task_archived_on_one_side_and_changed_on_the_other_stops_with_the_merge_undone(self):
+        self.conflicted(lambda: self.run_in(self.here, "lattice", "archive", "DP-1", "--actor", "human:owner"),
+                        "changed on both sides")
+
+    def test_a_file_deleted_on_one_side_and_changed_on_the_other_stops_with_the_merge_undone(self):
+        def delete():
+            log = next((self.here / ".lattice/events").glob("task_*.jsonl")).name
+            self.run_in(self.here / ".lattice", "git", "rm", "-q", "events/" + log)
+            self.run_in(self.here / ".lattice", "git", "commit", "-q", "-m", "drop the log")
+        self.conflicted(delete, "was deleted on one side and changed on the other")
+
+    def test_an_error_in_the_context_update_stops_before_any_commit(self):
+        (self.here / ".lattice/context.md").unlink()
+        before = self.head(self.here / ".lattice")
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("board_context.py failed (exit 3)", out)
+        self.assertEqual(self.head(self.here / ".lattice"), before)
+
     def test_a_project_without_a_board_is_sent_to_the_setup_command(self):
         bare = self.project("three")
         code, out = self.script("board_update.sh", "--apply", cwd=bare, check=False)

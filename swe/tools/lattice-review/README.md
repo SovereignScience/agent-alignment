@@ -173,8 +173,8 @@ To keep Plannotator's own instruction out of the agent's way, set
 
 The section has two blocks, Plan then Code review, after a Dependencies
 block when the task has links. The Plan block shows the state of the
-task's plan file (`.lattice/plans/<task id>.md`, the one `lattice plan
-<ID>` names) with "Plannotator: review the plan" and "Open the plan in
+task's plan file (`.lattice/plans/<task id>.md`, whose path `lattice
+plan <ID> --json` gives) with "Plannotator: review the plan" and "Open the plan in
 VS Code"; with no plan file its one button is "Write the plan in VS
 Code", which scaffolds it the way the dashboard's own button does. While
 the section is on
@@ -290,11 +290,19 @@ accepts a merge already on local main only when it has the same two
 parents and the same files as the one it would make. `--no-push` stops
 after the checks, and `--skip-unapproved` leaves out a task whose review
 does not cover its commits, together with every task whose branch
-contains that task's branch or a commit carrying its trailer.
+contains that task's branch or a commit carrying its trailer. Every
+commit a branch carries must name its task in a `Task:` trailer (a merge
+may name none), and a commit of another task lands only while that
+task's own approval stands, whether or not the run names it. The checks
+run on the merged commit in a temporary worktree, so files left in the
+checkout do not count. `--confirmed` names the tasks answered yes in
+this run; any other task it is given is left out.
 
 `owner_review.py` takes the same decisions in the terminal. `approve`
-shows a task's head commit and a one-line summary, lets you resolve an
-open thread, and records a yes as a review bound to those commits. The
+asks about every task on every run, shows a task's head commit and a
+one-line summary, names any approval already recorded and every other
+task whose commits the branch carries, lets you resolve an open thread,
+and records a yes as a review bound to those commits. The
 record starts "Owner approved (terminal", so it says no diff was opened
 in Plannotator. `close` marks done what Mark done would allow, and asks
 before clearing a flag that still asks you something.
@@ -315,18 +323,21 @@ then open a new terminal:
 ```
 (
 set -euo pipefail
-f="$HOME/SOFTWARE/agent-alignment/swe/tools/lattice-review/board.bash"
+kit=$(git rev-parse --show-toplevel)
+f="$kit/swe/tools/lattice-review/board.bash"
 start=$(head -n 1 "$f"); end=$(tail -n 1 "$f")
 touch ~/.bashrc
 awk -v s="$start" -v e="$end" '$0 == s {skip = 1} !skip {print} $0 == e {skip = 0}' ~/.bashrc > ~/.bashrc.board.new
-cat "$f" >> ~/.bashrc.board.new
+sed "s|@KIT@|$kit|" "$f" >> ~/.bashrc.board.new
 cat ~/.bashrc.board.new > ~/.bashrc
 rm ~/.bashrc.board.new
 )
 ```
 
 This copies the function into `~/.bashrc` in place of any earlier copy,
-so a later change in the checkout runs only after you install it again.
+with the path of the checkout it was installed from, so a later change in
+the checkout runs only after you install it again. It starts the server
+as the board's `default_actor`, else `human:$USER`.
 The base branch is the repository's `lattice-review.base`, else `main`.
 Set it once where reviews run against another branch:
 

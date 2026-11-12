@@ -27,10 +27,9 @@ this file, then act.
   Write and Edit; `session_start.sh` prints the branch, the protocol
   hashes and the agent and command roster; `after_summary.sh` runs on
   SessionStart for compact, resume and fork; `post_edit_verify.sh`
-  runs available file checks (ruff and mypy for `.py`, eslint for
-  `.js/.ts/.tsx`, gofmt for `.go`, clang-format for C/C++, and a
-  checkpoint reminder for `.rs` and `.go`) when they are installed
-  and does nothing when they are absent. Plus a status line.
+  names the check that fits the edited file for the session to run
+  itself, and reminds it when a protocol or a dependency manifest
+  changed; it runs no tool. Plus a status line.
 - Permissions: the allow list runs interpreters and build tools
   (pytest, ruff, mypy, npm, eslint, tsc, cargo, go, make, docker, gh
   reads, rg). The deny list and the sandbox are the boundary:
@@ -197,6 +196,7 @@ accept one, by changing its status.
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Try this checkout's rules on this machine, then go back | `bash scripts/switch_rules.sh status`, then `apply`, later `revert` |
+| Bring every project in the workspace up to date with the kit: push checks and boards (owner-run, after `apply`) | `bash scripts/update_all.sh --skip <folder>` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Screenshot or click through a local page, app started in the same command | `python3 scripts/local_browser.py --app '<start command>' http://127.0.0.1:<port>/ shot:page` (`--help` lists the steps) |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
@@ -214,7 +214,7 @@ different way.
 | What | Where it lives | How a session gets it |
 |---|---|---|
 | Agents, commands, protocols, project instructions | the checkout | They load from the folder a window is opened in. A window opened in a worktree can read them but loses Git and the board, so use one for a look and merge the branch to work under it |
-| Managed settings and hooks, the Codex profile and rules, your user rules, the pre-push hook | this machine | `scripts/switch_rules.sh apply` |
+| Managed settings and hooks, the Codex profile and rules, your user rules, the pre-push hook, the kit's agents and slash commands for every project | this machine | `scripts/switch_rules.sh apply` |
 | Board conventions | `.lattice/context.md` | `apply --context <file>` |
 
 From a worktree of the branch you want to try:
@@ -226,8 +226,9 @@ bash swe/scripts/switch_rules.sh apply    # saves what is installed, then instal
 bash swe/scripts/switch_rules.sh revert   # puts the saved state back
 ```
 
-A session may run `status` and explain the result. `apply` and `revert`
-are yours: they use sudo and change the rules every session runs under.
+Run `status` in your own terminal: inside a session the sandbox hides
+your home folder and remaps /etc, so its answer there is wrong. `apply`
+and `revert` are yours: they use sudo and change the rules every session runs under.
 Each `apply` keeps a snapshot in `~/.config/agent-alignment/snapshots/`,
 a folder sessions cannot read or write. `revert` goes back to the state
 before the first `apply` you have not reverted, or to the snapshot you

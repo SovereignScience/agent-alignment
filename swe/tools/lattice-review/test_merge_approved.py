@@ -83,7 +83,7 @@ class MergeApproved(unittest.TestCase):
 
     def test_a_failing_check_stops_before_the_push_and_takes_nothing_back(self):
         self.approve("T-1", self.start, self.one)
-        with self.assertRaisesRegex(ma.Stop, "this check failed on the merged files: false"):
+        with self.assertRaisesRegex(ma.Stop, "this check failed on [0-9a-f]{12}: false"):
             self.run_merge("T-1", checks=("true", "false"))
         merged = self.local_main()
         self.assertEqual(git(self.repo, "rev-list", "--parents", "-n", "1", merged).split()[1:], [self.start, self.one])
@@ -136,6 +136,70 @@ class MergeApproved(unittest.TestCase):
         pushed = ma.merge_approved(self.repo, self.repo, "main", ["T-1", "T-9"], ["true"], lambda sid: self.reviews.get(sid, []),
                                    say=self.said.append, skip_unapproved=True)
         self.assertEqual(git(self.repo, "rev-list", "--parents", "-n", "1", pushed).split()[2], outer)
+
+    def outer(self):
+        git(self.repo, "checkout", "-q", "-b", "feature/T-9-outer", self.one)
+        head = commit(self.repo, "outer", "feat: outer\n\nTask: T-9")
+        git(self.repo, "checkout", "-q", "main")
+        task(self.repo, "T-9", "in_review", "outer", branch="feature/T-9-outer")
+        self.approve("T-9", self.start, head)
+        return head
+
+    def merge(self, order, **options):
+        return ma.merge_approved(self.repo, self.repo, "main", order, ["true"], lambda sid: self.reviews.get(sid, []),
+                                 say=self.said.append, **options)
+
+    def test_work_of_a_task_the_run_does_not_name_stays_out_unless_its_own_review_covers_it(self):
+        self.outer()
+        self.assertIsNone(self.merge(["T-9"], skip_unapproved=True))
+        self.assertTrue(any(line.startswith("T-9: skipped, its branch contains commit %s of T-1" % self.one[:12])
+                            for line in self.said), self.said)
+        with self.assertRaisesRegex(ma.Stop, "T-9 .* is not approved for merge: its branch contains commit"):
+            self.merge(["T-9", "T-1"])
+        self.assertEqual((self.local_main(), self.remote_main()), (self.start, self.start))
+        self.approve("T-1", self.start, self.one)
+        self.assertIsNotNone(self.merge(["T-9"]))
+        self.assertEqual(git(self.repo, "rev-list", "--count", "main.." + self.one), "0")
+
+    def test_work_of_a_task_whose_approval_was_withdrawn_stays_out(self):
+        self.outer()
+        self.approve("T-1", self.start, self.one)
+        self.reviews["T-1"].append({"role": "review", "created_at": "2026-01-02T00:00:00Z", "author": "human:t",
+                                    "body": "Plannotator annotated (patch x), s\n%s%s..%s\n\nrename it\n" % (
+                                        lr.REVIEWED, self.start, self.one)})
+        self.assertIsNone(self.merge(["T-9"], skip_unapproved=True))
+        self.assertTrue(any(line.startswith("T-9: skipped, its branch contains commit %s of T-1" % self.one[:12])
+                            for line in self.said), self.said)
+        self.assertEqual(self.local_main(), self.start)
+
+    def test_a_task_not_answered_yes_in_this_run_stays_out_whatever_the_board_records(self):
+        self.outer()
+        self.approve("T-1", self.start, self.one)
+        self.assertIsNone(self.merge(["T-1", "T-9"], skip_unapproved=True, confirmed={"T-9"}))
+        self.assertIn("T-1: skipped, not approved: not answered yes in this run", self.said)
+        self.assertIn("T-9: skipped, its branch contains T-1, which is not approved", self.said)
+        self.assertEqual(self.local_main(), self.start)
+        pushed = self.merge(["T-1", "T-9"], skip_unapproved=True, confirmed={"T-1", "T-9"})
+        self.assertEqual(git(self.repo, "rev-list", "--parents", "-n", "1", pushed).split()[2], git(self.repo, "rev-parse", "feature/T-9-outer"))
+
+    def test_a_commit_with_no_task_trailer_holds_its_branch_back(self):
+        git(self.repo, "checkout", "-q", "feature/T-1-one")
+        stray = commit(self.repo, "stray", "chore: no trailer")
+        git(self.repo, "checkout", "-q", "main")
+        self.approve("T-1", self.start, stray)
+        self.assertIsNone(self.merge(["T-1"], skip_unapproved=True))
+        self.assertIn("T-1: skipped, commit %s carries no Task trailer, so whose work it is cannot be told" % stray[:12],
+                      self.said)
+
+    def test_checks_see_the_merged_commit_and_not_files_left_in_the_checkout(self):
+        self.approve("T-1", self.start, self.one)
+        (self.repo / "untracked-marker").write_text("left in the checkout\n")
+        pushed = ma.merge_approved(self.repo, self.repo, "main", ["T-1"], ["test ! -e untracked-marker && test -f one"],
+                                   lambda sid: self.reviews.get(sid, []), say=self.said.append)
+        self.assertEqual(self.remote_main(), pushed)
+        with self.assertRaisesRegex(ma.Stop, "this check failed on %s" % pushed[:12]):
+            ma.run_checks(self.repo, pushed, ["test -f untracked-marker"], self.said.append)
+        self.assertFalse((self.repo / ".worktrees" / ("check-" + pushed[:12])).exists())
 
     def test_a_rerun_refuses_a_local_commit_it_would_not_make(self):
         self.approve("T-1", self.start, self.one)

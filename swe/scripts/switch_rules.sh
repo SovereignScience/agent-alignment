@@ -13,10 +13,13 @@
 #      into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, keeping what you filled in;
 #   3. copies codex/default.rules to ~/.codex/rules/, if ~/.codex exists;
 #   4. refreshes the pre-push hook in this repository, if one is installed;
-#   5. with --context, installs that file as this repository's board context.
+#   5. with --context, installs that file as this repository's board context;
+#   6. installs every agent and slash command of the kit in the user-level
+#      folders that every project loads, each with a note naming this folder.
+#      A user-level agent or command that is not the kit's is left alone.
 # status --exit-code also answers by exit status, for a script: 0 when apply
-# would change nothing, 1 when it would change something, 2 when it could not
-# go ahead.
+# would change nothing, 3 when it would change something, 2 when it could not
+# go ahead. Any other status is an error.
 # revert restores each saved file and removes any that did not exist when the
 # snapshot was taken. With no name it goes back to the state before the first
 # apply that has not been reverted, however many times apply ran since, and
@@ -51,13 +54,40 @@ files=(
     "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}" "$codex_rules"
     "$hooks/pre-push" "$hooks/tells_check.py" "$root/.lattice/context.md"
 )
+source "$swe/scripts/kit_files.sh"
+# The kit's agents and slash commands, installed where every project loads them.
+kit_sources=("$swe"/.claude/agents/*.md "$swe"/.claude/commands/*.md)
+kit_targets=()
+for source in "${kit_sources[@]}"; do
+    kit_targets+=("$HOME/.claude/$(basename "$(dirname "$source")")/$(basename "$source")")
+done
+files+=("${kit_targets[@]}")
+# Copies an earlier install left whose source the kit no longer has: they carry
+# the kit's note and are not among today's targets. apply removes them.
+kit_stale=()
+for installed in "$HOME"/.claude/agents/*.md "$HOME"/.claude/commands/*.md; do
+    [ -f "$installed" ] && [ ! -L "$installed" ] && grep -qF "$kit_mark" "$installed" || continue
+    current=no
+    for target in "${kit_targets[@]}"; do [ "$target" != "$installed" ] || current=yes; done
+    [ "$current" = yes ] || kit_stale+=("$installed")
+done
+files+=("${kit_stale[@]}")
 
 usage() {
     echo "usage: $0 status [--exit-code] | apply [--context <file>] | revert [<snapshot>]" >&2
     exit 64
 }
 die() { echo "switch_rules: $*" >&2; exit 1; }
-known() { local f; for f in "${files[@]}"; do [ "$f" != "$1" ] || return 0; done; return 1; }
+known() {
+    local f
+    for f in "${files[@]}"; do [ "$f" != "$1" ] || return 0; done
+    # A kit agent or command an older kit installed, under a name the kit no longer has.
+    case "$1" in
+        "$HOME/.claude/agents/"*.md|"$HOME/.claude/commands/"*.md)
+            [[ "${1#"$HOME/.claude/"*/}" != */* ]] && return 0 ;;
+    esac
+    return 1
+}
 managed() { case "$1" in "$etc"/*|"$codex_etc"/*) return 0 ;; *) return 1 ;; esac; }
 latest_snapshot() { { find "$store" -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true; } | sort | tail -n 1; }
 # The snapshot a plain revert goes back to: the one taken before the first
@@ -155,6 +185,18 @@ status)
         echo "would update $hooks/pre-push"
         pending=1
     fi
+    current=0
+    for i in "${!kit_sources[@]}"; do
+        if cmp -s <(render "${kit_sources[$i]}") "${kit_targets[$i]}"; then
+            current=$((current + 1))
+        elif [ -e "${kit_targets[$i]}" ]; then
+            echo "would update ${kit_targets[$i]}"; pending=1
+        else
+            echo "would install ${kit_targets[$i]}"; pending=1
+        fi
+    done
+    for installed in "${kit_stale[@]}"; do echo "would remove $installed (the kit no longer has it)"; pending=1; done
+    echo "unchanged  $current of ${#kit_sources[@]} kit agents and commands"
     if [ -f "$HOME/.codex/AGENTS.md" ]; then
         size=$({ cat "$HOME/.codex/AGENTS.md" "$root/AGENTS.md" "$swe/AGENTS.md" 2>/dev/null || true; } | wc -c)
         limit=$({ sed -n 's/^project_doc_max_bytes *= *\([0-9]*\).*/\1/p' "$HOME/.codex/config.toml" 2>/dev/null || true; } | head -n 1)
@@ -165,7 +207,7 @@ status)
     target="$(revert_target)"
     echo "Revert goes back to: ${target:-nothing, no apply is waiting to be reverted}"
     if [ "$answer" = yes ] && [ "$blocked" = 1 ]; then exit 2; fi
-    if [ "$answer" = yes ] && [ "$pending" = 1 ]; then exit 1; fi
+    if [ "$answer" = yes ] && [ "$pending" = 1 ]; then exit 3; fi
     ;;
 apply)
     context=""
@@ -176,6 +218,10 @@ apply)
         [ -d "$root/.lattice" ] || die "no board at $root/.lattice for --context; nothing was written"
     fi
     merge_rules || die "nothing was written"
+    for target in "${kit_targets[@]}"; do
+        [ ! -L "$target" ] && [ ! -L "$(dirname "$target")" ] \
+            || die "$target or its folder is a link; nothing was written"
+    done
     if [ -d "$HOME/.codex" ]; then
         if [ -L "$codex_rules" ] && [ ! -e "$codex_rules" ]; then die "$codex_rules is a link to nothing; nothing was written"; fi
         [ ! -e "$codex_rules" ] || [ -f "$codex_rules" ] || die "$codex_rules is not a file; nothing was written"
@@ -223,6 +269,17 @@ apply)
         cp "$context" "$root/.lattice/context.md"
         echo "installed  $root/.lattice/context.md"
     fi
+    for i in "${!kit_sources[@]}"; do
+        if ! cmp -s <(render "${kit_sources[$i]}") "${kit_targets[$i]}"; then
+            mkdir -p "$(dirname "${kit_targets[$i]}")"
+            render "${kit_sources[$i]}" > "${kit_targets[$i]}"
+            echo "installed  ${kit_targets[$i]}"
+        fi
+    done
+    for installed in "${kit_stale[@]}"; do
+        rm "$installed"
+        echo "removed    $installed (the kit no longer has it)"
+    done
     echo
     echo "Restart every Claude Code and Codex session. To go back: $0 revert"
     ;;
@@ -258,6 +315,14 @@ revert)
             echo "removed    $file"
         fi
     done < "$snap/manifest"
+    # Kit copies installed after this snapshot, by this script or an older kit,
+    # are not in its manifest; they go too.
+    for installed in "$HOME"/.claude/agents/*.md "$HOME"/.claude/commands/*.md; do
+        [ -f "$installed" ] && [ ! -L "$installed" ] && grep -qF "$kit_mark" "$installed" || continue
+        grep -qxF "$(printf 'present\t%s' "$installed")" "$snap/manifest" && continue
+        rm "$installed"
+        echo "removed    $installed"
+    done
     [ "$snap" != "$target" ] || rm -f "$marker"
     echo
     echo "Restart every Claude Code and Codex session."

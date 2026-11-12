@@ -93,8 +93,11 @@ class OwnerReview(unittest.TestCase):
         self.assertEqual(lr.reviewed_revision(review["body"])[1], self.head)
         self.assertTrue(review["body"].startswith("Owner approved (terminal, "))
         self.assertIsNone(self.blocked())
-        self.assertEqual(self.approve(), [])
-        self.assertIn("T-1: already approved at %s" % self.head[:12], self.said)
+        self.assertEqual(self.approve("y"), ["T-1"])
+        self.assertTrue(any(line.startswith("    an approval is already recorded: by human:owner at") for line in self.said))
+        self.assertIn("T-1: approved at %s (the recorded approval covers it)" % self.head[:12], self.said)
+        self.assertEqual(len([c for c in self.board.comments("T-1") if c.get("role") == "review"]), 1)
+        self.assertEqual(self.approve("n"), [])
         self.merge()
         self.assertEqual(orv.close(self.board, ["T-1"], say=self.said.append), ["T-1"])
         self.assertEqual(self.status(), "done")
@@ -113,7 +116,19 @@ class OwnerReview(unittest.TestCase):
         self.lattice("branch-link", "T-2", "feature/T-2-second")
         answers = iter(["n", "y"])
         orv.approve(self.board, ["T-1", "T-2"], ask=lambda prompt: next(answers), say=self.said.append)
-        self.assertIn("    its branch also holds 1 other task(s) of this batch: T-1", self.said)
+        self.assertIn("    its branch also holds the work of 1 other task(s): T-1", self.said)
+        self.assertIn("    not approved themselves: T-1; this task is not merged until they are", self.said)
+
+    def test_a_task_outside_the_run_is_named_when_a_branch_carries_its_work(self):
+        self.lattice("create", "second task")
+        self.git("checkout", "-q", "-b", "feature/T-2-second", "feature/T-1-first")
+        self.commit("two", "feat: two\n\nTask: T-2")
+        self.git("checkout", "-q", "main")
+        self.lattice("branch-link", "T-2", "feature/T-2-second")
+        answers = iter(["y"])
+        approved = orv.approve(self.board, ["T-2"], ask=lambda prompt: next(answers), say=self.said.append)
+        self.assertEqual(approved, ["T-2"])
+        self.assertIn("    its branch also holds the work of 1 other task(s): T-1", self.said)
         self.assertIn("    not approved themselves: T-1; this task is not merged until they are", self.said)
 
     def test_a_no_or_no_answer_records_nothing(self):
@@ -139,6 +154,15 @@ class OwnerReview(unittest.TestCase):
         self.assertTrue(any("rename this" in line for line in self.said))
         self.assertEqual(self.approve("y", "y"), ["T-1"])
         self.assertIsNone(self.blocked())
+
+    def test_a_task_that_is_not_in_review_is_named_and_the_rest_still_close(self):
+        self.lattice("create", "second task")
+        self.lattice("status", "T-2", "todo", "--no-auto-review")
+        self.lattice("status", "T-2", "in_progress", "--no-auto-review")
+        self.approve("y")
+        self.merge()
+        self.assertEqual(orv.close(self.board, ["T-2", "T-1"], say=self.said.append), ["T-1"])
+        self.assertIn("T-2: left open: it is in_progress, and only a task in review can be marked done", self.said)
 
     def test_a_task_with_a_criterion_closes_only_once_it_has_evidence(self):
         self.lattice("criterion", "add", "T-1", "The checks pass on the integration branch after the merge.")

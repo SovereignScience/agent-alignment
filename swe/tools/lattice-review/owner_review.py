@@ -8,10 +8,11 @@
     owner_review.py branches AA-7 [AA-8 ...]
 
 Run it yourself; it writes to the board as a person. approve shows each
-task's exact head commit and a one-line summary, names the other tasks of
-the batch that its branch holds, asks y or n (d lists the commits and files
-first), and records a yes as a review bound to those commits, in the form the review section and
-merge_approved.py read. An open review thread is shown first and can be
+task's exact head commit and a one-line summary, names every other task
+whose work its branch holds, asks y or n (d lists the commits and files
+first) on every run, even where an approval is already recorded, and
+records a yes as a review bound to those commits, in the form the review
+section and merge_approved.py read; --record writes the IDs answered yes. An open review thread is shown first and can be
 resolved there; a task with a thread left open is not approved. evidence
 records the note on each named criterion that has none yet, once the task
 is in the pushed integration branch. close marks done
@@ -42,6 +43,9 @@ class Board:
             sys.exit("owner_review: %s is not on the board at %s" % (sid, self.board))
         return task
 
+    def find(self, sid):
+        return lr.find_task(self.board, sid)
+
     def comments(self, sid):
         return lr.task_comments(self.lattice, self.board, sid)
 
@@ -58,11 +62,14 @@ def first_line(text):
 
 
 def approve(board, sids, ask=input, say=print):
-    """Ask about each task in turn. Returns the IDs approved in this run."""
-    approved = []
+    """Ask about each task in turn, every time: a recorded approval is shown,
+    never taken as this run's answer. Returns the IDs answered yes."""
+    approved, declined = [], []
     heads = {}
+    pushed = "refs/remotes/origin/" + board.main
+    base = pushed if lr.rev(board.repo, pushed) else board.main
     for sid in sids:
-        waiting = lr.resolve_range(board.repo, board.task(sid), board.main)
+        waiting = lr.resolve_range(board.repo, board.task(sid), base)
         if waiting["mode"] == "branch":
             heads[sid] = waiting["head_sha"]
 
@@ -71,13 +78,11 @@ def approve(board, sids, ask=input, say=print):
 
     for sid in sids:
         task = board.task(sid)
-        rng = lr.resolve_range(board.repo, task, board.main)
+        rng = lr.resolve_range(board.repo, task, base)
         if rng["mode"] != "branch":
-            say("%s: nothing to approve, its linked branch has no commits past %s" % (sid, board.main))
+            say("%s: nothing to approve, its linked branch has no commits past %s" % (sid, base))
             continue
-        if lr.review_block(board.repo, task, board.main, board.comments(sid)) is None:
-            say("%s: already approved at %s" % (sid, rng["head_sha"][:12]))
-            continue
+        recorded = lr.review_block(board.repo, task, base, board.comments(sid)) is None
         try:
             for thread in lr.review_threads(board.comments(sid)):
                 if thread["state"] == "resolved":
@@ -94,15 +99,21 @@ def approve(board, sids, ask=input, say=print):
                 continue
             stat = first_line(lr.run_git(board.repo, "diff", "--shortstat", rng["base_sha"], rng["head_sha"]))
             say("%s  %s  %s" % (sid, rng["head_sha"], task.get("title") or ""))
-            say("    %d commit(s) past %s; %s" % (len(rng["commits"]), board.main, stat or "no file changed"))
-            others = [other for other in sids if other != sid and other in heads]
-            carried = lr.carried_tasks(board.repo, rng["base_sha"], rng["head_sha"], others)
-            inner = [other for other in others if other in carried or contains(sid, other)]
+            say("    %d commit(s) past %s; %s" % (len(rng["commits"]), base, stat or "no file changed"))
+            if recorded:
+                review = lr.latest_review(board.comments(sid))
+                say("    an approval is already recorded: by %s at %s; answer again for this run"
+                    % (review.get("author"), review.get("created_at")))
+            carried = lr.range_owners(board.repo, rng["base_sha"], rng["head_sha"])
+            owners = {other for _, ids, _ in carried for other in ids}
+            inner = sorted((owners | {other for other in sids if other in heads and other != sid and contains(sid, other)})
+                           - {sid})
             if inner:
-                say("    its branch also holds %d other task(s) of this batch: %s" % (len(inner), " ".join(inner)))
-                say("    a yes here approves their commits too")
-                waiting = [other for other in inner
-                           if lr.review_block(board.repo, board.task(other), board.main, board.comments(other))]
+                say("    its branch also holds the work of %d other task(s): %s" % (len(inner), " ".join(inner)))
+                say("    a yes here merges their commits too, so each of them must be approved as well")
+                waiting = [other for other in inner if other in declined or not board.find(other)
+                           or not {sha for sha, ids, _ in carried if other in ids}
+                           <= lr.standing_approvals(board.repo, board.comments(other))]
                 if waiting:
                     say("    not approved themselves: %s; this task is not merged until they are" % " ".join(waiting))
             answer = "d"
@@ -119,6 +130,11 @@ def approve(board, sids, ask=input, say=print):
             break
         if answer != "y":
             say("%s: not approved" % sid)
+            declined.append(sid)
+            continue
+        approved.append(sid)
+        if recorded:
+            say("%s: approved at %s (the recorded approval covers it)" % (sid, rng["head_sha"][:12]))
             continue
         body = "Owner approved (terminal, patch %s..%s), %s\n%s%s..%s\n\nApproved from the terminal.\n" % (
             rng["base_sha"][:12], rng["head_sha"][:12], time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -128,7 +144,6 @@ def approve(board, sids, ask=input, say=print):
             note.flush()
             board.write("comment", sid, "--file", note.name, "--role", "review")
         say("%s: approved at %s" % (sid, rng["head_sha"][:12]))
-        approved.append(sid)
     return approved
 
 
@@ -156,6 +171,9 @@ def close(board, sids, ask=input, say=print):
     for sid in sids:
         task = board.task(sid)
         if task.get("status") == "done":
+            continue
+        if task.get("status") != "in_review":
+            say("%s: left open: it is %s, and only a task in review can be marked done" % (sid, task.get("status")))
             continue
         block = lr.completion_block(board.repo, task, board.main, board.comments(sid))
         if block:
@@ -190,7 +208,9 @@ def summary(board, sids, say=print):
             groups["closed"].append(sid)
         else:
             groups["still open"].append(sid)
-            reasons[sid] = (lr.completion_block(board.repo, task, board.main, board.comments(sid))
+            reasons[sid] = (("it is %s, and only a task in review can be marked done" % task.get("status")
+                             if task.get("status") != "in_review" else None)
+                            or lr.completion_block(board.repo, task, board.main, board.comments(sid))
                             or ("its flag is not cleared: %s" % task["needs_human"]["reason"] if task.get("needs_human") else "ready to close"))
     for name in ("merged", "skipped", "closed", "still open"):
         say("%-10s %2d  %s" % (name, len(groups[name]), " ".join(groups[name])))
@@ -208,6 +228,7 @@ def main(argv=None):
     parser.add_argument("--main", default="main", help="integration branch name")
     parser.add_argument("--actor", help="the person writing, human:<name>; needed by approve, evidence and close")
     parser.add_argument("--note", help="the evidence text, for evidence")
+    parser.add_argument("--record", help="for approve: write the IDs answered yes to this file, one a line")
     parser.add_argument("items", nargs="+", help="task IDs, or <ID>:<criterion> pairs for evidence")
     args = parser.parse_args(argv)
     lattice = shutil.which("lattice")
@@ -218,7 +239,10 @@ def main(argv=None):
         sys.exit("owner_review: --actor must be a person, human:<name>")
     board = Board(Path(args.repo).resolve(), Path(args.board).resolve(), args.main, lattice, args.actor)
     if args.action == "approve":
-        approve(board, args.items)
+        yes = approve(board, args.items)
+        if args.record:
+            with open(args.record, "w") as out:
+                out.writelines(sid + "\n" for sid in yes)
     elif args.action == "evidence":
         if not args.note:
             sys.exit("owner_review: evidence needs --note")
