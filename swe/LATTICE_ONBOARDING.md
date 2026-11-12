@@ -89,6 +89,42 @@ Lattice itself is assumed present (`lattice --version`).
 
 ## Per project, setup by the owner
 
+### The short way
+
+From the top of the project:
+
+```
+bash <agent-alignment>/swe/scripts/board_setup.sh --actor human:<owner>
+```
+
+It does steps 1, 2, 3 and 3b below and changes no tracked file. The
+project name is the folder name, the code its initials, and the port the
+first from 8803 that nothing listens on; if another board already has
+that port, change `dashboard_port` in `.lattice/config.json` and the port
+line in `context.md`. It ends with a line that starts `READY:`. Add
+`--remote <url>` to push the new board to its private repository, which
+the owner creates first. It refuses a project that already has a board.
+
+Then fill in the tags in `context.md`, do step 3a, start the review
+server (step 6) and give the project's first session the message in
+step 4a.
+
+### Bringing a board back
+
+On another machine, or after `.lattice/` was lost, run the same command
+with the board's repository:
+
+```
+bash <agent-alignment>/swe/scripts/board_setup.sh --remote <url>
+```
+
+A repository that already holds a board is cloned into `.lattice/`
+instead of a new board being made. Work that was never pushed there is
+not in it, so push the board after each session that wrote to it.
+
+The steps below are what the command runs, for doing it by hand or
+changing a setting.
+
 ### 1. Initialise
 
 ```
@@ -667,6 +703,70 @@ Rules for the fields:
 
 Create an onboarding task only if the owner asks for that record. Existing
 task records remain private unless the owner asks to share them.
+
+### 4a. The first session
+
+A session new to a project should learn it before it takes a task. Give
+the first session this message. It reads and reports, and it creates
+only the tasks the message authorizes:
+
+```
+Goal: learn this repository well enough that later sessions can take tasks
+here, and tell me what most needs doing. This is read-only: change no code,
+config or instruction file.
+
+Context: this is the first session in this project. The board in .lattice/
+is new and empty. Read .lattice/context.md first; it holds the rules for
+tasks.
+
+How to go about it
+1. Start broad, then narrow. README and docs, the agent instruction files,
+   then the build, test, lint, run and CI setup, then the layout and what
+   each main module is for.
+2. Then what the layout does not show: the main data models, where outside
+   input is validated, how configuration and secrets reach the code (names
+   and paths only, never values), and one request or job traced from entry
+   to result.
+3. Run the project's own checks where they are local and safe (tests, lint,
+   type check). Give each command with its result, and say which you did
+   not run and why.
+4. Read recent history: what changed lately and what looks half finished.
+5. Read the files that matter yourself; use a subagent only for a wide
+   search. Say nothing about code you have not opened, and mark anything
+   you could not confirm.
+
+Report in the reply, short, in this order
+- What this is: purpose, stack, how it is built, tested, run and deployed.
+- A map: each main folder or module and its job, the traced flow, and a
+  glossary of the project's own terms.
+- The exact commands for install, test, lint, type check and run, and
+  which worked here.
+- Gotchas: code that misleads, conventions nobody wrote down, what broke
+  when you ran it.
+- Findings, ten at most: only what could break, leak, lose data or cost
+  money, or what stops an agent working here safely. Rank by impact against
+  effort, grade P0 to P3, give file:line and how you confirmed each. Skip
+  style.
+- What you checked and found sound.
+- Text I could add to AGENTS.md: only what the code does not show. And
+  three or four one-word tags for the board.
+
+Then on the board. I authorize these and nothing else:
+- one task "Map the codebase" with your report attached;
+- one backlog task for each confirmed P0 to P2 finding, with acceptance
+  criteria and a description in this shape: Request, Scope, Owner,
+  Coverage boundary, Remaining: not started.
+Start none of them.
+
+Done when: the report is in your reply, the tasks are in backlog, lattice
+doctor is clean, and you have listed what you did not look at.
+```
+
+The order (broad, then narrow, then one traced flow) and the request for
+commands with their results follow the tool makers' guidance:
+[Claude Code common workflows](https://code.claude.com/docs/en/common-workflows)
+and [best practices](https://code.claude.com/docs/en/best-practices), and
+[Codex prompting](https://learn.chatgpt.com/docs/prompting).
 
 ### 5. Working a task
 
