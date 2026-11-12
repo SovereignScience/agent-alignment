@@ -248,7 +248,7 @@ irregular target, on a managed directory that is a symlink, not owned by root
 or writable by group or others, and on Codex requirements this script did
 not write. Apply backs up each file under a unique name and prints the
 commands that undo it. It refuses a checkout whose HEAD does not contain
-main.
+main, or main's fetched upstream.
 
 Restart every session afterwards. In a fresh session of each client, have
 an agent run:

@@ -53,7 +53,7 @@ case "${1:-}" in
     *) echo "usage: $0 [--apply]" >&2; exit 64 ;;
 esac
 if [ "$apply" = yes ]; then
-    upstream=$(git -C "$swe" rev-parse --abbrev-ref 'main@{upstream}' 2>/dev/null || true)
+    upstream=$(git -C "$swe" rev-parse -q --verify --symbolic-full-name 'main@{upstream}' 2>/dev/null || true)
     for ref in main ${upstream:+"$upstream"}; do
         if ! git -C "$swe" merge-base --is-ancestor "$ref" HEAD; then
             echo "install_isolation: this checkout's HEAD does not contain $ref, so it could install older rules." >&2
