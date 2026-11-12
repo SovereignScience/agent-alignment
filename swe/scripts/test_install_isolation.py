@@ -600,12 +600,14 @@ class Installer(unittest.TestCase):
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
 
     def test_apply_refuses_a_checkout_with_changes_not_committed(self):
-        (self.repo / "CLAUDE.md").write_text("an older text\n")
-        self.git("add", "CLAUDE.md")
-        self.git("commit", "-q", "-m", "a file the kit has with other text")
+        allow = self.repo / ".claude/scripts/fetch_allow.txt"
+        allow.parent.mkdir(parents=True)
+        allow.write_text("an older list\n")
+        self.git("add", ".claude/scripts/fetch_allow.txt")
+        self.git("commit", "-q", "-m", "a file the installer installs, with other text")
         code, out = self.run_installer(apply=True)
         self.assertEqual(code, 1, out)
-        self.assertIn("differ from HEAD, so it would install changes no one committed", out)
+        self.assertIn(".claude/scripts/fetch_allow.txt differ from HEAD, so it would install changes no one committed", out)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
 
     def test_apply_goes_ahead_when_head_contains_the_fetched_upstream_of_main(self):
