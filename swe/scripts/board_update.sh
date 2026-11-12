@@ -39,7 +39,8 @@ kept=(events tasks plans artifacts notes archive ids.json config.json context.md
 
 context=0
 python3 "$here/board_context.py" "$([ "$apply" = yes ] && echo apply || echo status)" . || context=$?
-[ "$context" -le 2 ] || die "board_context.py failed (exit $context); nothing else was done"
+[ "$context" -le 2 ] && { [ "$apply" = no ] || [ "$context" -ne 1 ]; } \
+    || die "board_context.py failed (exit $context); nothing else was done"
 
 remote=no
 if board remote get-url origin >/dev/null 2>&1; then remote=yes; fi
