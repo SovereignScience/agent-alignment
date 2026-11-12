@@ -51,8 +51,14 @@ done
 skip_file="$HOME/.config/agent-alignment/skip"
 if [ -f "$skip_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'} && line=${line%/}
         [ -z "$line" ] || skip+=("$line")
     done < "$skip_file"
+fi
+if [ ${#skip[@]} -gt 0 ]; then
+    echo "skip     ${skip[*]}"
+else
+    echo "skip     nothing: no --skip, and no $skip_file"
 fi
 # The push hook installed before this kit's own: it runs an older copy of the
 # push check from /etc/claude-code/hooks that nothing updates any more.

@@ -36,7 +36,7 @@ class UpdateAll(unittest.TestCase):
             self.git(self.work, "init", "-q", "-b", "main", name)
         # Listed in the owner's skip file: never touched, so it never asks about a push check.
         (self.home / ".config/agent-alignment").mkdir(parents=True)
-        (self.home / ".config/agent-alignment/skip").write_text("excluded\n")
+        (self.home / ".config/agent-alignment/skip").write_bytes(b"excluded/\r\n")
         self.hook("old-hook").write_text('#!/usr/bin/env python3\n"""pre-push: show what is about to leave this machine, older."""\n')
         self.hook("wrapped").write_text(WRAPPER)
         self.hook("private").write_text("private hook\n")
@@ -116,6 +116,7 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual(copy, (SWE / ".claude/agents/code-reviewer.md").read_text())
         self.assertNotIn(str(self.home), copy)
         self.assertNotIn("== excluded", out)
+        self.assertIn("skip     private excluded\n", out)
         self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
         self.assertEqual([p.read_text() for p in (self.work / "old-hook/.claude/agents").glob("code-reviewer.md.*.bak")],
                          ["an old copy of the kit's reviewer\n"])
