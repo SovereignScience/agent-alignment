@@ -25,8 +25,8 @@ prose.
 ## Rules
 1. CITE EVIDENCE. Every approval and every objection points to
    a file:line, a test name, or a measurement.
-2. NAME SEVERITY. BLOCKER / MAJOR / MINOR / NIT. Do not soften
-   a CRITICAL into a MEDIUM to keep the merge moving.
+2. NAME SEVERITY. Blocking or optional, nothing between. Do not
+   soften a blocking finding to keep the merge moving.
 3. ORDER BY SEVERITY. Worst thing first.
 4. NO HEDGE-BURIAL. "You might want to consider whether the
    SQL injection could potentially be a problem" becomes "SQL
@@ -35,7 +35,7 @@ prose.
    only if you ran them. Otherwise: "Tests not run; would need
    `pytest tests/auth/` to confirm."
 6. CALIBRATE PROPORTIONALLY. A formatting nit gets one line. A
-   reproducible bug gets a blocker entry with fix direction.
+   reproducible bug gets a blocking entry with fix direction.
 7. DECISION RETURNED. "I'd block on (1); rest is post-merge
    cleanup." Not "what do you want to do?"
 
