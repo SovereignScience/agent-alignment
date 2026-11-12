@@ -10,6 +10,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SWE = HERE.parent
 STATUS = '#!/usr/bin/env bash\n[ "$1 $2" = "status --exit-code" ] || exit 64\nexit "$(cat "$HOME/machine")"\n'
 BOARD = '#!/usr/bin/env bash\necho "board_update $* in $(basename "$PWD")"\n[ "$(basename "$PWD")" != broken ] || exit 1\n'
+WRAPPER = '#!/bin/sh\n# agent-safety push check\nexec python3 /etc/claude-code/hooks/pre-push "$@"\n'
 
 
 class UpdateAll(unittest.TestCase):
@@ -30,9 +31,10 @@ class UpdateAll(unittest.TestCase):
             shutil.copy(SWE / ".claude/scripts" / name, kit / "swe/.claude/scripts" / name)
         self.git(kit, "init", "-q", "-b", "main")
         (self.home / "machine").write_text("0")
-        for name in ("old-hook", "no-hook", "declined", "broken", "private", "foreign", "husky"):
+        for name in ("old-hook", "no-hook", "declined", "broken", "private", "foreign", "husky", "wrapped"):
             self.git(self.work, "init", "-q", "-b", "main", name)
         self.hook("old-hook").write_text('#!/usr/bin/env python3\n"""pre-push: show what is about to leave this machine, older."""\n')
+        self.hook("wrapped").write_text(WRAPPER)
         self.hook("private").write_text("private hook\n")
         self.hook("foreign").write_text('#!/bin/sh\ngit lfs pre-push "$@"\n')
         self.git(self.work / "husky", "config", "core.hooksPath", ".husky/_")
@@ -83,6 +85,8 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("note     another tool's push hook is here (left alone)", out)
         self.assertFalse(self.hook("husky").exists())
         self.assertIn("(core.hooksPath); push check left alone", out)
+        self.assertEqual(self.hook("wrapped").read_bytes(), kit_hook)
+        self.assertEqual([p.read_text() for p in self.hook("wrapped").parent.glob("pre-push.*.bak")], [WRAPPER])
         self.assertIn("machine  the installed rules, agents and commands match the kit", out)
         self.assertIn("stale    .claude/agents/code-reviewer.md", out)
         lines = (SWE / ".claude/agents/code-reviewer.md").read_text().split("\n")
