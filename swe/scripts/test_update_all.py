@@ -116,6 +116,8 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual((self.work / "old-hook/.claude/agents/code-reviewer.md").read_text(),
                          "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:]))
         self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
+        self.assertEqual([p.read_text() for p in (self.work / "old-hook/.claude/agents").glob("code-reviewer.md.*.bak")],
+                         ["an old copy of the kit's reviewer\n"])
 
     def test_a_second_run_changes_nothing_and_a_machine_behind_the_kit_is_named(self):
         (self.work / "broken").rename(self.work / "mended")
@@ -130,8 +132,16 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("machine  BEHIND: run bash", out)
 
     def test_kit_copies_are_committed_and_pushed_only_where_nothing_else_waits(self):
-        clean, ahead, staged, detached, merging = (
-            self.project(n) for n in ("clean", "ahead", "staged", "detached", "merging"))
+        clean, ahead, staged, detached, merging, reverting, forked = (
+            self.project(n) for n in ("clean", "ahead", "staged", "detached", "merging", "reverting", "forked"))
+        # A fork set-up: pushes go to the owner's fork, not to the upstream the branch tracks.
+        fork = pathlib.Path(self.tmp.name, "forked-fork.git")
+        self.git(self.tmp.name, "init", "-q", "--bare", str(fork))
+        self.git(forked, "remote", "add", "fork", str(fork))
+        self.git(forked, "push", "-q", "fork", "main")
+        self.git(forked, "config", "branch.main.pushRemote", "fork")
+        # A revert in progress, which Git would let a commit end.
+        self.git(reverting, "update-ref", "REVERT_HEAD", "HEAD")
         # Another branch with a commit its remote lacks, which push.default=matching would also send.
         self.git(clean, "checkout", "-q", "-b", "other")
         self.git(clean, "push", "-q", "origin", "other")
@@ -151,7 +161,9 @@ class UpdateAll(unittest.TestCase):
         self.git(merging, "commit", "-q", "--allow-empty", "-m", "side")
         self.git(merging, "checkout", "-q", "main")
         self.git(merging, "merge", "-q", "--no-ff", "--no-commit", "-s", "ours", "side")
-        before = {root: self.git(root, "rev-parse", "HEAD") for root in (staged, detached, merging)}
+        before = {root: self.git(root, "rev-parse", "HEAD") for root in (staged, detached, merging, reverting)}
+        forked_remotes = {path: self.git(self.tmp.name, "--git-dir", str(path), "rev-parse", "main")
+                          for path in (fork, pathlib.Path(self.tmp.name, "forked.git"))}
         _, out = self.run_it("", "--yes", "--push")
         for root in (clean, ahead):
             self.assertEqual(self.git(root, "log", "-1", "--format=%s"), KIT_COMMIT, out)
@@ -163,15 +175,23 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("pushed   main to origin", out)
         self.assertEqual(self.git(ahead, "rev-list", "--count", "origin/main..HEAD"), "2")
         self.assertIn("not pushed: main has 2 commits its upstream lacks", out)
-        for root in (staged, detached, merging):
+        for root in (staged, detached, merging, reverting):
             self.assertEqual(self.git(root, "rev-parse", "HEAD"), before[root])
         self.assertIn("not committed: something else is already staged here", out)
         self.assertIn("not committed: HEAD is on no branch here", out)
+        self.assertIn("in the middle of an operation here (MERGE_HEAD)", out)
+        self.assertIn("in the middle of an operation here (REVERT_HEAD)", out)
         self.git(merging, "rev-parse", "-q", "--verify", "MERGE_HEAD")
-        # A copy that differs only by an uncommitted edit is current once restored: no commit, no problem.
+        self.git(reverting, "rev-parse", "-q", "--verify", "REVERT_HEAD")
+        self.assertEqual(self.git(forked, "log", "-1", "--format=%s"), KIT_COMMIT)
+        for path, head in forked_remotes.items():
+            self.assertEqual(self.git(self.tmp.name, "--git-dir", str(path), "rev-parse", "main"), head)
+        self.assertIn("not pushed: pushes from main do not go to its upstream refs/remotes/origin/main", out)
+        # An uncommitted edit to a tracked copy is left as it is.
         (clean / ".claude/agents/code-reviewer.md").write_text("a local edit\n")
-        _, again = self.run_it("", "--yes", "--push", "--skip", "broken", "--skip", "merging")
-        self.assertIn("nothing to commit: HEAD already holds the kit copies", again)
+        _, again = self.run_it("", "--yes", "--push", "--skip", "broken", "--skip", "merging", "--skip", "reverting")
+        self.assertEqual((clean / ".claude/agents/code-reviewer.md").read_text(), "a local edit\n")
+        self.assertIn("kept     .claude/agents/code-reviewer.md: it has uncommitted edits", again)
         self.assertNotIn("PROBLEM", again)
 
 
