@@ -83,6 +83,13 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(self.rules.read_text(), before)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
 
+    def test_status_can_answer_by_exit_status_whether_apply_would_change_anything(self):
+        self.assertEqual(self.switch("status", "--exit-code")[0], 1)
+        self.assertEqual(self.switch("apply")[0], 0)
+        code, out = self.switch("status", "--exit-code")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("would ", out)
+
     def test_apply_installs_and_revert_puts_everything_back(self):
         before = self.rules.read_text()
         new_context = self.repo / "new-context.md"
@@ -225,6 +232,7 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("collision", out)
         self.assertNotIn("would merge template changes", out)
+        self.assertEqual(self.switch("status", "--exit-code")[0], 2)
         code, out = self.switch("apply")
         self.assertNotEqual(code, 0)
         self.assertIn("collision", out)
