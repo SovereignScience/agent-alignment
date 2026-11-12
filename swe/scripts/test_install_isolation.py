@@ -599,6 +599,14 @@ class Installer(unittest.TestCase):
         self.assertIn("this checkout's HEAD does not contain refs/remotes/origin/main", out)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
 
+    def test_apply_goes_ahead_when_head_contains_the_fetched_upstream_of_main(self):
+        self.git("remote", "add", "origin", str(self.repo))
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("branch", "-q", "--set-upstream-to", "origin/main")
+        self.git("commit", "-q", "--allow-empty", "-m", "local work")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+
     def test_apply_goes_ahead_when_main_tracks_an_upstream_never_fetched(self):
         self.git("remote", "add", "origin", str(self.repo))
         self.git("config", "branch.main.remote", "origin")
