@@ -35,7 +35,8 @@
 # ~/.codex/config.toml is missing, defines the admin profile itself or picks
 # another default. Without ~/.codex it leaves Codex and /etc/codex alone. A
 # managed file with the right content but the wrong owner or mode is
-# reinstalled.
+# reinstalled. --apply also stops when this checkout's HEAD does not contain
+# main, so an older checkout cannot put back older rules.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,6 +51,12 @@ case "${1:-}" in
     "") ;;
     *) echo "usage: $0 [--apply]" >&2; exit 64 ;;
 esac
+if [ "$apply" = yes ] && ! git -C "$swe" merge-base --is-ancestor main HEAD; then
+    echo "install_isolation: this checkout's HEAD does not contain main, so it could install older rules." >&2
+    echo "Bring it up to date with main, or run this from the main checkout." >&2
+    echo "Nothing was written." >&2
+    exit 1
+fi
 [ -d "$workspace" ] || { echo "SWE_WORKSPACE $workspace does not exist" >&2; exit 1; }
 test_dirs=no
 [ -z "${SWE_ETC:-}${SWE_CODEX_ETC:-}" ] || test_dirs=yes

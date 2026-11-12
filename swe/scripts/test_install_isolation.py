@@ -61,6 +61,13 @@ class Installer(unittest.TestCase):
         self.bin.mkdir()
         (self.bin / "sudo").write_text(FAKE_SUDO)
         (self.bin / "sudo").chmod(0o755)
+        self.repo = root / "checkout"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)], check=True)
+        self.git("commit", "-q", "--allow-empty", "-m", "start")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=Owner", "-c", "user.email=owner@example.com",
+                        *args], check=True)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -70,7 +77,7 @@ class Installer(unittest.TestCase):
         return dict(parent, HOME=str(self.home), SWE_WORKSPACE=str(self.home / "projects"),
                     SWE_ETC=str(self.etc / "claude-code"), SWE_CODEX_ETC=str(self.etc / "codex"),
                     SWE_MANAGED_LOCAL=str(self.local), PATH="%s:%s" % (self.bin, os.environ["PATH"]),
-                    **extra)
+                    GIT_DIR=str(self.repo / ".git"), **extra)
 
     def run_installer(self, codex=PROFILE, local=None, user=None, apply=False, cwd=None, **extra):
         if codex is None:
@@ -570,6 +577,16 @@ class Installer(unittest.TestCase):
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text()), user)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
         self.assertFalse((self.etc / "codex/requirements.toml").exists())
+
+    def test_apply_refuses_a_checkout_whose_head_does_not_contain_main(self):
+        self.git("branch", "older")
+        self.git("commit", "-q", "--allow-empty", "-m", "newer rules")
+        self.git("checkout", "-q", "older")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 1, out)
+        self.assertIn("this checkout's HEAD does not contain main", out)
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+        self.assertEqual(self.preview()[0], 0)
 
     def test_a_managed_file_with_the_right_content_but_wrong_mode_is_reinstalled(self):
         code, out = self.run_installer(apply=True)
