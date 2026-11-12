@@ -186,9 +186,9 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 - Every commit carries my name and email as author and committer. Use
   the identity Git already has and never set or override it. Before the
-  first commit in a clone, read `git config user.name` and
-  `git config user.email`; if either is missing or names a tool, stop and
-  ask. Name branches for the work, never for a tool (`claude/`, `codex/`).
+  first commit in a clone, read `git var GIT_AUTHOR_IDENT` and
+  `git var GIT_COMMITTER_IDENT`; if either is missing or names a tool, stop
+  and ask. Name branches for the work, never for a tool (`claude/`, `codex/`).
 - Follow the repository's commit convention. Where it has none, use
   Conventional Commits. The subject is `type(scope): summary`: lowercase,
   imperative ("add", "fix"; never "added" or "fixes"), no full stop, 72

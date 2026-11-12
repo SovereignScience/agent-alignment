@@ -31,7 +31,7 @@ for pat in "${fixed_patterns[@]}"; do
   if printf '%s' "$cmd" | grep -Fq -- "$pat"; then
     {
       echo "pre-bash-guard: blocked literal pattern '$pat'"
-      echo "Stop and explain the blocked action. Do not retry or delegate it."
+      echo "Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it."
     } >&2
     exit 2
   fi
@@ -46,7 +46,7 @@ for pat in "${regex_patterns[@]}"; do
   if printf '%s' "$cmd" | grep -Eq -- "$pat"; then
     {
       echo "pre-bash-guard: blocked regex pattern '$pat'"
-      echo "Stop and explain the blocked action. Do not retry or delegate it."
+      echo "Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it."
     } >&2
     exit 2
   fi

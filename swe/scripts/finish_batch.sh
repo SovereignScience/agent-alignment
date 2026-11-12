@@ -86,8 +86,10 @@ review() {
     local action=$1; shift
     LATTICE_ROOT=$root python3 "$tools/owner_review.py" "$action" --repo "$root" --board "$root" --main "$base" "$@"
 }
+# lattice-review's dashboard tests import lattice, so they run on the Python the lattice command runs on.
 kit_checks=(
-    'for d in swe/.claude/scripts swe/scripts swe/tools/lattice-review flourishing/.claude/scripts; do (cd "$d" && python3 -m unittest discover -s . -p "test_*.py") || exit 1; done'
+    'for d in swe/.claude/scripts swe/scripts flourishing/.claude/scripts; do (cd "$d" && python3 -m unittest discover -s . -p "test_*.py") || exit 1; done'
+    'cd swe/tools/lattice-review && $(sed -n "1s/^#!//p" "$(command -v lattice)") -m unittest discover -s . -p "test_*.py"'
     'bash swe/scripts/check_drift.sh'
     '[ ! -f swe/scripts/adr.py ] || python3 swe/scripts/adr.py check'
 )
@@ -172,9 +174,10 @@ fi
 
 phase "7: acceptance"
 if [ ${#after[@]} -gt 0 ]; then
-    LATTICE_ROOT=$root python3 "$tools/merge_approved.py" --repo "$root" --board "$root" --verify "origin/$base" \
-        "${check_args[@]}" || stop "a check failed on origin/$base; no evidence was recorded and nothing was closed"
-    review evidence --actor "$actor" --note "Met: the project's checks pass on $base after the merge. Checked: finish_batch.sh ran the four test suites, check_drift.sh and the decision record check on a clean worktree of the pushed commit $(git -C "$root" rev-parse --short "origin/$base"), and all passed. Not checked: anything beyond those commands. Remains: nothing for this criterion." "${after[@]}"
+    LATTICE_ROOT=$root python3 -u "$tools/merge_approved.py" --repo "$root" --board "$root" --verify "origin/$base" \
+        "${check_args[@]}" 2>&1 | tee "$work/verify" || stop "a check failed on origin/$base; no evidence was recorded and nothing was closed"
+    read -r ran skipped < <(awk '/^Ran [0-9]+ tests? in / { ran += $2 } /^OK \(.*skipped=/ { sub(/.*skipped=/, ""); skipped += $0 } END { print ran + 0, skipped + 0 }' "$work/verify")
+    review evidence --actor "$actor" --note "Met: the project's checks pass on $base after the merge. Checked: finish_batch.sh ran the four test suites ($ran tests, $skipped skipped), check_drift.sh and the decision record check on a clean worktree of the pushed commit $(git -C "$root" rev-parse --short "origin/$base"), and none failed. Not checked: anything beyond those commands. Remains: nothing for this criterion." "${after[@]}"
 fi
 review close --actor "$actor" "${ids[@]}"
 board_sync "chore(board): record the batch's reviews, evidence and closures"
