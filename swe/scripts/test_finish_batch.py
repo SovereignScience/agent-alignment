@@ -1,12 +1,15 @@
 """finish_batch.sh in a throwaway copy of the kit's layout: a main checkout with a
 bare remote, a board with its own bare remote made by the real lattice command,
 the real review tools, and stand-ins for the installer and the board update."""
+import fcntl
 import json
 import os
 import pathlib
+import pty
 import shutil
 import subprocess
 import tempfile
+import termios
 import unittest
 
 SWE = pathlib.Path(__file__).resolve().parents[1]
@@ -77,17 +80,16 @@ class FinishBatch(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
 
-    def run_in(self, cwd, *command, check=True, answers=None):
-        done = subprocess.run(command, cwd=cwd, env=self.env, capture_output=True, text=True, input=answers or "", timeout=300)
-        if check:
-            self.assertEqual(done.returncode, 0, "%s: %s" % (" ".join(command), done.stdout + done.stderr))
-        return done.returncode, done.stdout + done.stderr
+    def run_in(self, cwd, *command):
+        done = subprocess.run(command, cwd=cwd, env=self.env, capture_output=True, text=True, input="", timeout=300)
+        self.assertEqual(done.returncode, 0, "%s: %s" % (" ".join(command), done.stdout + done.stderr))
+        return done.stdout + done.stderr
 
     def git(self, *args, cwd=None):
-        return self.run_in(cwd or self.root, "git", *args)[1].strip()
+        return self.run_in(cwd or self.root, "git", *args).strip()
 
     def lattice(self, *args):
-        return self.run_in(self.root, LATTICE, *args, "--actor", "human:owner")[1]
+        return self.run_in(self.root, LATTICE, *args, "--actor", "human:owner")
 
     def task(self, sid, branch, path, text):
         self.lattice("create", "task " + sid)
@@ -101,8 +103,18 @@ class FinishBatch(unittest.TestCase):
             self.lattice("status", sid, status, "--no-auto-review")
 
     def finish(self, answers, *extra, ids=("T-1", "T-2")):
-        return self.run_in(self.root, BASH, "swe/scripts/finish_batch.sh", "--actor", "human:owner",
-                           "--after-merge", "T-2:AC-1", *extra, *ids, check=False, answers=answers)
+        """owner_review.py takes answers only from the terminal, so the script runs in a session of its
+        own on a pty with the answers typed ahead."""
+        owner, terminal = pty.openpty()
+        try:
+            os.write(owner, answers.encode())
+            done = subprocess.run([BASH, "swe/scripts/finish_batch.sh", "--actor", "human:owner", "--after-merge", "T-2:AC-1",
+                                   *extra, *ids], cwd=self.root, env=self.env, stdin=terminal, capture_output=True, text=True,
+                                  timeout=300, start_new_session=True, preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+        finally:
+            os.close(owner)
+            os.close(terminal)
+        return done.returncode, done.stdout + done.stderr
 
     def status(self, sid):
         tasks = (json.loads(path.read_text()) for path in (self.root / ".lattice/tasks").glob("*.json"))
@@ -124,7 +136,7 @@ class FinishBatch(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "feature/T-1-one", cwd=self.origin), self.git("rev-parse", "feature/T-1-one"))
         self.assertFalse((self.home / "installed").exists())
         self.git("push", "-q", "origin", "main")
-        code, out = self.finish("")
+        code, out = self.finish("y\n")
         self.assertEqual(code, 0, out)
         for name in ("5: install", "6: boards", "7: acceptance"):
             self.assertIn("== Phase " + name, out)
@@ -166,7 +178,7 @@ class FinishBatch(unittest.TestCase):
         self.run_in(self.root, LATTICE, "needs-human", "T-1", "Need: decide the name", "--actor", "agent:x")
         self.finish("y\ny\n\n")
         self.git("push", "-q", "origin", "main")
-        code, out = self.finish("")
+        code, out = self.finish("y\nn\n")
         self.assertEqual(code, 0, out)
         self.assertIn("T-1: left open: its flag is not cleared", out)
         self.assertEqual((self.status("T-1"), self.status("T-2")), ("in_review", "done"))
@@ -192,7 +204,7 @@ class FinishBatch(unittest.TestCase):
         self.assertFalse((self.root / "one.txt").exists())
         self.assertFalse((self.root / "three.txt").exists())
         self.git("push", "-q", "origin", "main")
-        code, out = self.finish("n\n", ids=ids)
+        code, out = self.finish("n\nn\ny\n", ids=ids)
         self.assertEqual(code, 0, out)
         self.assertRegex(out, r"merged +1  T-2\nskipped +2  T-1 T-3\nclosed +1  T-2\nstill open +2  T-1 T-3")
 
@@ -243,7 +255,7 @@ class FinishBatch(unittest.TestCase):
         (other / ".lattice/config.json").write_text("{}")
         self.finish("y\ny\n\n", "--project", str(other))
         self.git("push", "-q", "origin", "main")
-        code, out = self.finish("", "--project", str(other))
+        code, out = self.finish("y\n", "--project", str(other))
         self.assertEqual(code, 1, out)
         self.assertIn("PROBLEM: the board in %s was not brought up to date" % other, out)
         self.assertIn("STOP: a board was not brought up to date; see phase 6", out)
