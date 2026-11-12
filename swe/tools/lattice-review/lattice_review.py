@@ -49,7 +49,8 @@ PLAN_DECISION = re.compile(r"^Plannotator plan (approved|annotated) \(")
 PLAN_NOTE = re.compile(r"^## \d+\. (.*)$")
 RESOLVED = "resolved"
 REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
-DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
+# "Owner approved" is a yes given in the terminal through owner_review.py.
+DECISION = re.compile(r"^(?:Plannotator|Owner) (approved|annotated) \(")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 1_048_576
 # The task side panel opens at 60% of the window instead of Lattice's 30rem,
