@@ -159,11 +159,56 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Make or clear a task's worktrees (owner-run) | `bash scripts/task_worktree.sh add <ID> <slug>`, then `remove <ID>` |
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
+| Try this checkout's rules on this machine, then go back | `bash scripts/switch_rules.sh status`, then `apply`, later `revert` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
 There is no test suite for these protocols (they're prose). The
 SWE protocols are validated by use.
+
+---
+
+## Trying a checkout and going back
+
+A branch changes three kinds of file, and each reaches a session a
+different way.
+
+| What | Where it lives | How a session gets it |
+|---|---|---|
+| Agents, commands, protocols, project instructions | the checkout | Open the session in a worktree of that branch |
+| Managed settings and hooks, the Codex profile and rules, your user rules, the pre-push hook | this machine | `scripts/switch_rules.sh apply` |
+| Board conventions | `.lattice/context.md` | `apply --context <file>` |
+
+From a worktree of the branch you want to try:
+
+```bash
+bash swe/scripts/switch_rules.sh status   # what would change; writes nothing
+bash swe/scripts/switch_rules.sh apply    # saves what is installed, then installs
+# restart every Claude Code and Codex session, then test
+bash swe/scripts/switch_rules.sh revert   # puts the saved state back
+```
+
+A session may run `status` and explain the result. `apply` and `revert`
+are yours: they use sudo and change the rules every session runs under.
+Each `apply` keeps a snapshot in `~/.config/agent-alignment/snapshots/`,
+a folder sessions cannot read or write. `revert` goes back to the state
+before the first `apply` you have not reverted, or to the snapshot you
+name, so two sets of rules can be compared by switching between them.
+The script takes your checkouts to live in the folder this one is in;
+set `SWE_WORKSPACE` if they do not. A plain `revert` after everything is
+already reverted changes nothing and says so.
+
+In VS Code, restarting means "Developer: Reload Window" in each window
+and then a new chat in each extension. Codex reads its profile and rules
+when a chat starts, and a resumed chat keeps the old ones. To try the
+checkout's own agents, commands and project rules as well, open a window
+on the worktree's `swe/` folder with `code <worktree>/swe`. On WSL, run
+all of this from the distribution's shell: the files are on the Linux
+side. A Codex rule can be checked without a session:
+
+```bash
+codex execpolicy check --pretty --rules ~/.codex/rules/default.rules -- git commit -n -m x
+```
 
 ---
 
