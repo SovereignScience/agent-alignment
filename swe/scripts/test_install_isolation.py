@@ -438,13 +438,18 @@ class Installer(unittest.TestCase):
         self.assertIn("write      %s" % sentinel, out)
 
     def test_apply_installs_and_the_printed_undo_restores_every_file(self):
-        user = {"permissions": {"deny": ["Read(**/*token*)", "Bash(git push *)"]}}
+        user = {"permissions": {"deny": ["Read(**/*token*)", "Read(**/credentials)",
+                                           "Read(~/project-private/**)", "Bash(git push *)"]}}
         code, out = self.run_installer(user=user, apply=True)
         self.assertEqual(code, 0, out)
         self.assertEqual(self.requirements()["default_permissions"], "alignment_workstation")
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text())["permissions"]["deny"],
-                         ["Bash(git push *)"])
+                         ["Read(~/project-private/**)", "Bash(git push *)"])
+        self.assertIn("remove permissions.deny Read(**/credentials)", out)
         managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
+        for path in ("~/.cargo/credentials", "~/.cargo/credentials.toml", "~/.config/git/credentials"):
+            self.assertIn("Read(%s)" % path, managed["permissions"]["deny"])
+            self.assertIn(path, managed["sandbox"]["filesystem"]["denyRead"])
         self.assertNotIn("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", managed["env"])
         self.assertNotIn("~/", managed["sandbox"]["filesystem"]["denyRead"])
         self.assertTrue((self.etc / "claude-code/hooks/guard_outward.py").is_file())

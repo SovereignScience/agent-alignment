@@ -148,7 +148,7 @@ if user.exists():
     settings = json.loads(user.read_text())
     perms = settings.get("permissions", {})
     drop = {"Read(**/*token*)", "Read(**/*secret*)", "Read(**/*credentials*)", "Read(**/*api_key*)",
-            "Read(**/*apikey*)", "Read(**/*.crt)", "Read(**/known_hosts)",
+            "Read(**/credentials)", "Read(**/*apikey*)", "Read(**/*.crt)", "Read(**/known_hosts)",
             "Bash(ansible-playbook *)", "Bash(ansible *)",
             "Read(//%s/**)" % home.lstrip("/"), "Read(~/**)"}
     changes = []
