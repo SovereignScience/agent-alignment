@@ -284,6 +284,12 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 - Logic longer than a screen is a script with a test, reviewed as a diff.
 - When the sandbox blocks a tool (pip over HTTPS, Galaxy, Terraform, Ansible
   runs, secret files), hand me the command. No workarounds.
+- When the work needs something only I can run (a fetch, a push, an
+  install, an action a guard refused), give me the exact command as soon
+  as you know you need it, in the same reply as the work it unblocks.
+  Carry on with everything that does not depend on it and pick up from
+  the output I paste. Needing a command from me is never a reason to stop
+  early, plan around the gap or leave the work for another session.
 - A review message I ask for is self-contained: repo path, base..head
   commits, the goal or spec, what changed and why, known risks, checks run
   as command and result, what never ran, and what to focus on and skip.
