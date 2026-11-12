@@ -1,5 +1,10 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "allow": [
       "Read(./**)",
@@ -28,6 +33,20 @@
     ]
   },
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Monitor|WebFetch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_CODE_REMOTE\" = true ] || exit 0; exec /usr/bin/python3 -I \"$CLAUDE_PROJECT_DIR\"/swe/.claude/scripts/guard_outward.py",
+            "timeout": 10,
+            "onFailure": "block",
+            "statusMessage": "Checking outward-action guard"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

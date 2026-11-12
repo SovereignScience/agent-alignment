@@ -49,7 +49,8 @@ The full rationale lives in [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-tra
 
 - Plain language over jargon.
 - Operational rules over aspirational language.
-- Push, force-push and `git commit --no-verify` are denied. Never
+- Push, force-push and `git commit --no-verify` are denied; the one
+  exception for a push is under Cloud sessions below. Never
   amend or rewrite published history; history rewrites are the user's
   to run. Confirm before recursive deletes, dependency removal and CI
   changes. Hooks are best-effort guards; the deny lists, and in
@@ -119,6 +120,24 @@ and rules for answering review threads.
   board" in `.lattice/context.md`.
 - Never run lattice status <ID> done, lattice complete or lattice next;
   completion is the owner's, through the review section.
+
+---
+
+## Cloud sessions
+
+A cloud session starts from a fresh clone on a hosted machine. The owner's
+machine rules are not installed there, and the hooks and deny lists in this
+repository are not always loaded.
+
+- If neither `~/.claude/CLAUDE.md` nor `~/.codex/AGENTS.md` exists, read
+  `swe/user/CLAUDE.md` before any work and follow it as your user rules.
+- Follow every rule as written even when nothing enforces it.
+- The owner has no shell there, so a push the owner asks for in that
+  session is yours to run, with `bash .claude/scripts/cloud_push.sh`. It
+  sends the current task branch and nothing else; `--board` sends the
+  board's commits. Never push any other way, and never unasked.
+- What reaches a cloud session, and the owner's one-time setup, is in
+  [swe/README.md](swe/README.md#cloud-sessions).
 
 ---
 
