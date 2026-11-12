@@ -271,6 +271,37 @@ Annotations typed in Plannotator stay in that session until Send
 Feedback or Approve; only then do they land on the task, where every
 browser and every agent sees them.
 
+## Merging approved work
+
+The owner merges from the main checkout, with the board in `LATTICE_ROOT`
+or the current folder:
+
+```
+python3 <kit>/swe/tools/lattice-review/merge_approved.py --check '<command>' AA-7 [AA-8 ...]
+```
+
+Each task's linked branch is merged in the order given, with a merge
+commit, only while the review rule above holds for the commits about to
+land. Every `--check` command must then pass on the merged files, and
+only then is main pushed. A stop undoes nothing: it says where things
+stand and prints the command that takes it back. A rerun continues, and
+accepts a merge already on local main only when it has the same two
+parents and the same files as the one it would make. `--no-push` stops
+after the checks, and `--skip-unapproved` leaves out a task whose review
+does not cover its commits, together with every task whose branch
+contains that task's branch or a commit carrying its trailer.
+
+`owner_review.py` takes the same decisions in the terminal. `approve`
+shows a task's head commit and a one-line summary, lets you resolve an
+open thread, and records a yes as a review bound to those commits. The
+record starts "Owner approved (terminal", so it says no diff was opened
+in Plannotator. `close` marks done what Mark done would allow, and asks
+before clearing a flag that still asks you something.
+`swe/scripts/finish_batch.sh` runs a batch of this kit's tasks through
+both in named phases: push, review, merge and test, publish, install,
+boards, acceptance. A stop exits nonzero and undoes nothing, and a rerun
+goes on from there.
+
 ## Run
 
 The short way is `board`, a bash function in [board.bash](board.bash).

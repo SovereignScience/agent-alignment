@@ -2,7 +2,7 @@
 # Try this checkout's rules on this machine, then go back. Run it yourself in a
 # terminal, from the checkout you want to try; sessions cannot write these files.
 #
-#   swe/scripts/switch_rules.sh status                    what would change; writes nothing
+#   swe/scripts/switch_rules.sh status [--exit-code]      what would change; writes nothing
 #   swe/scripts/switch_rules.sh apply [--context <file>]  save what is installed, then install this checkout
 #   swe/scripts/switch_rules.sh revert [<snapshot>]       put a saved state back
 #
@@ -14,6 +14,9 @@
 #   3. copies codex/default.rules to ~/.codex/rules/, if ~/.codex exists;
 #   4. refreshes the pre-push hook in this repository, if one is installed;
 #   5. with --context, installs that file as this repository's board context.
+# status --exit-code also answers by exit status, for a script: 0 when apply
+# would change nothing, 1 when it would change something, 2 when it could not
+# go ahead.
 # revert restores each saved file and removes any that did not exist when the
 # snapshot was taken. With no name it goes back to the state before the first
 # apply that has not been reverted, however many times apply ran since, and
@@ -50,7 +53,7 @@ files=(
 )
 
 usage() {
-    echo "usage: $0 status | apply [--context <file>] | revert [<snapshot>]" >&2
+    echo "usage: $0 status [--exit-code] | apply [--context <file>] | revert [<snapshot>]" >&2
     exit 64
 }
 die() { echo "switch_rules: $*" >&2; exit 1; }
@@ -106,10 +109,19 @@ action=$1
 shift
 case $action in
 status)
+    answer=no pending=0 blocked=0
+    if [ "${1:-}" = --exit-code ]; then answer=yes; shift; fi
     [ $# -eq 0 ] || usage
     echo "This checkout: $(git -C "$swe" rev-parse --abbrev-ref HEAD) at $(git -C "$swe" rev-parse --short HEAD)"
-    bash "$swe/scripts/install_isolation.sh" || echo "install_isolation.sh stopped; see the lines above"
-    merge_rules || true
+    if preview=$(bash "$swe/scripts/install_isolation.sh" 2>&1); then
+        printf '%s\n' "$preview"
+        if grep -q '^== ' <<<"$preview"; then pending=1; fi
+    else
+        printf '%s\n' "$preview"
+        echo "install_isolation.sh stopped; see the lines above"
+        blocked=1
+    fi
+    merge_rules || blocked=1
     i=0
     for file in "${rules[@]}"; do
         i=$((i + 1))
@@ -121,6 +133,7 @@ status)
             echo "unchanged  $file"
         else
             echo "would merge template changes into $file"
+            pending=1
         fi
     done
     if [ ! -d "$HOME/.codex" ]; then
@@ -129,6 +142,7 @@ status)
         echo "unchanged  $codex_rules"
     else
         echo "would update $codex_rules"
+        pending=1
     fi
     if [ ! -f "$hooks/pre-push" ]; then
         echo "absent     $hooks/pre-push (left alone)"
@@ -139,6 +153,7 @@ status)
         echo "unchanged  $hooks/pre-push"
     else
         echo "would update $hooks/pre-push"
+        pending=1
     fi
     if [ -f "$HOME/.codex/AGENTS.md" ]; then
         size=$({ cat "$HOME/.codex/AGENTS.md" "$root/AGENTS.md" "$swe/AGENTS.md" 2>/dev/null || true; } | wc -c)
@@ -149,6 +164,8 @@ status)
     fi
     target="$(revert_target)"
     echo "Revert goes back to: ${target:-nothing, no apply is waiting to be reverted}"
+    if [ "$answer" = yes ] && [ "$blocked" = 1 ]; then exit 2; fi
+    if [ "$answer" = yes ] && [ "$pending" = 1 ]; then exit 1; fi
     ;;
 apply)
     context=""
