@@ -77,12 +77,31 @@ class UpdateAll(unittest.TestCase):
     def hook(self, name):
         return self.work / name / ".git/hooks/pre-push"
 
-    def run_it(self, answers, *args):
+    def run_it(self, answers, *args, skip=("--skip", "private")):
         env = dict(os.environ, HOME=str(self.home))
         env.pop("SWE_WORKSPACE", None)
-        done = subprocess.run(["bash", str(self.kit / "swe/scripts/update_all.sh"), "--skip", "private", *args],
+        done = subprocess.run(["bash", str(self.kit / "swe/scripts/update_all.sh"), *skip, *args],
                               env=env, input=answers, capture_output=True, text=True, timeout=120)
         return done.returncode, done.stdout + done.stderr
+
+    def test_without_a_skip_list_or_with_a_name_that_matches_nothing_it_stops_before_any_project(self):
+        skip = self.home / ".config/agent-alignment/skip"
+        old_hook = self.hook("old-hook").read_text()
+        skip.unlink()
+        code, out = self.run_it("", "--yes", skip=())
+        self.assertEqual(code, 1, out)
+        self.assertIn("no %s: name the folders to leave out there" % skip, out)
+        self.assertNotIn("== ", out)
+        skip.write_bytes(b"  excluded/ \r\nprivat\n")
+        code, out = self.run_it("", "--yes")
+        self.assertEqual(code, 1, out)
+        self.assertIn("nothing in %s is named privat;" % self.work, out)
+        self.assertNotIn("== ", out)
+        self.assertEqual(self.hook("old-hook").read_text(), old_hook)
+        skip.write_bytes(b"")
+        code, out = self.run_it("", "--yes", skip=())
+        self.assertIn("skip     nothing\n", out)
+        self.assertIn("== private", out)
 
     def test_each_project_gets_the_push_check_and_its_board_brought_up_to_date(self):
         code, out = self.run_it("y\nn\nn\ny\n")
