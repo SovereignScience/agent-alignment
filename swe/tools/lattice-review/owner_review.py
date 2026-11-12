@@ -208,7 +208,9 @@ def summary(board, sids, say=print):
             groups["closed"].append(sid)
         else:
             groups["still open"].append(sid)
-            reasons[sid] = (lr.completion_block(board.repo, task, board.main, board.comments(sid))
+            reasons[sid] = (("it is %s, and only a task in review can be marked done" % task.get("status")
+                             if task.get("status") != "in_review" else None)
+                            or lr.completion_block(board.repo, task, board.main, board.comments(sid))
                             or ("its flag is not cleared: %s" % task["needs_human"]["reason"] if task.get("needs_human") else "ready to close"))
     for name in ("merged", "skipped", "closed", "still open"):
         say("%-10s %2d  %s" % (name, len(groups[name]), " ".join(groups[name])))
