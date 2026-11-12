@@ -196,7 +196,7 @@ accept one, by changing its status.
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Try this checkout's rules on this machine, then go back | `bash scripts/switch_rules.sh status`, then `apply`, later `revert` |
-| Bring every project in the workspace up to date with the kit: push checks, agent and command copies, and boards (owner-run, after `apply`) | `bash scripts/update_all.sh --yes --push --skip <folder>` |
+| Bring every project in the workspace up to date with the kit: push checks, agent and command copies, and boards (owner-run, after `apply`; with `--push` the push check may ask at the terminal) | `bash scripts/update_all.sh --yes --push --skip <folder>` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Screenshot or click through a local page, app started in the same command | `python3 scripts/local_browser.py --app '<start command>' http://127.0.0.1:<port>/ shot:page` (`--help` lists the steps) |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |

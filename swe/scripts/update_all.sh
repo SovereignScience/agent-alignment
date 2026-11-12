@@ -15,10 +15,14 @@
 #   2. finds copies of the kit's agents and slash commands in the
 #      repository's own .claude folder that differ from the kit, and asks
 #      before bringing them up to date (a project's copy wins over the one
-#      installed for every project). It commits those files and nothing
-#      else, unless something else is staged, they are not tracked or HEAD
-#      is on no branch. With --push it pushes that commit when it is the
-#      only one the branch's upstream lacks;
+#      installed for every project). A tracked copy with uncommitted edits
+#      is left alone; an untracked one keeps its old text as .bak. It
+#      commits those files and nothing else, unless something else is
+#      staged, they are not tracked, HEAD is on no branch or a merge,
+#      rebase, cherry-pick or revert is in progress. With --push it pushes
+#      that commit when it is the only one the branch's upstream lacks and
+#      the branch pushes to that upstream; the push check may ask at the
+#      terminal, once a repository;
 #   3. brings the board up to date with board_update.sh --apply where the
 #      repository has one.
 # It says first whether this machine's installed rules, agents and commands
@@ -101,13 +105,22 @@ for root in "$workspace"/*/; do
         if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
         else problems=$((problems + 1)); echo "PROBLEM  the push check could not be updated; the .bak copies hold the old one"; fi
     fi
-    stale=()
+    stale=() edited=()
     for kind in agents commands; do
         for copy in "$root/.claude/$kind"/*.md; do
             [ -f "$copy" ] && [ ! -L "$copy" ] && [ -f "$swe/.claude/$kind/$(basename "$copy")" ] || continue
-            cmp -s "$copy" <(render "$swe/.claude/$kind/$(basename "$copy")") || stale+=("$copy")
+            ! cmp -s "$copy" <(render "$swe/.claude/$kind/$(basename "$copy")") || continue
+            if git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1 \
+                    && ! git -C "$root" diff --quiet HEAD -- "$copy" 2>/dev/null; then
+                edited+=("$copy")
+            else
+                stale+=("$copy")
+            fi
         done
     done
+    if [ ${#edited[@]} -gt 0 ]; then
+        printf 'kept     %s: it has uncommitted edits; bring it up to date yourself\n' "${edited[@]#"$root"/}"
+    fi
     if [ ${#stale[@]} -eq 0 ]; then
         echo "current  kit agents and commands in this project (or none)"
     else
@@ -118,31 +131,42 @@ for root in "$workspace"/*/; do
         fi
         if [ "$answer" = y ] || [ "$answer" = yes ]; then
             for copy in "${stale[@]}"; do
+                # Git holds the old text of a tracked copy; an untracked one keeps it beside it.
+                if ! git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1; then
+                    cp -p "$copy" "$copy.$stamp.bak"
+                fi
                 render "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" > "$copy"
             done
             echo "updated  ${#stale[@]} kit copies"
             files=("${stale[@]#"$root"/}")
             branch=$(git -C "$root" symbolic-ref -q --short HEAD || true)
+            busy=""
+            for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+                [ ! -e "$(git -C "$root" rev-parse --path-format=absolute --git-path "$state")" ] || busy=$state
+            done
             if [ -z "$branch" ]; then
                 echo "note     not committed: HEAD is on no branch here; commit them yourself"
+            elif [ -n "$busy" ]; then
+                echo "note     not committed: Git is in the middle of an operation here ($busy); commit them yourself"
             elif ! git -C "$root" diff --cached --quiet; then
                 echo "note     not committed: something else is already staged here"
             elif ! git -C "$root" ls-files --error-unmatch -- "${files[@]}" >/dev/null 2>&1; then
-                echo "note     not committed: Git does not track them here"
-            elif git -C "$root" diff --quiet HEAD -- "${files[@]}" 2>/dev/null; then
-                echo "note     nothing to commit: HEAD already holds the kit copies"
+                echo "note     not committed: Git does not track them here; untracked copies kept their old text as *.$stamp.bak"
             elif ! git -C "$root" commit -q -m "chore(agents): update the kit's agents and commands" -- "${files[@]}"; then
-                # Naming the files keeps the commit to them, and Git refuses it during a merge.
                 problems=$((problems + 1)); echo "PROBLEM  the kit copies could not be committed; the lines above say why"
             else
                 echo "commit   $(git -C "$root" rev-parse --short HEAD) on $branch holds the kit copies"
-                # Push to the upstream that the count is taken against, and only this branch,
-                # whatever push.default or pushRemote say.
+                # Push only where this branch's pushes go to the upstream the count is taken
+                # against, and name the one ref, whatever push.default says.
                 remote=$(git -C "$root" config "branch.$branch.remote" || true)
                 merge=$(git -C "$root" config "branch.$branch.merge" || true)
+                upstream=$(git -C "$root" rev-parse --symbolic-full-name '@{u}' 2>/dev/null || true)
+                pushes_to=$(git -C "$root" rev-parse --symbolic-full-name '@{push}' 2>/dev/null || true)
                 ahead=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || true)
-                if [ -z "$remote" ] || [ -z "$merge" ] || [ -z "$ahead" ]; then
-                    echo "note     not pushed: $branch has no upstream"
+                if [ -z "$upstream" ] || [ -z "$ahead" ] || [ "$remote" = . ]; then
+                    echo "note     not pushed: $branch has no remote upstream to compare with"
+                elif [ "$pushes_to" != "$upstream" ]; then
+                    echo "note     not pushed: pushes from $branch do not go to its upstream $upstream; push it yourself"
                 elif [ "$push" = no ]; then
                     echo "note     not pushed; push it with: git -C $root push $remote HEAD:$merge"
                 elif [ "$ahead" != 1 ]; then
