@@ -23,7 +23,7 @@ class UpdateAll(unittest.TestCase):
         kit = self.work / "kit"
         for folder in ("swe/scripts", "swe/.claude/scripts", "swe/.claude/agents"):
             (kit / folder).mkdir(parents=True)
-        for name in ("update_all.sh", "kit_files.sh"):
+        for name in ("update_all.sh", "kit_files.sh", "git_elsewhere.sh"):
             shutil.copy(HERE / name, kit / "swe/scripts" / name)
         shutil.copy(SWE / ".claude/agents/code-reviewer.md", kit / "swe/.claude/agents/code-reviewer.md")
         (kit / "swe/scripts/switch_rules.sh").write_text(STATUS)
@@ -121,14 +121,18 @@ class UpdateAll(unittest.TestCase):
         self.git(self.work, "init", "-q", "-b", "main", "via-hard-link")
         (self.work / "via-hard-link/.claude/agents").mkdir(parents=True)
         os.link(excluded / ".claude/agents/code-reviewer.md", self.work / "via-hard-link/.claude/agents/code-reviewer.md")
+        # cp -al: every file of the other project, its reflog included, hard-linked.
+        shutil.copytree(excluded, self.work / "via-hard-copy", symlinks=True, copy_function=os.link)
         before = {p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}
         _, out = self.run_it("", "--yes")
         self.assertEqual({p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}, before, out)
         self.assertNotIn("board_update --apply in via-board", out)
-        for path in (".git", ".git/hooks"):
+        for path in ("via-git/.git", "via-hooks/.git/hooks"):
             self.assertIn("note     %s is a link; this project is left alone" % path, out)
-        self.assertRegex(out, r"== via-new-workdir\nnote     \.git/\w+ is a link; this project is left alone\n")
-        self.assertIn("== via-worktree\nnote     Git keeps this project's repository or work tree elsewhere", out)
+        for name in ("via-new-workdir", "via-hard-copy"):
+            self.assertRegex(out, r"== %s\nnote     %s/\.git/\S+ is a link; this project is left alone\n" % (name, name))
+        self.assertIn("== via-worktree\nnote     Git finds the repository or work tree of via-worktree elsewhere;"
+                      " this project is left alone", out)
         for path, count in ((".claude/agents", 2), (".lattice", 1)):
             self.assertEqual(out.count("note     %s is a link or not a plain folder; left alone" % path), count, out)
         self.assertIn("note     the push hook or tells_check.py is a link (left alone)", out)
