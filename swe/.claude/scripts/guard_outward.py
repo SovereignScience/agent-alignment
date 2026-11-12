@@ -704,6 +704,13 @@ def check_argv(argv):
             DEPTH[0] -= 1
     name = os.path.basename(argv[0])
     args = argv[1:]
+    if any(os.path.basename(a) == "local_browser.py" for a in argv):
+        # scripts/local_browser.py runs its --app value as a shell command.
+        for i, a in enumerate(args):
+            if a == "--app" and i + 1 < len(args):
+                check_command(args[i + 1])
+            elif a.startswith("--app="):
+                check_command(a.split("=", 1)[1])
     if name in SHELLS or name == "eval":
         for i, a in enumerate(args):
             if a.startswith("-") and not a.startswith("--") and "c" in a[1:] and i + 1 < len(args):

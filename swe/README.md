@@ -82,7 +82,7 @@ gaps. Otherwise read the repository directly within the task scope.
 | Performance audit | `perf-auditor` | `/swe-perf` |
 | Dependency audit | `dependency-auditor` | `/swe-deps` |
 | Plan a refactor | `refactoring-planner` | `/swe-refactor` |
-| Browser-verify a UI fix | `dashboard-probe` | `/swe-probe` |
+| Screenshot or browser-verify a UI fix | `dashboard-probe` | `/swe-probe` |
 | Update a README or runbook | `docs-writer` | `/swe-docs` |
 | Web research without local file or shell access | `web-researcher` | (none) |
 | Anti-sycophancy review of a change | `code-skeptic` + `code-arbiter` | `/swe-skeptic` |
@@ -161,6 +161,7 @@ a review section to the Lattice dashboard, and the dashboard patch it needs.
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Try this checkout's rules on this machine, then go back | `bash scripts/switch_rules.sh status`, then `apply`, later `revert` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
+| Screenshot or click through a local page, app started in the same command | `python3 scripts/local_browser.py --app '<start command>' http://127.0.0.1:<port>/ shot:page` (`--help` lists the steps) |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
 There is no test suite for these protocols (they're prose). The
