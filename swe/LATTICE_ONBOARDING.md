@@ -153,7 +153,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   | Docs | how to run it | also how to deploy, recover and roll back |
   | Old data and old callers | kept only where real data or users exist | kept, with a tested migration |
   | Monitoring | none | a health check, and an alert for each failure a user would feel |
-  | Review findings acted on | blocking ones | optional ones too on a path a user reaches |
+  | Review findings that hold a merge | P0 and P1 | P2 too, on a path a user reaches |
   | New features | when the task asks | none: only changes that lower risk |
 
 - Cut for now: what the stage leaves out is not built, not planned and
@@ -402,16 +402,28 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   source. Every choice left to the owner has options and a
   recommendation, and a choice that is cheap to undo is already taken
   and listed under Assumptions.
-- Keeping review small: a finding is blocking or optional, and there is
-  no other scale. Blocking means wrong behaviour, a failed criterion, or
-  a risk to security, data or anything hard to undo; only that holds a
-  merge. An optional finding is fixed in passing or dropped;
+- Keeping review small: a finding is graded P0 to P3 by its harm, as
+  the code reviewer's file defines them, and this rule decides what a
+  grade holds. P0 and P1 hold a merge. P2 holds it only in lock down, on
+  a path a user reaches. P3 never does. A P0 or P1 says what confirmed
+  it, and an unconfirmed one holds nothing. A finding that holds
+  nothing is fixed in passing or dropped;
   if it matters later it becomes a task the owner authorizes. Tests
   cover each behaviour in the acceptance criteria and each fixed bug,
   nothing more; a request for another test names the behaviour left
   unpinned. A thread gets two rounds: if the owner's note after the
   second reply still disagrees, set one Need: flag that gives both
   positions, and the owner decides.
+- How much review a change gets, by what it touches. Docs or a small
+  fix: the author's own read, labelled as the author's. Other changes
+  in behaviour: the owner's review in build, and in lock down the code
+  reviewer first. A guardrail file, authentication, permissions,
+  secrets, network access or stored data, at either stage: before
+  in_review the session starts the code reviewer, which has not seen
+  its chat, then the skeptic and arbiter pair, and the handover asks
+  the owner for a pass by the other tool. Where a tool cannot start an
+  agent, the handover asks for the review instead. No other review
+  starts unasked, and an author never records a verdict on its own work.
 - The board is versioned separately from source, in its own private
   repository at .lattice/. A board checkpoint requires an explicit request;
   remote creation and pushing remain the owner's. In a cloud session the

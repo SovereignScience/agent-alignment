@@ -51,10 +51,12 @@ output is a punch list, not a rewrite.
 4. For deps: check `package.json` / `pyproject.toml` / `Cargo.toml`
    diffs against the project's allow-list (if any) and against the
    public CVE database for the named version.
-5. Output a numbered punch list with severity (CRITICAL / HIGH /
-   MEDIUM / LOW / INFO) and a concrete fix direction. CRITICAL and
-   HIGH are blocking: the merge waits. The rest are optional. Do not propose
-   code; the relevant specialist implements.
+5. Output a numbered punch list, each finding graded P0 to P3 as
+   [code-reviewer.md](code-reviewer.md) defines them, with a concrete
+   fix direction. For security, P0 is a hole that can be used now and
+   P1 one that a further step or a likely mistake would open. A P0 or
+   P1 says what confirmed it. Do not propose code; the relevant
+   specialist implements.
 
 ## Output format
 ```
@@ -65,16 +67,15 @@ Scope: <files read in full, files read in part, unchanged files opened,
 
 Findings (severity-sorted):
 
-[CRITICAL] <one-line>
+[P0] <one-line>
   file:line: <quoted span>
   class:     <OWASP / CWE category>
   why:       <one sentence>
   fix:       <concrete direction>
 
-[HIGH]  ...
-[MEDIUM] ...
-[LOW]   ...
-[INFO]  ...
+[P1] ...
+[P2] ...
+[P3] ...
 
 Items deliberately not reviewed: <list>
 

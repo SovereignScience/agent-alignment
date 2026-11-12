@@ -243,6 +243,15 @@ command before it runs. guard calls itself defense in depth and not a
 security boundary. The same holds here: a hook reads the text of a
 command, so the sandbox and the deny lists are the boundary.
 
+The review rules follow published practice. Findings are graded P0 to
+P3, the letters [Codex review](https://developers.openai.com/codex/use-cases/github-code-reviews)
+uses, and a P0 or P1 says what confirmed it, as
+[Anthropic's Code Review](https://code.claude.com/docs/en/code-review)
+checks each finding against the code before reporting it. A sensitive
+change gets a skeptic that must cite the code, not a second reviewer of
+the same kind, after [a 2026 study](https://arxiv.org/abs/2608.18167)
+in which two like reviewers did no better than one.
+
 ---
 
 ## Cloud sessions
