@@ -599,6 +599,15 @@ class Installer(unittest.TestCase):
         self.assertIn("this checkout's HEAD does not contain refs/remotes/origin/main", out)
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
 
+    def test_apply_refuses_a_checkout_with_changes_not_committed(self):
+        (self.repo / "CLAUDE.md").write_text("an older text\n")
+        self.git("add", "CLAUDE.md")
+        self.git("commit", "-q", "-m", "a file the kit has with other text")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 1, out)
+        self.assertIn("differ from HEAD, so it would install changes no one committed", out)
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+
     def test_apply_goes_ahead_when_head_contains_the_fetched_upstream_of_main(self):
         self.git("remote", "add", "origin", str(self.repo))
         self.git("update-ref", "refs/remotes/origin/main", "HEAD")

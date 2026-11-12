@@ -37,7 +37,8 @@
 # managed file with the right content but the wrong owner or mode is
 # reinstalled. --apply also stops when this checkout's HEAD does not contain
 # main, or the fetched upstream of main when it has one, so an older checkout
-# cannot put back older rules.
+# cannot put back older rules, and when tracked files under swe/ differ from
+# HEAD, so only committed files are installed.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,6 +63,12 @@ if [ "$apply" = yes ]; then
             exit 1
         fi
     done
+    if ! git -C "$swe" diff --quiet HEAD -- .; then
+        echo "install_isolation: files under $swe differ from HEAD, so it would install changes no one committed." >&2
+        echo "Commit or drop them, or run this from the main checkout." >&2
+        echo "Nothing was written." >&2
+        exit 1
+    fi
 fi
 [ -d "$workspace" ] || { echo "SWE_WORKSPACE $workspace does not exist" >&2; exit 1; }
 test_dirs=no
