@@ -90,6 +90,36 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertNotIn("would ", out)
 
+    def test_every_kit_agent_and_command_is_installed_for_every_project_and_revert_takes_them_back(self):
+        agents, commands = self.home / ".claude/agents", self.home / ".claude/commands"
+        agents.mkdir()
+        (agents / "code-reviewer.md").write_text("an older copy\n")
+        (agents / "mine.md").write_text("my own agent\n")
+        sources = sorted((self.repo / "swe/.claude/agents").glob("*.md")) + sorted((self.repo / "swe/.claude/commands").glob("*.md"))
+        code, out = self.switch("status", "--exit-code")
+        self.assertEqual(code, 3, out)
+        self.assertIn("would update %s" % (agents / "code-reviewer.md"), out)
+        self.assertIn("would install %s" % (commands / "swe-review.md"), out)
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        note = ("The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) "
+                "are in %s, whichever project you are in." % (self.repo / "swe"))
+        for source in sources:
+            lines = source.read_text().split("\n")
+            end = lines.index("---", 1)
+            expected = "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:])
+            with self.subTest(source=source.name):
+                self.assertEqual((self.home / ".claude" / source.parent.name / source.name).read_text(), expected)
+        self.assertEqual((agents / "mine.md").read_text(), "my own agent\n")
+        code, out = self.switch("status", "--exit-code")
+        self.assertEqual(code, 0, out)
+        self.assertIn("unchanged  %d of %d kit agents and commands" % (len(sources), len(sources)), out)
+        code, out = self.switch("revert")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((agents / "code-reviewer.md").read_text(), "an older copy\n")
+        self.assertFalse((commands / "swe-review.md").exists())
+        self.assertEqual((agents / "mine.md").read_text(), "my own agent\n")
+
     def test_apply_installs_and_revert_puts_everything_back(self):
         before = self.rules.read_text()
         new_context = self.repo / "new-context.md"
