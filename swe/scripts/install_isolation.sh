@@ -16,7 +16,8 @@
 #   ~/.codex/config.toml                              default_permissions set to that profile
 #   ~/.config/agent-alignment/sentinel                made-up content for check_isolation.sh
 #
-# SWE_WORKSPACE is the folder that holds your checkouts (default ~/projects).
+# SWE_WORKSPACE is the folder that holds your checkouts (default: the folder
+# this kit's main checkout is in).
 # SWE_MANAGED_LOCAL is this machine's own paths (default
 # ~/.config/agent-alignment/managed-local.json): a production checkout to hide,
 # credential files. Start it from
@@ -38,7 +39,7 @@
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-workspace="${SWE_WORKSPACE:-$HOME/projects}"
+workspace="${SWE_WORKSPACE:-$(dirname "$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")")}"
 local_file="${SWE_MANAGED_LOCAL:-$HOME/.config/agent-alignment/managed-local.json}"
 etc="${SWE_ETC:-/etc/claude-code}"
 codex_etc="${SWE_CODEX_ETC:-/etc/codex}"

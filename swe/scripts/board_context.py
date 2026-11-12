@@ -20,7 +20,7 @@ A change that collides with the project's own edits stops apply before the
 context is touched. The merge with its conflict markers is written beside it
 as context.md.proposed, for a session in that project to resolve.
 
-Exit status: 0 up to date or applied, 1 behind (status only), 2 collision.
+Exit status: 0 up to date or applied, 1 behind (status only), 2 collision, 3 error.
 """
 import difflib
 import os
@@ -34,10 +34,15 @@ GUIDE = "swe/LATTICE_ONBOARDING.md"
 FILLED = ("<CODE>", "<branch>", "<project>", "<name>", "<path>")
 
 
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(3)
+
+
 def git(*args):
     out = subprocess.run(["git", "-C", KIT, *args], capture_output=True, text=True)
     if out.returncode != 0:
-        sys.exit("board_context: git %s: %s" % (args[0], out.stderr.strip()[:200]))
+        fail("board_context: git %s: %s" % (args[0], out.stderr.strip()[:200]))
     return out.stdout
 
 
@@ -63,7 +68,7 @@ def made_from(context):
         if least is None or distance < least:
             best, least = candidate, distance
     if not best:
-        sys.exit("board_context: no committed context template in this kit")
+        fail("board_context: no committed context template in this kit")
     return best
 
 
@@ -102,17 +107,17 @@ def merged(context, base, new):
                 handle.write(text)
         out = subprocess.run(["git", "merge-file", "-p", *paths], capture_output=True, text=True)
     if out.returncode < 0 or out.returncode > 127:
-        sys.exit("board_context: git merge-file: %s" % out.stderr.strip()[:200])
+        fail("board_context: git merge-file: %s" % out.stderr.strip()[:200])
     return out.stdout, out.returncode
 
 
 def main(argv):
     if len(argv) not in (1, 2) or argv[0] not in ("status", "apply"):
-        sys.exit("usage: board_context.py status|apply [PROJECT]")
+        fail("usage: board_context.py status|apply [PROJECT]")
     project = os.path.abspath(argv[1] if len(argv) == 2 else ".")
     path = os.path.join(project, ".lattice", "context.md")
     if not os.path.isfile(path):
-        sys.exit("board_context: no board context at %s" % path)
+        fail("board_context: no board context at %s" % path)
     with open(path, encoding="utf-8") as handle:
         context = handle.read()
     with open(os.path.join(KIT, GUIDE), encoding="utf-8") as handle:
