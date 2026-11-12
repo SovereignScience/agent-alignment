@@ -907,10 +907,18 @@ def approved_commits(repo, comments):
 
 
 def adds_nothing(repo, sha):
-    """Whether a commit is a merge whose every line comes from one of its
-    parents: its combined diff is empty."""
+    """Whether a commit is a merge with nothing of its own: its files are
+    exactly Git's automatic merge of its two parents, or every line comes from
+    one of its parents (an empty combined diff). Two sides that change
+    neighbouring lines give a combined diff without anyone writing a line."""
     parents = run_git(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:]
-    return len(parents) > 1 and not run_git(repo, "diff-tree", "-p", "--cc", "--no-commit-id", sha).strip()
+    if len(parents) < 2:
+        return False
+    if len(parents) == 2:
+        automatic = git_result(repo, ("merge-tree", "--write-tree", parents[0], parents[1]))
+        if automatic.returncode == 0 and automatic.stdout.split()[:1] == [run_git(repo, "rev-parse", sha + "^{tree}").strip()]:
+            return True
+    return not run_git(repo, "diff-tree", "-p", "--cc", "--no-commit-id", sha).strip()
 
 
 def stale_reason(repo, task, main, text, comments=()):
