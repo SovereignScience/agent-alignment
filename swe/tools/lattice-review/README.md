@@ -305,7 +305,12 @@ task whose commits the branch carries, lets you resolve an open thread,
 and records a yes as a review bound to those commits. The
 record starts "Owner approved (terminal", so it says no diff was opened
 in Plannotator. `close` marks done what Mark done would allow, and asks
-before clearing a flag that still asks you something.
+before clearing a flag that still asks you something. `evidence` asks
+once, naming the tasks, criteria and actor, before it records a note.
+All three read answers from the terminal (`/dev/tty`), not stdin, and
+with no terminal they stop and write nothing. That stops a piped answer;
+a program that makes a terminal of its own, such as `script`, can still
+answer, and so can anything that writes the board's files directly.
 `swe/scripts/finish_batch.sh` runs a batch of this kit's tasks through
 both in named phases: push, review, merge and test, publish, install,
 boards, acceptance. A stop exits nonzero and undoes nothing, and a rerun
