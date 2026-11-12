@@ -142,6 +142,8 @@ as the base branch.
 
 [LATTICE_ONBOARDING.md](LATTICE_ONBOARDING.md) is an optional owner-run
 setup for projects where the user wants a Lattice board and review flow.
+`scripts/board_setup.sh` sets a project's board up, or brings it back
+from its private repository.
 [tools/lattice-review/](tools/lattice-review/) holds the server that adds
 a review section to the Lattice dashboard, and the dashboard patch it needs.
 
@@ -160,6 +162,8 @@ from a checkout of the kit, naming the project:
 
 A change that collides with the project's own edits leaves the context
 untouched and writes the merge beside it as `context.md.proposed`.
+`scripts/board_update.sh --apply`, run from the top of a project, does the
+same merge and then commits the board, merges its remote and pushes.
 
 ---
 
