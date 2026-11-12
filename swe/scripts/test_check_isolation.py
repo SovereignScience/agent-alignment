@@ -46,6 +46,7 @@ REQUIREMENTS = ('default_permissions = "alignment_workstation"\n\n[allowed_permi
                 '[mcp_servers.github_read.identity]\nurl = "https://api.githubcopilot.com/mcp/readonly"\n')
 TOOLS = ("cmp", "dirname", "grep", "head", "ls", "rm")
 BASH = shutil.which("bash")
+AS_ROOT = os.geteuid() == 0
 
 
 class Probe(unittest.TestCase):
@@ -100,6 +101,7 @@ class Probe(unittest.TestCase):
         _, out = self.probe("codex", sentinel=None)
         self.assertIn("ok    sentinel masked", out)
 
+    @unittest.skipIf(AS_ROOT, "root ignores the read-only mode this test puts on the home directory")
     def test_a_sentinel_the_sandbox_hides_leaves_the_result_incomplete(self):
         self.sentinel.unlink(missing_ok=True)
         (self.home / ".cache-agent").mkdir()
@@ -142,6 +144,7 @@ class Probe(unittest.TestCase):
         _, out = self.probe("codex", sentinel="")
         self.assertIn("FAIL  curl not found", out)
 
+    @unittest.skipIf(AS_ROOT, "root ignores the read-only mode this test puts on the home directory")
     def test_codex_reports_a_separate_denial_without_ending_the_run(self):
         self.sentinel.symlink_to("/dev/null")
         self.home.chmod(0o555)
