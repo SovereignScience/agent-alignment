@@ -1,4 +1,5 @@
 """update_all.sh against a made-up workspace of repositories, with stand-ins for the installer and the board update."""
+import datetime
 import os
 import pathlib
 import shutil
@@ -160,6 +161,32 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("not committed: the default branch of origin is not known here (git remote set-head origin --auto", out)
         remote = str(pathlib.Path(self.tmp.name, "feature.git"))
         self.assertEqual(self.git(self.tmp.name, "--git-dir", remote, "rev-parse", "work"), heads[feature])
+
+    def test_a_link_waiting_at_a_scratch_or_backup_name_is_never_written_through(self):
+        victim = self.work / "excluded/victim.txt"
+        victim.write_text("excluded's own\n")
+        copy, hook = self.work / "old-hook/.claude/agents/code-reviewer.md", self.hook("old-hook")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for second in range(-5, 120):
+            stamp = (now + datetime.timedelta(seconds=second)).strftime("%Y%m%dT%H%M%SZ")
+            for path in (copy, hook):
+                for suffix in ("new", "bak"):
+                    pathlib.Path("%s.%s.%s" % (path, stamp, suffix)).symlink_to(victim)
+        _, out = self.run_it("", "--yes")
+        self.assertEqual(victim.read_text(), "excluded's own\n", out)
+        self.assertFalse(copy.is_symlink() or hook.is_symlink(), out)
+        self.assertEqual(copy.read_bytes(), (SWE / ".claude/agents/code-reviewer.md").read_bytes())
+
+    def test_git_variables_inherited_from_the_caller_do_not_redirect_a_commit(self):
+        root = self.project("clean")
+        excluded = self.work / "excluded"
+        (excluded / "notes.txt").write_text("excluded's own\n")
+        self.git(excluded, "add", "notes.txt")
+        index = excluded / ".git/index"
+        before = index.read_bytes()
+        _, out = self.run_it("", "--yes", GIT_INDEX_FILE=str(index))
+        self.assertEqual(index.read_bytes(), before, out)
+        self.assertEqual(self.git(root, "log", "-1", "--format=%s"), KIT_COMMIT)
 
     def test_the_push_sends_no_tags_even_where_push_follow_tags_is_on(self):
         root = self.project("tagged")

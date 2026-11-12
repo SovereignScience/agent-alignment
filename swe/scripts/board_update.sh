@@ -25,6 +25,7 @@ case "${1:-}" in
     *) die "unknown argument $1; usage: $0 [--apply]" ;;
 esac
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$here/git_elsewhere.sh"
 command -v lattice >/dev/null || die "lattice is not on PATH"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in a Git repository"
 [ "$root" = "$PWD" ] || die "run this from the top of the repository: $root"
@@ -36,10 +37,11 @@ board() { git -C .lattice "$@"; }
 [ "$(board branch --show-current)" = main ] || die "the board is not on its main branch"
 ! board rev-parse -q --verify MERGE_HEAD >/dev/null || die "a merge is already in progress in .lattice"
 # A link in the board, or Git files that lead to another repository, would take
-# these writes into another project's board.
-held=$(find -P .lattice -path .lattice/.git -prune -o \( -type l -o -type f -links +1 \) -print -quit)
+# these writes into another project's board. A pull can bring links in, so the
+# board is looked at again after each one.
+links() { find -P .lattice -path .lattice/.git -prune -o \( -type l -o -type f -links +1 \) -print -quit; }
+held=$(links)
 [ -z "$held" ] || die "$held is a link; nothing was done"
-source "$here/git_elsewhere.sh"
 if held=$(git_elsewhere "$(pwd -P)/.lattice"); then die "$held; nothing was done"; fi
 doctor() { LATTICE_ROOT=$PWD LATTICE_NO_UPDATE_CHECK=1 lattice doctor >/dev/null 2>&1; }
 kept=(events tasks plans artifacts notes archive ids.json config.json context.md .gitignore)
@@ -71,9 +73,18 @@ if [ "$remote" = yes ]; then
     if board merge-base --is-ancestor FETCH_HEAD HEAD; then :
     elif board merge-base --is-ancestor HEAD FETCH_HEAD; then
         board merge -q --ff-only FETCH_HEAD || die "an uncommitted board file is in the way of the pull"
+        held=$(links)
+        [ -z "$held" ] || die "the pull brought in $held, a link; nothing else was done and nothing was pushed"
     else
         board merge --no-ff --no-commit FETCH_HEAD >/dev/null 2>&1 || true
         board rev-parse -q --verify MERGE_HEAD >/dev/null || die "the merge could not start; run git -C .lattice status"
+        held=$(links)
+        if [ -n "$held" ]; then
+            board merge --abort
+            die "the remote board brings in $held, a link; nothing was merged or pushed, and the board's own changes are committed"
+        fi
+        scratch=$(mktemp -d)
+        trap 'rm -rf "$scratch"' EXIT
         while IFS= read -r file; do
             if ! board show ":2:$file" >/dev/null 2>&1 || ! board show ":3:$file" >/dev/null 2>&1; then
                 board merge --abort
@@ -81,9 +92,9 @@ if [ "$remote" = yes ]; then
             fi
             case $file in
                 events/*.jsonl)
-                    board show ":2:$file" > ".lattice/$file.ours"
-                    board show ":3:$file" > ".lattice/$file.theirs"
-                    python3 - ".lattice/$file.ours" ".lattice/$file.theirs" ".lattice/$file" <<'PY'
+                    board show ":2:$file" > "$scratch/ours"
+                    board show ":3:$file" > "$scratch/theirs"
+                    python3 - "$scratch/ours" "$scratch/theirs" ".lattice/$file" <<'PY'
 import json, sys
 seen, rows = set(), []
 for name in sys.argv[1:3]:
@@ -94,7 +105,6 @@ for name in sys.argv[1:3]:
 rows.sort(key=lambda line: json.loads(line).get("ts", ""))
 open(sys.argv[3], "w").writelines(rows)
 PY
-                    rm ".lattice/$file.ours" ".lattice/$file.theirs"
                     board add -- "$file" ;;
                 tasks/*.json) board checkout -q --ours -- "$file" ;;
                 *) board merge --abort

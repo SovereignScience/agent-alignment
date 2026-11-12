@@ -95,8 +95,17 @@ linked() {
     echo "note     ${1#"$root"/} is a link or not a plain folder; left alone"
 }
 # Put the kit's file $1 in place of $2 by renaming a new file over it, so a hard
-# link to $2 from elsewhere keeps its old text.
-replace() { cp "$1" "$2.$stamp.new" && mv -f "$2.$stamp.new" "$2"; }
+# link to $2 from elsewhere keeps its old text. The new file, and each backup,
+# gets a name mktemp makes, so a link already waiting at a name that could be
+# guessed is never written through.
+replace() {
+    local new
+    new=$(mktemp "$2.$stamp.XXXXXX") && cp "$1" "$new" && chmod --reference="$1" "$new" && mv -f "$new" "$2"
+}
+backup() {
+    local bak
+    bak=$(mktemp --suffix=.bak "$1.$stamp.XXXXXX") && cp -p "$1" "$bak"
+}
 
 problems=0
 for root in "$workspace"/*/; do
@@ -140,11 +149,11 @@ for root in "$workspace"/*/; do
     else
         done_ok=yes
         for h in pre-push tells_check.py; do
-            if [ -f "$hooks/$h" ]; then cp -p "$hooks/$h" "$hooks/$h.$stamp.bak" || done_ok=no; fi
+            if [ -f "$hooks/$h" ]; then backup "$hooks/$h" || done_ok=no; fi
             replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
         done
         chmod +x "$hooks/pre-push" || done_ok=no
-        if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
+        if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.*.bak)"
         else problems=$((problems + 1)); echo "PROBLEM  the push check could not be updated; the .bak copies hold the old one"; fi
     fi
     stale=() edited=()
@@ -176,7 +185,7 @@ for root in "$workspace"/*/; do
             for copy in "${stale[@]}"; do
                 # Git holds the old text of a tracked copy; an untracked one keeps it beside it.
                 if ! git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1; then
-                    cp -p "$copy" "$copy.$stamp.bak"
+                    backup "$copy"
                 fi
                 replace "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" "$copy"
             done
@@ -204,7 +213,7 @@ for root in "$workspace"/*/; do
             elif ! git -C "$root" diff --cached --quiet; then
                 echo "note     not committed: something else is already staged here"
             elif ! git -C "$root" ls-files --error-unmatch -- "${files[@]}" >/dev/null 2>&1; then
-                echo "note     not committed: Git does not track them here; untracked copies kept their old text as *.$stamp.bak"
+                echo "note     not committed: Git does not track them here; untracked copies kept their old text as *.$stamp.*.bak"
             elif [ -z "$remote" ] || [ "$remote" = . ]; then
                 echo "note     not committed: $branch tracks no remote branch; commit them yourself"
             elif [ -z "$default" ]; then

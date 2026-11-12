@@ -174,6 +174,46 @@ class BoardUpdate(unittest.TestCase):
         self.assertEqual(self.head(self.here / ".lattice"), before)
         self.assertEqual(self.head(self.remote), before)
 
+    def push_a_link(self, victim):
+        board = self.here / ".lattice"
+        log = next((board / "events").glob("task_*.jsonl")).name
+        (board / "events" / (log + ".ours")).symlink_to(victim)
+        self.run_in(board, "git", "add", "-A", "events")
+        self.run_in(board, "git", "commit", "-q", "-m", "bring in a link")
+        self.run_in(board, "git", "push", "-q", "origin", "main")
+
+    def test_a_merge_that_brings_in_a_link_is_undone_before_any_write(self):
+        victim = pathlib.Path(self.tmp.name, "victim.txt")
+        victim.write_text("outside both boards\n")
+        def link():
+            self.run_in(self.here, "lattice", "comment", "DP-1", "said here", "--actor", "human:owner")
+            self.push_a_link(victim)
+        self.conflicted(link, ".jsonl.ours, a link")
+        self.assertEqual(victim.read_text(), "outside both boards\n")
+
+    def test_a_pull_that_brings_in_a_link_stops_before_the_push(self):
+        victim = pathlib.Path(self.tmp.name, "victim.txt")
+        victim.write_text("outside both boards\n")
+        self.task(self.here, "first")
+        self.script("board_update.sh", "--apply", cwd=self.here)
+        self.script("board_update.sh", "--apply", cwd=self.there)
+        self.push_a_link(victim)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.there, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("the pull brought in .lattice/events/", out)
+        self.assertEqual(victim.read_text(), "outside both boards\n")
+
+    def test_git_variables_inherited_from_the_caller_do_not_redirect_the_board(self):
+        self.task(self.here, "first")
+        index = self.there / ".lattice/.git/index"
+        before = index.read_bytes()
+        self.env["GIT_INDEX_FILE"] = str(index)
+        try:
+            self.script("board_update.sh", "--apply", cwd=self.here)
+        finally:
+            del self.env["GIT_INDEX_FILE"]
+        self.assertEqual(index.read_bytes(), before)
+
     def test_a_project_without_a_board_is_sent_to_the_setup_command(self):
         bare = self.project("three")
         code, out = self.script("board_update.sh", "--apply", cwd=bare, check=False)

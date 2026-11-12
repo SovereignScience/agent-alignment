@@ -1,4 +1,6 @@
-# Sourced by update_all.sh and board_update.sh before they write to a repository.
+# Sourced by update_all.sh and board_update.sh before their first Git command.
+# Sourcing it clears the Git variables that would point any repository's index,
+# objects, work tree or config somewhere else (git rev-parse --local-env-vars).
 #
 #   git_elsewhere <work tree>
 #
@@ -7,6 +9,8 @@
 # hook file aside, which the callers never write through), a file with another
 # hard link (object files aside, which Git never rewrites), or Git finds its
 # repository or work tree somewhere else. Fails, printing nothing, otherwise.
+unset $(git rev-parse --local-env-vars)
+
 git_elsewhere() {
     local top=$1 git=$1/.git found
     found=$(find -P "$git" -path "$git/hooks/*" -prune -o -type l -print -quit \
