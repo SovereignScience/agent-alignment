@@ -14,9 +14,10 @@
 #      asking). Another tool's push hook, or hooks that core.hooksPath takes
 #      from elsewhere, are named and left alone;
 #   2. finds copies of the kit's agents and slash commands in the
-#      repository's own .claude folder that differ from the kit, and asks
-#      before bringing them up to date (a project's copy wins over the one
-#      installed for every project). A tracked copy with uncommitted edits
+#      repository's own .claude folder that differ from the kit's files, and
+#      asks before bringing them up to date (a project's copy wins over the one
+#      installed for every project, and holds no path from this machine). A
+#      tracked copy with uncommitted edits
 #      is left alone; an untracked one keeps its old text as .bak. It
 #      commits those files and nothing else, unless something else is
 #      staged, they are not tracked, HEAD is on no branch or a merge,
@@ -116,7 +117,7 @@ for root in "$workspace"/*/; do
     for kind in agents commands; do
         for copy in "$root/.claude/$kind"/*.md; do
             [ -f "$copy" ] && [ ! -L "$copy" ] && [ -f "$swe/.claude/$kind/$(basename "$copy")" ] || continue
-            ! cmp -s "$copy" <(render "$swe/.claude/$kind/$(basename "$copy")") || continue
+            ! cmp -s "$copy" "$swe/.claude/$kind/$(basename "$copy")" || continue
             if git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1 \
                     && ! git -C "$root" diff --quiet HEAD -- "$copy" 2>/dev/null; then
                 edited+=("$copy")
@@ -142,7 +143,7 @@ for root in "$workspace"/*/; do
                 if ! git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1; then
                     cp -p "$copy" "$copy.$stamp.bak"
                 fi
-                render "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" > "$copy"
+                cp "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" "$copy"
             done
             echo "updated  ${#stale[@]} kit copies"
             files=("${stale[@]#"$root"/}")
