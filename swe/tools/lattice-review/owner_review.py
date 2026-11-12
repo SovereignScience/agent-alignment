@@ -14,12 +14,14 @@ first) on every run, even where an approval is already recorded, and
 records a yes as a review bound to those commits, in the form the review
 section and merge_approved.py read; --record writes the IDs answered yes. An open review thread is shown first and can be
 resolved there; a task with a thread left open is not approved. evidence
-records the note on each named criterion that has none yet, once the task
-is in the pushed integration branch. close marks done
+asks once, then records the note on each named criterion that has none yet
+and whose task is in the pushed integration branch. close marks done
 every task the review section would let you mark done, and says why for the
 rest; where a task's flag still asks you something it shows the flag and
 closes the task only if you clear it there. summary says where each task stands, and branches prints each task's
-linked branch.
+linked branch. approve, evidence and close read every answer from the
+terminal, not stdin; with no terminal they stop and write nothing. That
+stops a piped answer, not a program that makes a terminal of its own.
 """
 import argparse
 import os
@@ -61,7 +63,25 @@ def first_line(text):
     return next((line.strip() for line in (text or "").splitlines() if line.strip()), "")
 
 
-def approve(board, sids, ask=input, say=print):
+def terminal():
+    """The owner's answers, read from /dev/tty and not from stdin, so piped
+    input cannot answer for the owner."""
+    try:
+        tty_in, tty_out = open("/dev/tty"), open("/dev/tty", "w")
+    except OSError:
+        sys.exit("owner_review: no terminal to answer on; nothing was written. Run it yourself at a terminal.")
+
+    def ask(prompt):
+        tty_out.write(prompt)
+        tty_out.flush()
+        answer = tty_in.readline()
+        if not answer:
+            raise EOFError
+        return answer
+    return ask
+
+
+def approve(board, sids, ask, say=print):
     """Ask about each task in turn, every time: a recorded approval is shown,
     never taken as this run's answer. Returns the IDs answered yes."""
     approved, declined = [], []
@@ -147,8 +167,11 @@ def approve(board, sids, ask=input, say=print):
     return approved
 
 
-def evidence(board, pairs, note, say=print):
-    for pair in pairs:
+def evidence(board, pairs, note, ask, say=print):
+    """Ask once, naming the tasks, criteria and actor, before recording the
+    note on each named criterion that has none yet."""
+    todo = []
+    for pair in dict.fromkeys(pairs):
         sid, _, criterion = pair.partition(":")
         task = board.task(sid)
         if criterion not in {c["id"] for c in task.get("acceptance_criteria", [])}:
@@ -159,11 +182,23 @@ def evidence(board, pairs, note, say=print):
         if lr.resolve_range(board.repo, task, "refs/remotes/origin/" + board.main)["mode"] == "branch":
             say("%s %s: not recorded, the task is not in origin/%s yet" % (sid, criterion, board.main))
             continue
+        todo.append((sid, criterion))
+    if not todo:
+        return
+    say("evidence note: %s" % note)
+    try:
+        answer = ask("    Record it as %s on %s? [y/N] " % (board.actor, ", ".join("%s %s" % pair for pair in todo))).strip().lower()
+    except EOFError:
+        answer = ""
+    if answer != "y":
+        say("no evidence recorded")
+        return
+    for sid, criterion in todo:
         board.write("comment", sid, note, "--role", "validation", "--criterion", criterion)
         say("%s %s: evidence recorded" % (sid, criterion))
 
 
-def close(board, sids, ask=input, say=print):
+def close(board, sids, ask, say=print):
     """Mark done what the review section would allow. A task whose flag still
     asks the owner something is closed only if the owner clears the flag
     here. Returns the IDs closed."""
@@ -237,18 +272,19 @@ def main(argv=None):
     writes = args.action in ("approve", "evidence", "close")
     if writes and not (args.actor or "").startswith("human:"):
         sys.exit("owner_review: --actor must be a person, human:<name>")
+    if args.action == "evidence" and not args.note:
+        sys.exit("owner_review: evidence needs --note")
+    ask = terminal() if writes else None
     board = Board(Path(args.repo).resolve(), Path(args.board).resolve(), args.main, lattice, args.actor)
     if args.action == "approve":
-        yes = approve(board, args.items)
+        yes = approve(board, args.items, ask)
         if args.record:
             with open(args.record, "w") as out:
                 out.writelines(sid + "\n" for sid in yes)
     elif args.action == "evidence":
-        if not args.note:
-            sys.exit("owner_review: evidence needs --note")
-        evidence(board, args.items, args.note)
+        evidence(board, args.items, args.note, ask)
     elif args.action == "close":
-        close(board, args.items)
+        close(board, args.items, ask)
     elif args.action == "summary":
         summary(board, args.items)
     else:
