@@ -50,8 +50,8 @@ and rules for answering review threads.
   whoever made it. Guardrail files are settings, hooks, scripts, agents,
   commands, rules and instruction files: any CLAUDE.md or AGENTS.md, the
   protocols, anything under .claude/ or codex/, the installers. For any
-  other task that changes behaviour, write the plan to the file
-  `lattice plan AA-<n>` names, set
+  other task that changes behaviour, write the plan to the task's plan
+  file (`lattice plan AA-<n> --json` gives its path), set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
   owner approves it. A task the owner selected skips that stop, with no
   flag, when its plan fits the small-fix form (Need, Acceptance

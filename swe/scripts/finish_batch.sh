@@ -8,19 +8,20 @@
 #
 # The phases, each named in the output:
 #   1 push and fetch  every task's linked branch and the board, then fetch
-#   2 review          each task's head commit and a one-line summary; y records
-#                     your approval against that exact commit, and an open
-#                     thread is shown first so you can resolve it
-#   3 merge and test  approved tasks only, in the order given, then the kit's
-#                     checks on the merged files; nothing is pushed. A task
-#                     you did not approve keeps out every branch that
-#                     contains its branch
+#   2 review          each task's head commit and a one-line summary, asked on
+#                     every run; y records your approval against that exact
+#                     commit, and an open thread is shown first so you can
+#                     resolve it
+#   3 merge and test  only the tasks answered y in this run, in the order
+#                     given, then the kit's checks on the merged commit;
+#                     nothing is pushed. A task not answered y keeps out
+#                     every branch that carries its work
 #   4 publish         prints the push command for the integration branch and
 #                     goes on once that branch is on the remote
 #   5 install         switch_rules.sh from the main checkout, when this machine
 #                     differs from it
 #   6 boards          this board and each --project's, with board_update.sh
-#   7 acceptance      the checks again on the pushed branch, evidence on each
+#   7 acceptance      the checks again on the pushed commit, evidence on each
 #                     --after-merge criterion of a merged task, then close
 #                     every task the review section would let you mark done;
 #                     a flag that still asks you something is shown first
@@ -75,7 +76,7 @@ board_sync() {
     if ! board remote get-url origin >/dev/null 2>&1; then echo "board: committed here; it has no remote"; return 0; fi
     board fetch -q origin main || stop "the board remote could not be reached; the board is committed here"
     board merge-base --is-ancestor FETCH_HEAD HEAD \
-        || stop "the board remote has commits this machine lacks; merge them first, then run this again"
+        || stop "the board remote has commits this machine lacks; run swe/scripts/board_update.sh --apply in $root, then run this again"
     if [ "$(board rev-parse HEAD)" != "$(board rev-parse FETCH_HEAD)" ]; then
         board push -q origin main || stop "the board push was refused"
     fi
@@ -118,13 +119,14 @@ done 3< "$work/branches"
 board_sync "chore(board): record local updates before the batch"
 
 phase "2: review"
-review approve --actor "$actor" "${ids[@]}"
+review approve --actor "$actor" --record "$work/confirmed" "${ids[@]}"
 
 phase "3: merge and test"
 check_args=()
 for check in "${kit_checks[@]}"; do check_args+=(--check "$check"); done
 LATTICE_ROOT=$root python3 "$tools/merge_approved.py" --repo "$root" --board "$root" --main "$base" \
-    --no-push --skip-unapproved "${check_args[@]}" "${ids[@]}" || stop "the merge phase stopped; the lines above say why"
+    --no-push --skip-unapproved --confirmed "$(paste -sd, "$work/confirmed")" "${check_args[@]}" "${ids[@]}" \
+    || stop "the merge phase stopped; the lines above say why"
 
 phase "4: publish"
 if [ "$(git -C "$root" rev-parse "$base")" != "$(git -C "$root" rev-parse "origin/$base")" ]; then
@@ -144,7 +146,7 @@ if [ -f "$root/swe/scripts/switch_rules.sh" ]; then
     state=$(bash "$root/swe/scripts/switch_rules.sh" status --exit-code 2>&1) || differs=$?
     if [ "$differs" -eq 0 ]; then
         echo "nothing to install; this machine already matches $base"
-    elif [ "$differs" -eq 1 ]; then
+    elif [ "$differs" -eq 3 ]; then
         echo "this machine differs from $base; installing (answer y, then your sudo password)"
         bash "$root/swe/scripts/switch_rules.sh" apply || stop "the install did not finish; run switch_rules.sh status to see where it stands"
         echo "installed; reload each editor window and start new sessions when this run ends"
@@ -170,10 +172,9 @@ fi
 
 phase "7: acceptance"
 if [ ${#after[@]} -gt 0 ]; then
-    for check in "${kit_checks[@]}"; do
-        (cd "$root" && PYTHONDONTWRITEBYTECODE=1 bash -c "$check") || stop "a check failed on $base; no evidence was recorded and nothing was closed"
-    done
-    review evidence --actor "$actor" --note "Met: the project's checks pass on $base after the merge. Checked: finish_batch.sh ran the four test suites, check_drift.sh and the decision record check in the main checkout at $(git -C "$root" rev-parse --short "$base"), which is pushed, and all passed. Not checked: anything beyond those commands. Remains: nothing for this criterion." "${after[@]}"
+    LATTICE_ROOT=$root python3 "$tools/merge_approved.py" --repo "$root" --board "$root" --verify "origin/$base" \
+        "${check_args[@]}" || stop "a check failed on origin/$base; no evidence was recorded and nothing was closed"
+    review evidence --actor "$actor" --note "Met: the project's checks pass on $base after the merge. Checked: finish_batch.sh ran the four test suites, check_drift.sh and the decision record check on a clean worktree of the pushed commit $(git -C "$root" rev-parse --short "origin/$base"), and all passed. Not checked: anything beyond those commands. Remains: nothing for this criterion." "${after[@]}"
 fi
 review close --actor "$actor" "${ids[@]}"
 board_sync "chore(board): record the batch's reviews, evidence and closures"

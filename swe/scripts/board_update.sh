@@ -39,7 +39,8 @@ kept=(events tasks plans artifacts notes archive ids.json config.json context.md
 
 context=0
 python3 "$here/board_context.py" "$([ "$apply" = yes ] && echo apply || echo status)" . || context=$?
-[ "$context" -le 2 ] || die "board_context.py failed"
+[ "$context" -le 2 ] && { [ "$apply" = no ] || [ "$context" -ne 1 ]; } \
+    || die "board_context.py failed (exit $context); nothing else was done"
 
 remote=no
 if board remote get-url origin >/dev/null 2>&1; then remote=yes; fi
@@ -67,6 +68,10 @@ if [ "$remote" = yes ]; then
         board merge --no-ff --no-commit FETCH_HEAD >/dev/null 2>&1 || true
         board rev-parse -q --verify MERGE_HEAD >/dev/null || die "the merge could not start; run git -C .lattice status"
         while IFS= read -r file; do
+            if ! board show ":2:$file" >/dev/null 2>&1 || ! board show ":3:$file" >/dev/null 2>&1; then
+                board merge --abort
+                die "$file was deleted on one side and changed on the other; nothing was merged or pushed, and the board's own changes are committed"
+            fi
             case $file in
                 events/*.jsonl)
                     board show ":2:$file" > ".lattice/$file.ours"

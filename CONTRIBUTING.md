@@ -12,8 +12,8 @@ the rubric below has a section for each.
   `flourishing/.claude/agents/`), the 8 align-* slash commands.
 
 Cross-track changes (this `CONTRIBUTING.md`, the root `README.md`,
-the root `CLAUDE.md`, the root `.claude/` with its SessionStart hook
-and status line, `docs/`) follow whichever track's rubric is more
+the root `CLAUDE.md`, the root `.claude/` with its SessionStart hook,
+status line and cloud-session guard and push script, `docs/`) follow whichever track's rubric is more
 relevant: usually Track A for infrastructure changes, Track B for
 content changes.
 

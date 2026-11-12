@@ -6,6 +6,7 @@ posts, secret reads and shell writes to guardrail files. Sends back commit
 messages and shell-written docs that carry AI tells. The OS sandbox is the hard
 boundary; this guard gives fast, clear refusals on top of it.
 """
+import fnmatch
 import json
 import os
 import re
@@ -434,6 +435,40 @@ LATTICE_ACTOR_FLAGS = ("--actor", "--on-behalf-of")
 LATTICE_VALUES = {"--actor", "--on-behalf-of", "--name", "--model", "--session", "--triggered-by",
                   "--reason", "--note", "--role", "--file", "--title"}
 LATTICE_OWNER_ROLES = ("review", "plan-review")
+# The owner's terminal commands record approvals, merge, push and close. They
+# write the board as the owner, so the board's own refusals above do not see them.
+OWNER_SCRIPTS = ("owner_review.py", "merge_approved.py", "finish_batch.sh")
+
+
+def owner_script_run(argv):
+    """The owner's terminal script that argv runs, or None: the program itself,
+    or what an interpreter is told to run (its script, -m module or -c code).
+    Reading, testing or staging the files is not running them."""
+    def named(word):
+        base = os.path.basename(word)
+        return next((script for script in OWNER_SCRIPTS if fnmatch.fnmatchcase(script, base)), None)
+    name = os.path.basename(argv[0])
+    if named(argv[0]):
+        return named(argv[0])
+    rest = iter(argv[1:])
+    if re.match(r"^python[0-9.]*$", name):
+        for a in rest:
+            if a == "-m":
+                return named(next(rest, "").rsplit(".", 1)[-1] + ".py")
+            if a == "-c":
+                code = next(rest, "")
+                return next((script for script in OWNER_SCRIPTS if script.rsplit(".", 1)[0] in code), None)
+            if a in ("-W", "-X"):
+                next(rest, None)
+            elif not a.startswith("-"):
+                return named(a)
+    elif name in SHELLS:
+        for a in rest:
+            if a in ("-n", "-c"):
+                return None
+            if not a.startswith("-"):
+                return named(a)
+    return None
 
 
 def check_lattice(args):
@@ -705,6 +740,10 @@ def check_argv(argv):
             DEPTH[0] -= 1
     name = os.path.basename(argv[0])
     args = argv[1:]
+    owner_script = owner_script_run(argv)
+    if owner_script:
+        owner_only(owner_script,
+                   "It records the owner's approvals, merges or closes tasks. Hand the owner the command instead.")
     if any(os.path.basename(a) == "local_browser.py" for a in argv):
         # scripts/local_browser.py runs its --app value as a shell command.
         for i, a in enumerate(args):
