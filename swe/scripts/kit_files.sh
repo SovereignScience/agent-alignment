@@ -2,7 +2,10 @@
 # command looks once installed outside this folder. The caller sets $swe to
 # this kit's swe folder first.
 
-kit_note="The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in."
+kit_mark="The kit's files that this names"
+kit_note="$kit_mark (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in."
+# The first line of the kit's push check, which tells it from another tool's hook.
+kit_hook_mark="pre-push: show what is about to leave this machine"
 
 # A kit agent or command as it is installed: the note follows its front matter.
 render() {

@@ -102,8 +102,8 @@ class SwitchRules(unittest.TestCase):
         self.assertIn("would install %s" % (commands / "swe-review.md"), out)
         code, out = self.switch("apply")
         self.assertEqual(code, 0, out)
-        note = ("The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) "
-                "are in %s, whichever project you are in." % (self.repo / "swe"))
+        note = ("The kit's files that this names (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under "
+                "scripts/ or tools/) are in %s, whichever project you are in." % (self.repo / "swe"))
         for source in sources:
             lines = source.read_text().split("\n")
             end = lines.index("---", 1)
@@ -119,6 +119,36 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual((agents / "code-reviewer.md").read_text(), "an older copy\n")
         self.assertFalse((commands / "swe-review.md").exists())
         self.assertEqual((agents / "mine.md").read_text(), "my own agent\n")
+
+    def test_a_kit_agent_renamed_after_an_install_is_replaced_and_revert_still_goes_back(self):
+        agents = self.home / ".claude/agents"
+        agents.mkdir()
+        (agents / "code-reviewer.md").write_text("an older copy\n")
+        self.assertEqual(self.switch("apply")[0], 0)
+        time.sleep(1.1)  # snapshot names have one-second resolution
+        self.git("mv", "swe/.claude/agents/debugger.md", "swe/.claude/agents/bug-hunter.md")
+        self.git("commit", "-q", "-m", "rename an agent")
+        code, out = self.switch("status")
+        self.assertIn("would remove %s (the kit no longer has it)" % (agents / "debugger.md"), out)
+        self.assertIn("would install %s" % (agents / "bug-hunter.md"), out)
+        code, out = self.switch("apply")
+        self.assertEqual(code, 0, out)
+        self.assertFalse((agents / "debugger.md").exists())
+        self.assertTrue((agents / "bug-hunter.md").exists())
+        code, out = self.switch("revert")
+        self.assertEqual(code, 0, out)
+        self.assertEqual((agents / "code-reviewer.md").read_text(), "an older copy\n")
+        self.assertFalse((agents / "debugger.md").exists())
+        self.assertFalse((agents / "bug-hunter.md").exists())
+
+    def test_a_linked_agents_folder_is_refused_before_anything_is_written(self):
+        (self.home / ".claude/agents").symlink_to(self.repo / "swe/.claude/agents")
+        before = (self.repo / "swe/.claude/agents/debugger.md").read_text()
+        code, out = self.switch("apply")
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("is a link; nothing was written", out)
+        self.assertEqual(self.snapshots(), [])
+        self.assertEqual((self.repo / "swe/.claude/agents/debugger.md").read_text(), before)
 
     def test_apply_installs_and_revert_puts_everything_back(self):
         before = self.rules.read_text()
