@@ -173,8 +173,8 @@ To keep Plannotator's own instruction out of the agent's way, set
 
 The section has two blocks, Plan then Code review, after a Dependencies
 block when the task has links. The Plan block shows the state of the
-task's plan file (`.lattice/plans/<task id>.md`, the one `lattice plan
-<ID>` names) with "Plannotator: review the plan" and "Open the plan in
+task's plan file (`.lattice/plans/<task id>.md`, whose path `lattice
+plan <ID> --json` gives) with "Plannotator: review the plan" and "Open the plan in
 VS Code"; with no plan file its one button is "Write the plan in VS
 Code", which scaffolds it the way the dashboard's own button does. While
 the section is on
@@ -315,18 +315,21 @@ then open a new terminal:
 ```
 (
 set -euo pipefail
-f="$HOME/SOFTWARE/agent-alignment/swe/tools/lattice-review/board.bash"
+kit=$(git rev-parse --show-toplevel)
+f="$kit/swe/tools/lattice-review/board.bash"
 start=$(head -n 1 "$f"); end=$(tail -n 1 "$f")
 touch ~/.bashrc
 awk -v s="$start" -v e="$end" '$0 == s {skip = 1} !skip {print} $0 == e {skip = 0}' ~/.bashrc > ~/.bashrc.board.new
-cat "$f" >> ~/.bashrc.board.new
+sed "s|@KIT@|$kit|" "$f" >> ~/.bashrc.board.new
 cat ~/.bashrc.board.new > ~/.bashrc
 rm ~/.bashrc.board.new
 )
 ```
 
 This copies the function into `~/.bashrc` in place of any earlier copy,
-so a later change in the checkout runs only after you install it again.
+with the path of the checkout it was installed from, so a later change in
+the checkout runs only after you install it again. It starts the server
+as the board's `default_actor`, else `human:$USER`.
 The base branch is the repository's `lattice-review.base`, else `main`.
 Set it once where reviews run against another branch:
 

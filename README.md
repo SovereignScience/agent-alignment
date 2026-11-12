@@ -1,8 +1,10 @@
 # agent-alignment
 
-Two independent agentic toolkits in one repository. Pick a track,
-`cd` into its folder, and everything you need is there apart from
-`CONTRIBUTING.md` at the root.
+Two independent agentic toolkits in one repository. Pick a track and
+read its folder; everything you need is there apart from
+`CONTRIBUTING.md` at the root. Open your editor window at this folder,
+the main checkout: Git, the board and the task worktrees are reachable
+only from here.
 
 ## Two tracks
 
@@ -31,15 +33,15 @@ Project conventions: [flourishing/CLAUDE.md](flourishing/CLAUDE.md)
 
 ## Which one are you?
 
-| You are… | `cd` into | Then read |
-|---|---|---|
-| A SWE agent doing coding work | `swe/` | `swe/README.md` |
-| A SWE agent installing these protocols in another repo | `swe/` | `swe/README.md`, then launch Claude Code in `swe/` and run `/swe-init <path-to-other-repo>` |
-| Authoring or composing alignment prompts | `flourishing/` | `flourishing/README.md` |
-| Just looking at the project structure | (stay) | this file + [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-track.md) |
+| You are… | Read |
+|---|---|
+| A SWE agent doing coding work | `swe/README.md` |
+| A SWE agent installing these protocols in another repo | `swe/README.md`, then open `swe/.claude/commands/swe-init.md` and follow it with the other repository's path |
+| Authoring or composing alignment prompts | `flourishing/README.md` |
+| Just looking at the project structure | this file + [docs/ADR-0001-dual-track.md](docs/ADR-0001-dual-track.md) |
 
-Once you `cd` into a track's folder, you do not need to read
-anything outside it apart from `CONTRIBUTING.md`. Each track has
+Within a track, you do not need to read anything outside its folder
+apart from `CONTRIBUTING.md`. Each track has
 its own canonical protocols,
 its own `.claude/` (subagents, commands, hooks, settings), its own
 status line, its own drift-check script.
@@ -54,7 +56,7 @@ agent-alignment/
 ├── CLAUDE.md                         # repo-level conventions (router)
 ├── AGENTS.md                         # symlink to CLAUDE.md
 ├── CONTRIBUTING.md                   # PR rubric (both tracks)
-├── .claude/                          # SessionStart hook and status line only
+├── .claude/                          # SessionStart hook, status line, cloud-session guard and push
 │
 ├── swe/                              # Track A, SWE
 │   ├── README.md
