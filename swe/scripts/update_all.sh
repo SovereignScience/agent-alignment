@@ -31,8 +31,8 @@
 # match the kit; installing them is switch_rules.sh apply, which needs sudo.
 # It stops before any project when there is neither that file nor --skip, or
 # when a name to leave out matches no folder; an empty file leaves out nothing.
-# A project with a link anywhere in .git but a single hook file, or whose
-# repository or work tree Git finds elsewhere, is named and left alone. Where
+# A project whose Git files could take a write elsewhere (git_elsewhere.sh) is
+# named and left alone. Where
 # .claude/agents, .claude/commands or .lattice is a link, or a push hook file is,
 # it names it and leaves that part alone. It replaces a file by renaming a new
 # one over it, so a hard link elsewhere keeps its text. Its push sends no tags,
@@ -44,6 +44,7 @@ die() { echo "update_all: $*" >&2; exit 1; }
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$swe/scripts/kit_files.sh"
+source "$swe/scripts/git_elsewhere.sh"
 kit_root="$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")"
 kit_physical="$(cd "$kit_root" && pwd -P)"
 workspace="${SWE_WORKSPACE:-$(dirname "$kit_root")}"
@@ -108,16 +109,8 @@ for root in "$workspace"/*/; do
     [ -d "$root/.git" ] || continue
     echo
     echo "== $name"
-    # A link anywhere in .git but a single hook file, or a repository or work tree
-    # Git finds somewhere else, would take the commit and push to another project.
-    held=$(find -P "$root/.git" -path "$root/.git/hooks/*" -prune -o -type l -print -quit)
-    if [ -n "$held" ]; then
-        echo "note     ${held#"$root"/} is a link; this project is left alone"
-        continue
-    fi
-    if [ "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)" != "$root/.git" ] \
-            || [ "$(git -C "$root" rev-parse --show-toplevel)" != "$root" ]; then
-        echo "note     Git keeps this project's repository or work tree elsewhere; this project is left alone"
+    if held=$(git_elsewhere "$root"); then
+        echo "note     $held; this project is left alone"
         continue
     fi
     hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)

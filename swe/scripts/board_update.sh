@@ -13,7 +13,7 @@
 # changed on both sides, such as two sessions that each created a task, stops
 # the merge before it is committed and names the file; the board's own
 # changes stay committed and nothing is pushed. A board that holds a link, or
-# whose .git is a file pointing to another repository, is left alone.
+# whose Git files lead to another repository (git_elsewhere.sh), is left alone.
 set -euo pipefail
 
 die() { echo "board_update: $*" >&2; exit 1; }
@@ -29,17 +29,18 @@ command -v lattice >/dev/null || die "lattice is not on PATH"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in a Git repository"
 [ "$root" = "$PWD" ] || die "run this from the top of the repository: $root"
 [ -f .lattice/config.json ] || die "this project has no board; board_setup.sh makes one"
-# A link in the board, or a .git file that points to another repository, would
-# take these writes into another project's board.
-held=$(find -P .lattice -path .lattice/.git/objects -prune -o \
-    \( -type l -o -type f -links +1 -o -path .lattice/.git -type f \) -print -quit)
-[ -z "$held" ] || die "$held is a link, or points to another repository; nothing was done"
 git check-ignore -q .lattice/config.json || die "source Git can still see the board"
 board() { git -C .lattice "$@"; }
 [ -z "$(board rev-parse --show-cdup 2>/dev/null || echo none)" ] \
     || die "the board has no repository of its own; see step 3b of LATTICE_ONBOARDING.md"
 [ "$(board branch --show-current)" = main ] || die "the board is not on its main branch"
 ! board rev-parse -q --verify MERGE_HEAD >/dev/null || die "a merge is already in progress in .lattice"
+# A link in the board, or Git files that lead to another repository, would take
+# these writes into another project's board.
+held=$(find -P .lattice -path .lattice/.git -prune -o \( -type l -o -type f -links +1 \) -print -quit)
+[ -z "$held" ] || die "$held is a link; nothing was done"
+source "$here/git_elsewhere.sh"
+if held=$(git_elsewhere "$(pwd -P)/.lattice"); then die "$held; nothing was done"; fi
 doctor() { LATTICE_ROOT=$PWD LATTICE_NO_UPDATE_CHECK=1 lattice doctor >/dev/null 2>&1; }
 kept=(events tasks plans artifacts notes archive ids.json config.json context.md .gitignore)
 
