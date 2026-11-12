@@ -120,7 +120,25 @@ bash <agent-alignment>/swe/scripts/board_setup.sh --remote <url>
 
 A repository that already holds a board is cloned into `.lattice/`
 instead of a new board being made. Work that was never pushed there is
-not in it, so push the board after each session that wrote to it.
+not in it, so run `board_update.sh --apply` after each session that wrote
+to the board.
+
+### Keeping a board current
+
+From the top of a project that has a board:
+
+```
+bash <agent-alignment>/swe/scripts/board_update.sh
+bash <agent-alignment>/swe/scripts/board_update.sh --apply
+```
+
+The first says what is behind and changes no file. With `--apply` it
+merges this guide's template changes into `context.md`, commits the
+board's own changes, merges what its remote has and pushes. Two sides
+that wrote to the same task are merged. Two sides that each created a
+task are not: it stops, names the file and pushes nothing, because both
+tasks took the same ID. Pull the board before creating tasks on a second
+machine.
 
 The steps below are what the command runs, for doing it by hand or
 changing a setting.

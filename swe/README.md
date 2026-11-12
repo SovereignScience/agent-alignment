@@ -162,6 +162,8 @@ from a checkout of the kit, naming the project:
 
 A change that collides with the project's own edits leaves the context
 untouched and writes the merge beside it as `context.md.proposed`.
+`scripts/board_update.sh --apply`, run from the top of a project, does the
+same merge and then commits the board, merges its remote and pushes.
 
 ---
 
