@@ -31,6 +31,12 @@
 # match the kit; installing them is switch_rules.sh apply, which needs sudo.
 # It stops before any project when there is neither that file nor --skip, or
 # when a name to leave out matches no folder; an empty file leaves out nothing.
+# A project whose Git files could take a write elsewhere (git_elsewhere.sh) is
+# named and left alone. Where
+# .claude/agents, .claude/commands or .lattice is a link, or a push hook file is,
+# it names it and leaves that part alone. It replaces a file by renaming a new
+# one over it, so a hard link elsewhere keeps its text. Its push sends no tags,
+# whatever push.followTags says.
 # It deletes nothing. Exits 1 when any project could not be brought up to date.
 set -euo pipefail
 
@@ -38,6 +44,7 @@ die() { echo "update_all: $*" >&2; exit 1; }
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$swe/scripts/kit_files.sh"
+source "$swe/scripts/git_elsewhere.sh"
 kit_root="$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")"
 kit_physical="$(cd "$kit_root" && pwd -P)"
 workspace="${SWE_WORKSPACE:-$(dirname "$kit_root")}"
@@ -63,6 +70,7 @@ fi
 # push check from /etc/claude-code/hooks that nothing updates any more.
 old_wrapper=23f9cb1e867513f69d570947f290386d14f06d39e185faa33b0f8744d89bae1b
 [ -d "$workspace" ] || die "no workspace at $workspace"
+workspace=$(cd "$workspace" && pwd -P)
 for s in "${skip[@]}"; do
     [ "$s" = "${s##*/}" ] && [ -e "$workspace/$s" ] \
         || die "nothing in $workspace is named $s; correct it in --skip or $skip_file"
@@ -78,6 +86,17 @@ case $state in
     *) echo "machine  could not tell (switch_rules.sh status exit $state); run it to see why" ;;
 esac
 
+# A part of the project being updated that is a link or not a plain folder, so
+# writes there could land in another project, perhaps a skipped one. $root is a
+# physical path, so any link shows as a difference.
+linked() {
+    { [ -e "$1" ] || [ -L "$1" ]; } && [ "$(cd "$1" 2>/dev/null && pwd -P)" != "$1" ] || return 1
+    echo "note     ${1#"$root"/} is a link or not a plain folder; left alone"
+}
+# Put the kit's file $1 in place of $2 by renaming a new file over it, so a hard
+# link to $2 from elsewhere keeps its old text.
+replace() { cp "$1" "$2.$stamp.new" && mv -f "$2.$stamp.new" "$2"; }
+
 problems=0
 for root in "$workspace"/*/; do
     root=${root%/}
@@ -90,11 +109,15 @@ for root in "$workspace"/*/; do
     [ -d "$root/.git" ] || continue
     echo
     echo "== $name"
+    if held=$(git_elsewhere "$root"); then
+        echo "note     $held; this project is left alone"
+        continue
+    fi
     hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)
-    if [ "$hooks" != "$(cd "$root" && pwd -P)/.git/hooks" ]; then
+    if [ "$hooks" != "$root/.git/hooks" ]; then
         echo "note     its hooks come from $hooks (core.hooksPath); push check left alone"
-    elif [ -L "$hooks/pre-push" ]; then
-        echo "note     the push hook is a link (left alone)"
+    elif [ -L "$hooks/pre-push" ] || [ -L "$hooks/tells_check.py" ]; then
+        echo "note     the push hook or tells_check.py is a link (left alone)"
     elif [ ! -f "$hooks/pre-push" ]; then
         answer=$yes
         if [ "$yes" = no ]; then
@@ -102,8 +125,8 @@ for root in "$workspace"/*/; do
         fi
         if [ "$answer" != y ] && [ "$answer" != yes ]; then
             echo "skipped  push check"
-        elif mkdir -p "$hooks" && cp "$swe/.claude/scripts/pre-push" "$swe/.claude/scripts/tells_check.py" "$hooks/" \
-                && chmod +x "$hooks/pre-push"; then
+        elif mkdir -p "$hooks" && replace "$swe/.claude/scripts/pre-push" "$hooks/pre-push" \
+                && replace "$swe/.claude/scripts/tells_check.py" "$hooks/tells_check.py" && chmod +x "$hooks/pre-push"; then
             echo "installed push check"
         else
             problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"
@@ -117,7 +140,7 @@ for root in "$workspace"/*/; do
         done_ok=yes
         for h in pre-push tells_check.py; do
             if [ -f "$hooks/$h" ]; then cp -p "$hooks/$h" "$hooks/$h.$stamp.bak" || done_ok=no; fi
-            cp "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
+            replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
         done
         chmod +x "$hooks/pre-push" || done_ok=no
         if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
@@ -125,6 +148,7 @@ for root in "$workspace"/*/; do
     fi
     stale=() edited=()
     for kind in agents commands; do
+        ! linked "$root/.claude/$kind" || continue
         for copy in "$root/.claude/$kind"/*.md; do
             [ -f "$copy" ] && [ ! -L "$copy" ] && [ -f "$swe/.claude/$kind/$(basename "$copy")" ] || continue
             ! cmp -s "$copy" "$swe/.claude/$kind/$(basename "$copy")" || continue
@@ -153,7 +177,7 @@ for root in "$workspace"/*/; do
                 if ! git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1; then
                     cp -p "$copy" "$copy.$stamp.bak"
                 fi
-                cp "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" "$copy"
+                replace "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" "$copy"
             done
             echo "updated  ${#stale[@]} kit copies"
             files=("${stale[@]#"$root"/}")
@@ -186,10 +210,10 @@ for root in "$workspace"/*/; do
                 elif [ "$pushes_to" != "$upstream" ]; then
                     echo "note     not pushed: pushes from $branch do not go to its upstream $upstream; push it yourself"
                 elif [ "$push" = no ]; then
-                    echo "note     not pushed; push it with: git -C $root push $remote HEAD:$merge"
+                    echo "note     not pushed; push it with: git -C $root push --no-follow-tags $remote HEAD:$merge"
                 elif [ "$ahead" != 1 ]; then
                     echo "note     not pushed: $branch has $ahead commits its upstream lacks; check them, then push"
-                elif git -C "$root" push -q "$remote" "HEAD:$merge"; then
+                elif git -C "$root" push -q --no-follow-tags "$remote" "HEAD:$merge"; then
                     echo "pushed   $branch to $remote"
                 else
                     problems=$((problems + 1)); echo "PROBLEM  the push of $branch did not go through; the commit stays here"
@@ -199,7 +223,9 @@ for root in "$workspace"/*/; do
             echo "skipped  kit copies"
         fi
     fi
-    if [ -f "$root/.lattice/config.json" ]; then
+    if linked "$root/.lattice"; then
+        :
+    elif [ -f "$root/.lattice/config.json" ]; then
         (cd "$root" && bash "$swe/scripts/board_update.sh" --apply) \
             || { problems=$((problems + 1)); echo "PROBLEM  the board was not brought up to date; the lines above say why"; }
     else

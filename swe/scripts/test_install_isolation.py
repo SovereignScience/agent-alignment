@@ -588,6 +588,32 @@ class Installer(unittest.TestCase):
         self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
         self.assertEqual(self.preview()[0], 0)
 
+    def test_apply_refuses_a_checkout_behind_the_fetched_upstream_of_main(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "newer rules")
+        self.git("remote", "add", "origin", str(self.repo))
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("branch", "-q", "--set-upstream-to", "origin/main")
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 1, out)
+        self.assertIn("this checkout's HEAD does not contain refs/remotes/origin/main", out)
+        self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+
+    def test_apply_goes_ahead_when_head_contains_the_fetched_upstream_of_main(self):
+        self.git("remote", "add", "origin", str(self.repo))
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("branch", "-q", "--set-upstream-to", "origin/main")
+        self.git("commit", "-q", "--allow-empty", "-m", "local work")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+
+    def test_apply_goes_ahead_when_main_tracks_an_upstream_never_fetched(self):
+        self.git("remote", "add", "origin", str(self.repo))
+        self.git("config", "branch.main.remote", "origin")
+        self.git("config", "branch.main.merge", "refs/heads/main")
+        code, out = self.run_installer(apply=True)
+        self.assertEqual(code, 0, out)
+
     def test_a_managed_file_with_the_right_content_but_wrong_mode_is_reinstalled(self):
         code, out = self.run_installer(apply=True)
         self.assertEqual(code, 0, out)
