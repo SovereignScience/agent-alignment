@@ -267,16 +267,20 @@ if codex.exists():
     token_keys = [name for name in filters if name.casefold() == token.casefold()]
     if any(filters[name] != "exclude" for name in token_keys):
         stop("%s must exclude the GitHub read token from shell environments" % codex)
-    ca_file = snippet["shell_environment_policy"]["set"]["SSL_CERT_FILE"]
+    ca_defaults = snippet["shell_environment_policy"]["set"]
     env_set = policy.get("set", {})
-    if "SSL_CERT_FILE" in env_set:
-        if env_set["SSL_CERT_FILE"] != ca_file:
-            stop("SSL_CERT_FILE selects another trust store; the owner must choose before installing")
-    else:
-        for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "PIP_CERT"):
-            value = env_set[name] if name in env_set else os.environ.get(name)
-            if value is not None and (name == "SSL_CERT_DIR" or value != ca_file):
-                stop("%s selects another trust store; the owner must choose before installing" % name)
+    for target, names in (
+            ("SSL_CERT_FILE", ("SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "PIP_CERT")),
+            ("REQUESTS_CA_BUNDLE", ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT"))):
+        ca_file = ca_defaults[target]
+        if target in env_set:
+            if env_set[target] != ca_file:
+                stop("%s selects another trust store; the owner must choose before installing" % target)
+        else:
+            for name in names:
+                value = env_set[name] if name in env_set else os.environ.get(name)
+                if value is not None and (name == "SSL_CERT_DIR" or value != ca_file):
+                    stop("%s selects another trust store; the owner must choose before installing" % name)
     changes = []
     if config.get("default_permissions") != PROFILE:
         changes.append("set " + want_line)
@@ -310,8 +314,9 @@ if codex.exists():
         add_entry("shell_environment_policy", "ignore_default_excludes", False)
     if not token_keys:
         add_entry("shell_environment_policy.filters", token, "exclude")
-    if "SSL_CERT_FILE" not in env_set:
-        add_entry("shell_environment_policy.set", "SSL_CERT_FILE", ca_file)
+    for name in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        if name not in env_set:
+            add_entry("shell_environment_policy.set", name, ca_defaults[name])
     parsed = tomllib.loads(updated)
     if parsed.get("default_permissions") != PROFILE:
         stop("%s: could not set the managed profile" % codex)
