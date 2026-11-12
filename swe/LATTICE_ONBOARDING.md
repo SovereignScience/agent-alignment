@@ -481,8 +481,8 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   agent, the handover asks for the review instead. No other review
   starts unasked, and an author never records a verdict on its own work.
 - Decisions that last are records in the repository, listed in its
-  decision index (docs/ADR-INDEX.md where the project follows this
-  kit). Before planning, open each accepted record that governs a file
+  decision index, docs/ADR-INDEX.md. Before planning, open each accepted
+  record that governs a file
   the task will touch, and name them in the plan. A plan that goes
   against an accepted record proposes the record that supersedes it.
   When a task settles something hard to undo, or rejects an option
@@ -506,22 +506,18 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
     know where things stand.
   - Then explain why: what was wrong or missing, what you changed, and
     what it means for the product or for the owner.
-  - Say what a thing is before its name or path: "the PDF form editor
-    (frontend/src/pages/FormBuilder.jsx:460)", not the path alone. Spell
-    out a code or abbreviation the first time, such as "acceptance
-    criterion 4 (each change refreshes only that organization's data)".
+  - Say what a thing is before its name or path: "the sign-in form
+    (src/login.js:42)", not the path alone. Spell out a code or
+    abbreviation the first time, such as "acceptance criterion 4 (a
+    wrong password shows a message, not a blank page)".
   - One idea per paragraph or list item. No walls of text and no chains of
     jargon.
   - Evidence in plain sentences: what you ran and what it showed. Raw
     output, long file lists and hashes go in an attachment
     (lattice attach), not in the comment.
   - A question gives the options and your recommendation.
-- The board is not committed until asked.
 
 ## Plan shape
-
-Use this plan shape on every board created or updated from this guide.
-Update existing boards through authorized work in their own projects.
 
 A plan fits one screen, about sixty lines. When it would run longer, the
 task is too big: say where it splits and plan the first part.
