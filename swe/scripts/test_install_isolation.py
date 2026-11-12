@@ -17,6 +17,8 @@ PROFILE = '''default_permissions = "workstation"
 [permissions.workstation]
 extends = ":workspace"
 '''
+CA_FILE = "/etc/ssl/certs/ca-certificates.crt"
+CA_NAMES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "PIP_CERT")
 MARK = "# Admin-enforced Codex requirements. Only the profile defined here may run,"
 # swe/codex/requirements.toml as 17def8a shipped and installed it.
 PREDECESSOR = '''# Admin-enforced Codex requirements for this track, installed as
@@ -64,7 +66,8 @@ class Installer(unittest.TestCase):
         self.tmp.cleanup()
 
     def env(self, **extra):
-        return dict(os.environ, HOME=str(self.home), SWE_WORKSPACE=str(self.home / "projects"),
+        parent = {key: value for key, value in os.environ.items() if key not in CA_NAMES}
+        return dict(parent, HOME=str(self.home), SWE_WORKSPACE=str(self.home / "projects"),
                     SWE_ETC=str(self.etc / "claude-code"), SWE_CODEX_ETC=str(self.etc / "codex"),
                     SWE_MANAGED_LOCAL=str(self.local), PATH="%s:%s" % (self.bin, os.environ["PATH"]),
                     **extra)
@@ -145,6 +148,8 @@ class Installer(unittest.TestCase):
         self.assertNotIn("mcp_servers", config)
         self.assertEqual(config["shell_environment_policy"]["inherit"], "core")
         self.assertFalse(config["shell_environment_policy"]["ignore_default_excludes"])
+        self.assertEqual(config["shell_environment_policy"].get("set"), {"SSL_CERT_FILE": CA_FILE})
+        self.assertEqual(managed["env"]["SSL_CERT_FILE"], CA_FILE)
         self.assertNotIn("made-up-read-token", out)
         fs = req["permissions"]["alignment_workstation"]["filesystem"]
         self.assertEqual(fs["~/.codex/config.toml"], "deny")
@@ -160,6 +165,63 @@ class Installer(unittest.TestCase):
         self.assertEqual(updated["shell_environment_policy"]["inherit"], "none")
         self.assertEqual(updated["shell_environment_policy"]["filters"], {
             "EXAMPLE_TOKEN": "exclude", "AGENT_GITHUB_READ_TOKEN": "exclude"})
+
+    def test_ca_default_preserves_existing_environment_and_is_idempotent(self):
+        config = PROFILE + '\n[shell_environment_policy]\ninherit = "none"\n' + (
+            '\n[shell_environment_policy.set]\nKEEP = "made-up-control"\n')
+        code, out = self.run_installer(codex=config, apply=True)
+        self.assertEqual(code, 0, out)
+        first = (self.home / ".codex/config.toml").read_text()
+        policy = tomllib.loads(first)["shell_environment_policy"]
+        self.assertEqual(policy["inherit"], "none")
+        self.assertEqual(policy["set"], {"KEEP": "made-up-control", "SSL_CERT_FILE": CA_FILE})
+        self.assertEqual(policy["filters"]["AGENT_GITHUB_READ_TOKEN"], "exclude")
+        code, out = self.run_installer(codex=first, apply=True)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((self.home / ".codex/config.toml").read_text(), first)
+
+    def test_instruction_table_headers_stop_before_installed_writes(self):
+        for table in ("shell_environment_policy", "shell_environment_policy.filters",
+                      "shell_environment_policy.set"):
+            for apply in (False, True):
+                with self.subTest(table=table, apply=apply):
+                    config = "developer_instructions = '''\n[" + table + "]\n'''\n" + PROFILE
+                    code, out = self.run_installer(codex=config, apply=apply)
+                    self.assertNotEqual(code, 0, out)
+                    self.assertIn("could not safely set", out)
+                    self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                    self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+                    self.assertEqual((self.home / ".codex/config.toml").read_text(), config)
+
+    def test_custom_ca_settings_stop_before_installed_writes(self):
+        cases = [(name, "/tmp/made-up-custom-trust-store") for name in CA_NAMES]
+        cases.append(("SSL_CERT_DIR", ""))
+        for name, value in cases:
+            with self.subTest(name=name, empty=not value):
+                config = PROFILE + '\n[shell_environment_policy.set]\n' + name + ' = "' + value + '"\n'
+                code, out = self.run_installer(codex=config, apply=True)
+                self.assertNotEqual(code, 0, out)
+                self.assertIn(name, out)
+                self.assertIn("Nothing was written", out)
+                if value:
+                    self.assertNotIn(value, out)
+                self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+                self.assertEqual((self.home / ".codex/config.toml").read_text(), config)
+
+    def test_inherited_custom_ca_settings_stop_before_installed_writes(self):
+        for name in CA_NAMES:
+            with self.subTest(name=name):
+                value = "/tmp/made-up-inherited-trust-store"
+                code, out = self.run_installer(apply=True, **{name: value})
+                self.assertNotEqual(code, 0, out)
+                self.assertIn(name, out)
+                self.assertIn("Nothing was written", out)
+                if value:
+                    self.assertNotIn(value, out)
+                self.assertFalse((self.etc / "codex/requirements.toml").exists())
+                self.assertFalse((self.etc / "claude-code/managed-settings.json").exists())
+                self.assertEqual((self.home / ".codex/config.toml").read_text(), PROFILE)
 
     def test_commented_filter_header_without_final_newline(self):
         code, out = self.run_installer(codex=PROFILE + '\n[shell_environment_policy.filters] # keep', apply=True)
@@ -438,13 +500,18 @@ class Installer(unittest.TestCase):
         self.assertIn("write      %s" % sentinel, out)
 
     def test_apply_installs_and_the_printed_undo_restores_every_file(self):
-        user = {"permissions": {"deny": ["Read(**/*token*)", "Bash(git push *)"]}}
+        user = {"permissions": {"deny": ["Read(**/*token*)", "Read(**/credentials)",
+                                           "Read(~/project-private/**)", "Bash(git push *)"]}}
         code, out = self.run_installer(user=user, apply=True)
         self.assertEqual(code, 0, out)
         self.assertEqual(self.requirements()["default_permissions"], "alignment_workstation")
         self.assertEqual(json.loads((self.home / ".claude/settings.json").read_text())["permissions"]["deny"],
-                         ["Bash(git push *)"])
+                         ["Read(~/project-private/**)", "Bash(git push *)"])
+        self.assertIn("remove permissions.deny Read(**/credentials)", out)
         managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
+        for path in ("~/.cargo/credentials", "~/.cargo/credentials.toml", "~/.config/git/credentials"):
+            self.assertIn("Read(%s)" % path, managed["permissions"]["deny"])
+            self.assertIn(path, managed["sandbox"]["filesystem"]["denyRead"])
         self.assertNotIn("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", managed["env"])
         self.assertNotIn("~/", managed["sandbox"]["filesystem"]["denyRead"])
         self.assertTrue((self.etc / "claude-code/hooks/guard_outward.py").is_file())

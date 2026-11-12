@@ -57,7 +57,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
 /usr/bin/python3 -I - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
-import json, os, pathlib, re, stat, sys, tomllib
+import copy, json, os, pathlib, re, stat, sys, tomllib
 
 swe, workspace, local_file, stage, etc, codex_etc, test_dirs = sys.argv[1:]
 home = os.path.expanduser("~")
@@ -149,7 +149,7 @@ if user.exists():
     settings = json.loads(user.read_text())
     perms = settings.get("permissions", {})
     drop = {"Read(**/*token*)", "Read(**/*secret*)", "Read(**/*credentials*)", "Read(**/*api_key*)",
-            "Read(**/*apikey*)", "Read(**/*.crt)", "Read(**/known_hosts)",
+            "Read(**/credentials)", "Read(**/*apikey*)", "Read(**/*.crt)", "Read(**/known_hosts)",
             "Bash(ansible-playbook *)", "Bash(ansible *)",
             "Read(//%s/**)" % home.lstrip("/"), "Read(~/**)"}
     changes = []
@@ -267,12 +267,27 @@ if codex.exists():
     token_keys = [name for name in filters if name.casefold() == token.casefold()]
     if any(filters[name] != "exclude" for name in token_keys):
         stop("%s must exclude the GitHub read token from shell environments" % codex)
+    ca_file = snippet["shell_environment_policy"]["set"]["SSL_CERT_FILE"]
+    env_set = policy.get("set", {})
+    if "SSL_CERT_FILE" in env_set:
+        if env_set["SSL_CERT_FILE"] != ca_file:
+            stop("SSL_CERT_FILE selects another trust store; the owner must choose before installing")
+    else:
+        for name in ("SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "PIP_CERT"):
+            value = env_set[name] if name in env_set else os.environ.get(name)
+            if value is not None and (name == "SSL_CERT_DIR" or value != ca_file):
+                stop("%s selects another trust store; the owner must choose before installing" % name)
     changes = []
     if config.get("default_permissions") != PROFILE:
         changes.append("set " + want_line)
 
     def add_entry(table, key, value):
         global updated
+        expected = copy.deepcopy(tomllib.loads(updated))
+        target = expected
+        for part in table.split("."):
+            target = target.setdefault(part, {})
+        target[key] = value
         header = "[" + table + "]"
         entry = '%s = %s\n' % (json.dumps(key), json.dumps(value))
         match = re.search(r"(?m)^[ \t]*\[" + re.escape(table) + r"\][ \t]*(?:#[^\n]*)?(?:\n|$)", updated)
@@ -285,6 +300,8 @@ if codex.exists():
                 tomllib.loads(updated)
             except tomllib.TOMLDecodeError:
                 stop("%s: use table form %s before installing" % (codex, header))
+        if tomllib.loads(updated) != expected:
+            stop("%s: could not safely set %s.%s; adjust the table form before installing" % (codex, table, key))
         changes.append("set " + table + "." + key)
 
     if "inherit" not in policy:
@@ -293,6 +310,8 @@ if codex.exists():
         add_entry("shell_environment_policy", "ignore_default_excludes", False)
     if not token_keys:
         add_entry("shell_environment_policy.filters", token, "exclude")
+    if "SSL_CERT_FILE" not in env_set:
+        add_entry("shell_environment_policy.set", "SSL_CERT_FILE", ca_file)
     parsed = tomllib.loads(updated)
     if parsed.get("default_permissions") != PROFILE:
         stop("%s: could not set the managed profile" % codex)
