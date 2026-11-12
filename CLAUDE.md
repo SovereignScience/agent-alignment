@@ -50,7 +50,17 @@ and rules for answering review threads.
 - Plan before code. For a task that changes behaviour, write the plan to
   the file `lattice plan AA-<n>` names, set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
-  owner approves it.
+  owner approves it. One exception: a task the owner selected
+  goes ahead without that stop, and with no flag, when all of this holds.
+  Its plan fits the small-fix form (Need, Acceptance criteria, Steps,
+  Coverage boundary) and leaves the owner nothing to decide. The change
+  is easy to revert. It touches none of these: settings, hooks, scripts,
+  agents, commands, rules or instruction files (any CLAUDE.md or
+  AGENTS.md, the protocols, anything under .claude/ or codex/, the
+  installers); authentication, permissions, secrets or network access;
+  stored data or its format. The plan says which of these it checked.
+  When in doubt it is not small. The owner's review of the code is still
+  required before a merge.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging

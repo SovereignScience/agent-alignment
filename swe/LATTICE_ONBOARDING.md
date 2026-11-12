@@ -177,7 +177,18 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   the task in the owner's words, then write the plan.
 - Plan before code. For a task that changes behaviour, the session writes
   the plan in the plan shape below to the file `lattice plan <ID>` names, sets
-  `needs-human <ID> "Need: approve plan"` and stops, in todo. The owner
+  `needs-human <ID> "Need: approve plan"` and stops, in todo. One exception: a task the owner selected
+  goes ahead without that stop, and with no flag, when all of this holds.
+  Its plan fits the small-fix form (Need, Acceptance criteria, Steps,
+  Coverage boundary) and leaves the owner nothing to decide. The change
+  is easy to revert. It touches none of these: settings, hooks, scripts,
+  agents, commands, rules or instruction files (any CLAUDE.md or
+  AGENTS.md, the protocols, anything under .claude/ or codex/, the
+  installers); authentication, permissions, secrets or network access;
+  stored data or its format. The plan says which of these it checked.
+  When in doubt it is not small. The owner's review of the code is still
+  required before a merge.
+  For every other task the owner
   reviews it with "Plannotator: review the plan" in the task's review
   section, or comments on the task; a question is not an approval. Notes
   become threads that the session answers like code review threads,
@@ -373,7 +384,9 @@ expected result, change and check. For example:
     The local handler test runs; the browser path is unverified.
 
 Use the full shape below for work with multiple cases, open decisions or
-wider consequences. Either form keeps every required plan approval.
+wider consequences. The full shape always waits for approval; the
+small-fix form does only when the task does not qualify under "Plan
+before code".
 
 - Need: who needs the change, what they are trying to do and what goes
   wrong today. No solution yet.
@@ -444,7 +457,8 @@ and rules for answering review threads.
 - Plan before code. For a task that changes behaviour, write the plan to
   the file lattice plan <CODE>-<n> names, set
   lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
-  owner approves it.
+  owner approves it. A small fix on a task the owner selected goes ahead
+  without that stop, under the conditions in .lattice/context.md.
 - If source Git metadata is read-only, the owner runs worktree setup and
   source Git writes. Agents edit and test allowed files in the created
   worktree and keep Lattice updated. Give the owner named-path staging
