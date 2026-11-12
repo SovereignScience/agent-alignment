@@ -105,6 +105,19 @@ class UpdateAll(unittest.TestCase):
         (self.work / "via-agents/.claude").mkdir()
         (self.work / "via-agents/.claude/agents").symlink_to(excluded / ".claude/agents")
         (self.work / "via-board/.lattice").symlink_to(excluded / ".lattice")
+        # git-new-workdir: a real .git whose refs, objects and config are the other project's.
+        for key, value in (("user.name", "Test Owner"), ("user.email", "owner@example.com")):
+            self.git(excluded, "config", key, value)
+        self.git(excluded, "add", ".claude")
+        self.git(excluded, "commit", "-q", "-m", "add the reviewer")
+        workdir = self.work / "via-new-workdir/.git"
+        workdir.mkdir(parents=True)
+        for part in ("refs", "objects", "config", "logs"):
+            (workdir / part).symlink_to(excluded / ".git" / part)
+        (workdir / "HEAD").write_text("ref: refs/heads/main\n")
+        self.git(workdir.parent, "reset", "-q", "--hard")
+        self.git(self.work, "init", "-q", "-b", "main", "via-worktree")
+        self.git(self.work / "via-worktree", "config", "core.worktree", str(excluded))
         self.git(self.work, "init", "-q", "-b", "main", "via-hard-link")
         (self.work / "via-hard-link/.claude/agents").mkdir(parents=True)
         os.link(excluded / ".claude/agents/code-reviewer.md", self.work / "via-hard-link/.claude/agents/code-reviewer.md")
@@ -112,7 +125,11 @@ class UpdateAll(unittest.TestCase):
         _, out = self.run_it("", "--yes")
         self.assertEqual({p: p.read_bytes() for p in excluded.rglob("*") if p.is_file()}, before, out)
         self.assertNotIn("board_update --apply in via-board", out)
-        for path, count in ((".git", 1), (".git/hooks", 1), (".claude/agents", 2), (".lattice", 1)):
+        for path in (".git", ".git/hooks"):
+            self.assertIn("note     %s is a link; this project is left alone" % path, out)
+        self.assertRegex(out, r"== via-new-workdir\nnote     \.git/\w+ is a link; this project is left alone\n")
+        self.assertIn("== via-worktree\nnote     Git keeps this project's repository or work tree elsewhere", out)
+        for path, count in ((".claude/agents", 2), (".lattice", 1)):
             self.assertEqual(out.count("note     %s is a link or not a plain folder; left alone" % path), count, out)
         self.assertIn("note     the push hook or tells_check.py is a link (left alone)", out)
 

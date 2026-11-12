@@ -31,11 +31,12 @@
 # match the kit; installing them is switch_rules.sh apply, which needs sudo.
 # It stops before any project when there is neither that file nor --skip, or
 # when a name to leave out matches no folder; an empty file leaves out nothing.
-# Where a project's .git, hooks, .claude/agents, .claude/commands or .lattice is
-# a link out of the project, or a push hook file is a link, it names it and
-# leaves that part alone. It replaces a file by renaming a new one over it, so a
-# hard link elsewhere keeps its text. Its push sends no tags, whatever
-# push.followTags says.
+# A project with a link anywhere in .git but a single hook file, or whose
+# repository or work tree Git finds elsewhere, is named and left alone. Where
+# .claude/agents, .claude/commands or .lattice is a link, or a push hook file is,
+# it names it and leaves that part alone. It replaces a file by renaming a new
+# one over it, so a hard link elsewhere keeps its text. Its push sends no tags,
+# whatever push.followTags says.
 # It deletes nothing. Exits 1 when any project could not be brought up to date.
 set -euo pipefail
 
@@ -107,11 +108,20 @@ for root in "$workspace"/*/; do
     [ -d "$root/.git" ] || continue
     echo
     echo "== $name"
-    ! linked "$root/.git" || continue
+    # A link anywhere in .git but a single hook file, or a repository or work tree
+    # Git finds somewhere else, would take the commit and push to another project.
+    held=$(find -P "$root/.git" -path "$root/.git/hooks/*" -prune -o -type l -print -quit)
+    if [ -n "$held" ]; then
+        echo "note     ${held#"$root"/} is a link; this project is left alone"
+        continue
+    fi
+    if [ "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)" != "$root/.git" ] \
+            || [ "$(git -C "$root" rev-parse --show-toplevel)" != "$root" ]; then
+        echo "note     Git keeps this project's repository or work tree elsewhere; this project is left alone"
+        continue
+    fi
     hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)
-    if linked "$root/.git/hooks"; then
-        :
-    elif [ "$hooks" != "$root/.git/hooks" ]; then
+    if [ "$hooks" != "$root/.git/hooks" ]; then
         echo "note     its hooks come from $hooks (core.hooksPath); push check left alone"
     elif [ -L "$hooks/pre-push" ] || [ -L "$hooks/tells_check.py" ]; then
         echo "note     the push hook or tells_check.py is a link (left alone)"
