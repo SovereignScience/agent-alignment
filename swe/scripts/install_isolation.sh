@@ -36,7 +36,8 @@
 # another default. Without ~/.codex it leaves Codex and /etc/codex alone. A
 # managed file with the right content but the wrong owner or mode is
 # reinstalled. --apply also stops when this checkout's HEAD does not contain
-# main, so an older checkout cannot put back older rules.
+# main, or the fetched upstream of main when it has one, so an older checkout
+# cannot put back older rules.
 set -euo pipefail
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -51,11 +52,16 @@ case "${1:-}" in
     "") ;;
     *) echo "usage: $0 [--apply]" >&2; exit 64 ;;
 esac
-if [ "$apply" = yes ] && ! git -C "$swe" merge-base --is-ancestor main HEAD; then
-    echo "install_isolation: this checkout's HEAD does not contain main, so it could install older rules." >&2
-    echo "Bring it up to date with main, or run this from the main checkout." >&2
-    echo "Nothing was written." >&2
-    exit 1
+if [ "$apply" = yes ]; then
+    upstream=$(git -C "$swe" rev-parse --abbrev-ref 'main@{upstream}' 2>/dev/null || true)
+    for ref in main ${upstream:+"$upstream"}; do
+        if ! git -C "$swe" merge-base --is-ancestor "$ref" HEAD; then
+            echo "install_isolation: this checkout's HEAD does not contain $ref, so it could install older rules." >&2
+            echo "Bring it up to date with $ref, or run this from an up-to-date main checkout." >&2
+            echo "Nothing was written." >&2
+            exit 1
+        fi
+    done
 fi
 [ -d "$workspace" ] || { echo "SWE_WORKSPACE $workspace does not exist" >&2; exit 1; }
 test_dirs=no
