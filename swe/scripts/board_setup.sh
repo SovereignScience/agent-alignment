@@ -31,7 +31,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 [[ $actor == human:?* ]] || die "--actor is a person, human:<name>, not $actor"
-guide="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/LATTICE_ONBOARDING.md"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+guide="$(dirname "$here")/LATTICE_ONBOARDING.md"
 [ -f "$guide" ] || die "the onboarding guide is not at $guide"
 command -v lattice >/dev/null || die "lattice is not on PATH"
 root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in a Git repository"
@@ -77,16 +78,18 @@ PY
         --plan-review-mode inline --plan-approval human --done-display all --no-seed \
         --no-setup-claude --no-setup-agents --description "Tasks for the $name repository" >/dev/null \
         || die "lattice init failed; remove .lattice before trying again"
-    python3 - "$guide" "$name" "$code" "$port" "$branch" <<'PY'
+    python3 - "$here" "$guide" "$name" "$code" "$port" "$branch" <<'PY'
 import json, os, sys
-guide, name, code, port, branch = sys.argv[1:]
+here, guide, name, code, port, branch = sys.argv[1:]
+sys.path.insert(0, here)
+from board_context import template as context_template
 config = json.load(open(".lattice/config.json"))
 config.update(auto_code_review_on_transition=False, auto_plan_review_on_transition=False, dashboard_port=int(port))
 config.setdefault("dashboard", {})["theme"] = "holographic"
 with open(".lattice/config.json", "w") as out:
     json.dump(config, out, indent=2, sort_keys=True)
     out.write("\n")
-template = open(guide).read().split("from this template:\n\n```\n", 1)[1].split("\n```\n", 1)[0]
+template = context_template(open(guide).read())
 path = os.getcwd().replace(os.path.expanduser("~"), "~", 1)
 swaps = [("# <name>", "# " + name),
          ("<project> at <path>: <what it covers, one or two sentences>.",
@@ -101,7 +104,7 @@ for old, new in swaps:
         sys.exit("board_setup: the context template in %s has no %r" % (guide, old))
     template = template.replace(old, new)
 with open(".lattice/context.md", "w") as out:
-    out.write(template + "\n")
+    out.write(template)
 PY
     git init -q --initial-branch=main .lattice
     for path in events tasks plans artifacts notes archive ids.json config.json context.md .gitignore; do
