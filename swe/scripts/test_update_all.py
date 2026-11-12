@@ -112,12 +112,9 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("note     not committed: Git does not track them here", out)
         self.assertIn("machine  the installed rules, agents and commands match the kit", out)
         self.assertIn("stale    .claude/agents/code-reviewer.md", out)
-        lines = (SWE / ".claude/agents/code-reviewer.md").read_text().split("\n")
-        end = lines.index("---", 1)
-        note = ("The kit's files that this names (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under "
-                "scripts/ or tools/) are in %s, whichever project you are in." % (self.kit / "swe"))
-        self.assertEqual((self.work / "old-hook/.claude/agents/code-reviewer.md").read_text(),
-                         "\n".join(lines[:end + 1] + ["", note] + lines[end + 1:]))
+        copy = (self.work / "old-hook/.claude/agents/code-reviewer.md").read_text()
+        self.assertEqual(copy, (SWE / ".claude/agents/code-reviewer.md").read_text())
+        self.assertNotIn(str(self.home), copy)
         self.assertNotIn("== excluded", out)
         self.assertEqual((self.work / "old-hook/.claude/agents/their-own.md").read_text(), "an agent of this project\n")
         self.assertEqual([p.read_text() for p in (self.work / "old-hook/.claude/agents").glob("code-reviewer.md.*.bak")],
