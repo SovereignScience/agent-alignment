@@ -49,7 +49,8 @@ PLAN_DECISION = re.compile(r"^Plannotator plan (approved|annotated) \(")
 PLAN_NOTE = re.compile(r"^## \d+\. (.*)$")
 RESOLVED = "resolved"
 REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
-DECISION = re.compile(r"^Plannotator (approved|annotated) \(")
+# "Owner approved" is a yes given in the terminal through owner_review.py.
+DECISION = re.compile(r"^(?:Plannotator|Owner) (approved|annotated) \(")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 1_048_576
 # The task side panel opens at 60% of the window instead of Lattice's 30rem,
@@ -243,6 +244,16 @@ def find_task(board, short_id):
     return None
 
 
+def task_comments(lattice, board, short_id):
+    """The task's comments as the lattice CLI gives them, or none when it fails."""
+    env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(board))
+    result = subprocess.run([lattice, "comments", short_id, "--json"], cwd=board, env=env, capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
+    except json.JSONDecodeError:
+        return []
+
+
 def log_commits(repo, *args):
     out = run_git(repo, "log", "--reverse", "--format=%H%x1f%s%x1f%cs", *args)
     commits = []
@@ -263,6 +274,13 @@ def task_commits(repo, short_id, refs):
         for commit in log_commits(repo, "-E", "--grep=" + pattern, ref):
             seen.setdefault(commit["hash"], commit)
     return sorted(seen.values(), key=lambda c: run_git(repo, "rev-list", "--count", c["hash"]).strip().zfill(9))
+
+
+def carried_tasks(repo, base, head, short_ids):
+    """Which of the tasks have a commit of their own, by its Task trailer, in base..head."""
+    named = run_git(repo, "log", "--format=%(trailers:key=Task,valueonly,separator=%x2C)", base + ".." + head)
+    found = {part.strip() for line in named.splitlines() for part in line.split(",")}
+    return [sid for sid in short_ids if sid in found]
 
 
 def resolve_range(repo, task, main):
@@ -956,11 +974,10 @@ def criteria_block(task, comments=()):
     return None
 
 
-def completion_block(repo, task, main, comments):
-    """Why the task may not be completed now, or None: its latest bound review
-    must approve exactly the commits it has now, every review thread must be
-    resolved, the commits must be merged and pushed, and every open criterion
-    must have evidence."""
+def review_block(repo, task, main, comments):
+    """Why the owner's review does not cover the task's work now, or None: the
+    latest bound review must approve exactly the commits the task has now, and
+    every review thread must be resolved."""
     review = latest_review(comments)
     if not review:
         return "no Plannotator review is recorded for this task yet"
@@ -975,7 +992,14 @@ def completion_block(repo, task, main, comments):
     unresolved = [t for t in review_threads(comments) if t["state"] != "resolved"]
     if unresolved:
         return "%d review thread(s) are not resolved; resolve them first" % len(unresolved)
-    return (stale_reason(repo, task, main, review["body"], comments)
+    return stale_reason(repo, task, main, review["body"], comments)
+
+
+def completion_block(repo, task, main, comments):
+    """Why the task may not be completed now, or None: the owner's review must
+    cover its work, the commits must be merged and pushed, and every open
+    criterion must have evidence."""
+    return (review_block(repo, task, main, comments)
             or landing_block(repo, main, [c["hash"] for c in resolve_range(repo, task, main)["commits"]])
             or criteria_block(task, comments))
 
@@ -1078,12 +1102,7 @@ class Context:
         return [line for line in path.read_text().splitlines() if line.strip()] if path.is_file() else []
 
     def comments(self, short_id):
-        env = dict(os.environ, LATTICE_NO_UPDATE_CHECK="1", LATTICE_ROOT=str(self.board))
-        result = subprocess.run([self.lattice, "comments", short_id, "--json"], cwd=self.board, env=env, capture_output=True, text=True)
-        try:
-            return json.loads(result.stdout).get("data", []) if result.returncode == 0 else []
-        except json.JSONDecodeError:
-            return []
+        return task_comments(self.lattice, self.board, short_id)
 
     def start_plannotator(self, key, record_on=None, base=None, head=None):
         """One Plannotator code review. The range is resolved to commit IDs once,
