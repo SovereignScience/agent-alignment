@@ -81,7 +81,7 @@ class BoardContext(unittest.TestCase):
     def test_a_folder_with_no_board_is_refused(self):
         shutil.rmtree(self.project / ".lattice")
         code, out = self.run_it("status")
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 3, out)
         self.assertIn("no board context", out)
 
 

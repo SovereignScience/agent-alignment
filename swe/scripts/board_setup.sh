@@ -97,7 +97,7 @@ swaps = [("# <name>", "# " + name),
          ('<other boards with the same conventions, or "None">', "None"),
          ("<tag list, lowercase, one word each>", "to be set after the first session"),
          ("<build or lock down>", "build"),
-         ("from <branch> in its own worktree", "from %s in its own worktree" % branch),
+         ("<branch>", branch), ("<board directory>", path),
          ("<CODE>", code), ("<port>", port)]
 for old, new in swaps:
     if old not in template:
