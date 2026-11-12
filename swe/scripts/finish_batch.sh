@@ -12,7 +12,9 @@
 #                     your approval against that exact commit, and an open
 #                     thread is shown first so you can resolve it
 #   3 merge and test  approved tasks only, in the order given, then the kit's
-#                     checks on the merged files; nothing is pushed
+#                     checks on the merged files; nothing is pushed. A task
+#                     you did not approve keeps out every branch that
+#                     contains its branch
 #   4 publish         prints the push command for the integration branch and
 #                     goes on once that branch is on the remote
 #   5 install         switch_rules.sh from the main checkout, when this machine
@@ -138,16 +140,17 @@ echo "$base is on the remote at $(git -C "$root" rev-parse --short "$base")"
 
 phase "5: install"
 if [ -f "$root/swe/scripts/switch_rules.sh" ]; then
-    state=$(bash "$root/swe/scripts/switch_rules.sh" status 2>&1 || true)
-    if grep -qE '^collision|install_isolation.sh stopped' <<<"$state"; then
-        grep -E '^collision|stopped|^install_isolation' <<<"$state" | sed 's/^/    /'
-        stop "the installer cannot go ahead; nothing was installed"
-    elif grep -qE '^(== |would )' <<<"$state"; then
+    differs=0
+    state=$(bash "$root/swe/scripts/switch_rules.sh" status --exit-code 2>&1) || differs=$?
+    if [ "$differs" -eq 0 ]; then
+        echo "nothing to install; this machine already matches $base"
+    elif [ "$differs" -eq 1 ]; then
         echo "this machine differs from $base; installing (answer y, then your sudo password)"
         bash "$root/swe/scripts/switch_rules.sh" apply || stop "the install did not finish; run switch_rules.sh status to see where it stands"
         echo "installed; reload each editor window and start new sessions when this run ends"
     else
-        echo "nothing to install; this machine already matches $base"
+        sed 's/^/    /' <<<"$state"
+        stop "the installer could not say where this machine stands (exit $differs); nothing was installed"
     fi
 else
     echo "skipped: $base has no swe/scripts/switch_rules.sh"
