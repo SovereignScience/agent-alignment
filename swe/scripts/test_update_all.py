@@ -11,6 +11,7 @@ SWE = HERE.parent
 STATUS = '#!/usr/bin/env bash\n[ "$1 $2" = "status --exit-code" ] || exit 64\nexit "$(cat "$HOME/machine")"\n'
 BOARD = '#!/usr/bin/env bash\necho "board_update $* in $(basename "$PWD")"\n[ "$(basename "$PWD")" != broken ] || exit 1\n'
 WRAPPER = '#!/bin/sh\n# agent-safety push check\nexec python3 /etc/claude-code/hooks/pre-push "$@"\n'
+KIT_COMMIT = "chore(agents): update the kit's agents and commands"
 
 
 class UpdateAll(unittest.TestCase):
@@ -50,7 +51,25 @@ class UpdateAll(unittest.TestCase):
         self.kit = kit
 
     def git(self, cwd, *args):
-        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+        env = dict(os.environ, HOME=str(self.home))
+        return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()
+
+    def project(self, name):
+        """A repository with its own upstream whose tracked copy of the kit's reviewer is out of date."""
+        root = self.work / name
+        self.git(self.work, "init", "-q", "-b", "main", name)
+        for key, value in (("user.name", "Test Owner"), ("user.email", "owner@example.com"),
+                           ("core.hooksPath", ".no-hooks")):
+            self.git(root, "config", key, value)
+        (root / ".claude/agents").mkdir(parents=True)
+        (root / ".claude/agents/code-reviewer.md").write_text("an old copy of the kit's reviewer\n")
+        self.git(root, "add", ".claude")
+        self.git(root, "commit", "-q", "-m", "add the reviewer")
+        remote = pathlib.Path(self.tmp.name, name + ".git")
+        self.git(self.tmp.name, "init", "-q", "--bare", str(remote))
+        self.git(root, "remote", "add", "origin", str(remote))
+        self.git(root, "push", "-q", "-u", "origin", "main")
+        return root
 
     def hook(self, name):
         return self.work / name / ".git/hooks/pre-push"
@@ -87,6 +106,7 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("(core.hooksPath); push check left alone", out)
         self.assertEqual(self.hook("wrapped").read_bytes(), kit_hook)
         self.assertEqual([p.read_text() for p in self.hook("wrapped").parent.glob("pre-push.*.bak")], [WRAPPER])
+        self.assertIn("note     not committed: Git does not track them here", out)
         self.assertIn("machine  the installed rules, agents and commands match the kit", out)
         self.assertIn("stale    .claude/agents/code-reviewer.md", out)
         lines = (SWE / ".claude/agents/code-reviewer.md").read_text().split("\n")
@@ -108,6 +128,28 @@ class UpdateAll(unittest.TestCase):
         self.assertNotIn("stale", out)
         self.assertIn("DONE: every project in %s is up to date" % self.work, out)
         self.assertIn("machine  BEHIND: run bash", out)
+
+    def test_kit_copies_are_committed_and_pushed_only_where_nothing_else_waits(self):
+        clean, ahead, staged, detached = (self.project(n) for n in ("clean", "ahead", "staged", "detached"))
+        (ahead / "notes.txt").write_text("work in progress\n")
+        self.git(ahead, "add", "notes.txt")
+        self.git(ahead, "commit", "-q", "-m", "work in progress")
+        (staged / "notes.txt").write_text("staged by hand\n")
+        self.git(staged, "add", "notes.txt")
+        self.git(detached, "checkout", "-q", "--detach")
+        before = {root: self.git(root, "rev-parse", "HEAD") for root in (staged, detached)}
+        _, out = self.run_it("", "--yes", "--push")
+        for root in (clean, ahead):
+            self.assertEqual(self.git(root, "log", "-1", "--format=%s"), KIT_COMMIT, out)
+            self.assertEqual(self.git(root, "show", "--name-only", "--format=", "HEAD"), ".claude/agents/code-reviewer.md")
+        self.assertEqual(self.git(clean, "rev-parse", "HEAD"), self.git(clean, "rev-parse", "origin/main"))
+        self.assertIn("pushed   main", out)
+        self.assertEqual(self.git(ahead, "rev-list", "--count", "origin/main..HEAD"), "2")
+        self.assertIn("not pushed: main has 2 commits its upstream lacks", out)
+        for root in (staged, detached):
+            self.assertEqual(self.git(root, "rev-parse", "HEAD"), before[root])
+        self.assertIn("not committed: something else is already staged here", out)
+        self.assertIn("not committed: HEAD is on no branch here", out)
 
 
 if __name__ == "__main__":
