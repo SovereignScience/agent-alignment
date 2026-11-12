@@ -9,28 +9,31 @@ Run the Skeptic-Arbiter pair over the current branch against `$1`.
 The base branch defaults to `main`. The input is the change itself,
 never a draft review of it.
 
-Capture the diff first:
+Capture what is under review first:
 
 ```bash
+git rev-parse "${1:-main}" HEAD
 git diff "${1:-main}"...HEAD --stat
-git diff "${1:-main}"...HEAD
 git diff HEAD --stat
-git diff HEAD
 git ls-files --others --exclude-standard
 ```
 
-Include committed and uncommitted changes when they are in the requested
-scope. Read the listed untracked source files without opening credentials
-or generated binaries. State the base, HEAD and working-tree boundary;
-an empty committed diff does not establish that prepared work is empty.
+That is the boundary, not the content. The reviewer reads the diff
+itself, file by file; a whole diff pasted into this chat or into a brief
+crowds out the lines that matter. Include committed and uncommitted
+changes when they are in the requested scope, and name the untracked
+source files, leaving out credentials and generated binaries. State the
+base, HEAD and working-tree boundary; an empty committed diff does not
+establish that prepared work is empty.
 
 Steps:
 
-1. Spawn `code-skeptic` with the diff and any visible context (the
-   original request, prior turns of this review). Brief: "read the
+1. Spawn `code-skeptic` with the base and head revisions and any
+   visible context (the original request, the acceptance criteria,
+   prior turns of this review). Brief: "read the
    change and return your flag list per the format defined in your
    agent definition. SILENT if no flags fire."
-2. Spawn `code-arbiter` with the diff and the flag list (or
+2. Spawn `code-arbiter` with the same revisions and the flag list (or
    `SILENT`). Brief: "produce the final verdict on the change,
    calibrated to flag severity. Cite file:line evidence, name
    severity, no hedge-burial."

@@ -19,7 +19,8 @@ git diff "${1:-main}"...HEAD -- Cargo.toml Cargo.lock go.mod go.sum
 Then spawn `dependency-auditor`. Brief: "audit per the format
 defined in your agent definition. For ADD and BUMP-MAJOR, check
 CVEs and maintenance signal. For REMOVE, grep for remaining
-imports. Confirm lockfile and manifest agree. Cap at 400 words."
+imports. Confirm lockfile and manifest agree. Keep the prose under 400
+words and never drop a finding to fit."
 
 Surface the verdict to the user. If CRITICAL or HIGH findings,
 recommend BLOCK-MERGE.
