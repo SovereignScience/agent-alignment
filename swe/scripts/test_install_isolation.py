@@ -195,7 +195,7 @@ class Installer(unittest.TestCase):
         self.assertEqual((self.home / ".codex/config.toml").read_text(), first)
 
     def test_requests_trust_conflicts_stop_with_ssl_file_already_set(self):
-        for name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        for name in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT"):
             for inherited in (False, True):
                 with self.subTest(name=name, inherited=inherited):
                     value = "/tmp/made-up-custom-requests-store"

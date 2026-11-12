@@ -271,7 +271,7 @@ if codex.exists():
     env_set = policy.get("set", {})
     for target, names in (
             ("SSL_CERT_FILE", ("SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "PIP_CERT")),
-            ("REQUESTS_CA_BUNDLE", ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"))):
+            ("REQUESTS_CA_BUNDLE", ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT"))):
         ca_file = ca_defaults[target]
         if target in env_set:
             if env_set[target] != ca_file:
