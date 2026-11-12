@@ -10,7 +10,11 @@
 #   1. refreshes the push check where one is installed, keeping the old copy
 #      as .bak, and asks before installing one where there is none (--yes
 #      installs without asking);
-#   2. brings the board up to date with board_update.sh --apply where the
+#   2. finds copies of the kit's agents and slash commands in the
+#      repository's own .claude folder that differ from the kit, and asks
+#      before bringing them up to date (a project's copy wins over the one
+#      installed for every project); the change is left for you to commit;
+#   3. brings the board up to date with board_update.sh --apply where the
 #      repository has one.
 # It says first whether this machine's installed rules, agents and commands
 # match the kit; installing them is switch_rules.sh apply, which needs sudo.
@@ -20,6 +24,7 @@ set -euo pipefail
 die() { echo "update_all: $*" >&2; exit 1; }
 
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$swe/scripts/kit_files.sh"
 kit_root="$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")"
 workspace="${SWE_WORKSPACE:-$(dirname "$kit_root")}"
 skip=() yes=no
@@ -76,6 +81,30 @@ for root in "$workspace"/*/; do
         done
         chmod +x "$hooks/pre-push"
         echo "updated  push check (old copies kept as *.$stamp.bak)"
+    fi
+    stale=()
+    for kind in agents commands; do
+        for copy in "$root/.claude/$kind"/*.md; do
+            [ -f "$copy" ] && [ ! -L "$copy" ] && [ -f "$swe/.claude/$kind/$(basename "$copy")" ] || continue
+            cmp -s "$copy" <(render "$swe/.claude/$kind/$(basename "$copy")") || stale+=("$copy")
+        done
+    done
+    if [ ${#stale[@]} -eq 0 ]; then
+        echo "current  kit agents and commands in this project (or none)"
+    else
+        printf 'stale    %s\n' "${stale[@]#"$root"/}"
+        answer=$yes
+        if [ "$yes" = no ]; then
+            read -r -p "ask      bring these ${#stale[@]} kit copies up to date? [y/N] " answer || answer=""
+        fi
+        if [ "$answer" = y ] || [ "$answer" = yes ]; then
+            for copy in "${stale[@]}"; do
+                render "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" > "$copy"
+            done
+            echo "updated  ${#stale[@]} kit copies; commit them in this repository"
+        else
+            echo "skipped  kit copies"
+        fi
     fi
     if [ -f "$root/.lattice/config.json" ]; then
         (cd "$root" && bash "$swe/scripts/board_update.sh" --apply) \

@@ -61,16 +61,7 @@ for source in "${kit_sources[@]}"; do
     kit_targets+=("$HOME/.claude/$(basename "$(dirname "$source")")/$(basename "$source")")
 done
 files+=("${kit_targets[@]}")
-kit_note="The kit's files that this names (the five protocols, CRAFT.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in."
-
-# A kit agent or command as it is installed: the note follows its front matter.
-render() {
-    awk -v note="$kit_note" '
-        NR == 1 && $0 == "---" { print; front = 1; next }
-        front && $0 == "---" { print; print ""; print note; front = 0; next }
-        NR == 1 { print note; print "" }
-        { print }' "$1"
-}
+source "$swe/scripts/kit_files.sh"
 
 usage() {
     echo "usage: $0 status [--exit-code] | apply [--context <file>] | revert [<snapshot>]" >&2
