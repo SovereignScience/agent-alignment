@@ -91,6 +91,25 @@ class MergeApproved(unittest.TestCase):
         self.assertEqual(self.remote_main(), merged)
         self.assertIn("T-1: merged here by an earlier run", self.said)
 
+    def test_without_the_push_it_stops_after_the_checks_and_a_rerun_agrees(self):
+        self.approve("T-1", self.start, self.one)
+        merged = ma.merge_approved(self.repo, self.repo, "main", ["T-1"], ["true"], lambda sid: self.reviews.get(sid, []),
+                                   say=self.said.append, push=False)
+        self.assertEqual((self.local_main(), self.remote_main()), (merged, self.start))
+        self.assertIn("merged and checked, not pushed: %s" % merged[:12], self.said)
+        again = ma.merge_approved(self.repo, self.repo, "main", ["T-1"], ["true"], lambda sid: self.reviews.get(sid, []),
+                                  say=self.said.append, push=False)
+        self.assertEqual(again, merged)
+
+    def test_an_unapproved_task_can_be_left_out_while_the_approved_ones_merge(self):
+        self.approve("T-2", self.start, self.two)
+        pushed = ma.merge_approved(self.repo, self.repo, "main", ["T-1", "T-2"], ["true"], lambda sid: self.reviews.get(sid, []),
+                                   say=self.said.append, skip_unapproved=True)
+        self.assertEqual(self.remote_main(), pushed)
+        self.assertEqual(git(self.repo, "rev-list", "--parents", "-n", "1", pushed).split()[1:], [self.start, self.two])
+        self.assertTrue(any(line.startswith("T-1: skipped, not approved: no Plannotator review") for line in self.said))
+        self.assertEqual(git(self.repo, "rev-list", "--count", "main.." + self.one), "1")
+
     def test_a_rerun_refuses_a_local_commit_it_would_not_make(self):
         self.approve("T-1", self.start, self.one)
         git(self.repo, "merge", "-q", "--squash", self.one)
