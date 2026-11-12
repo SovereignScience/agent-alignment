@@ -918,6 +918,18 @@ def approved_commits(repo, comments):
     return {sha for base, head in ranges for sha in run_git(repo, "rev-list", base + ".." + head, check=False).split()}
 
 
+def standing_approvals(repo, comments):
+    """The commits the task's approvals cover, but only while they stand: the
+    latest review by a person is an approval and every review thread is
+    resolved. A later request for changes or an open thread withdraws them."""
+    review = latest_review(comments)
+    if not review or review.get("deleted") or review_decision(review.get("body") or "") != "approved":
+        return set()
+    if any(thread["state"] != "resolved" for thread in review_threads(comments)):
+        return set()
+    return approved_commits(repo, comments)
+
+
 def adds_nothing(repo, sha):
     """Whether a commit is a merge with nothing of its own: its files are
     exactly Git's automatic merge of its two parents, or every line comes from
