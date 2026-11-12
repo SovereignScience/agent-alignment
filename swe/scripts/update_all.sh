@@ -45,6 +45,7 @@ die() { echo "update_all: $*" >&2; exit 1; }
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$swe/scripts/kit_files.sh"
 source "$swe/scripts/git_elsewhere.sh"
+if held=$(git_environment_elsewhere "$swe"); then die "$held; nothing was done"; fi
 kit_root="$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")"
 kit_physical="$(cd "$kit_root" && pwd -P)"
 workspace="${SWE_WORKSPACE:-$(dirname "$kit_root")}"
@@ -94,8 +95,23 @@ linked() {
     echo "note     ${1#"$root"/} is a link or not a plain folder; left alone"
 }
 # Put the kit's file $1 in place of $2 by renaming a new file over it, so a hard
-# link to $2 from elsewhere keeps its old text.
-replace() { cp "$1" "$2.$stamp.new" && mv -f "$2.$stamp.new" "$2"; }
+# link to $2 from elsewhere keeps its old text. With $3=backup, create $2 only
+# if it does not exist.
+replace() {
+    local new status=0
+    new=$(mktemp "$2.XXXXXXXX.new") || return
+    if cp -p -- "$1" "$new"; then
+        if [ "${3:-}" = backup ]; then
+            ln -T -- "$new" "$2" || status=$?
+        else
+            mv -fT -- "$new" "$2" || status=$?
+        fi
+    else
+        status=$?
+    fi
+    rm -f -- "$new" || status=$?
+    return "$status"
+}
 
 problems=0
 for root in "$workspace"/*/; do
@@ -126,7 +142,7 @@ for root in "$workspace"/*/; do
         if [ "$answer" != y ] && [ "$answer" != yes ]; then
             echo "skipped  push check"
         elif mkdir -p "$hooks" && replace "$swe/.claude/scripts/pre-push" "$hooks/pre-push" \
-                && replace "$swe/.claude/scripts/tells_check.py" "$hooks/tells_check.py" && chmod +x "$hooks/pre-push"; then
+                && replace "$swe/.claude/scripts/tells_check.py" "$hooks/tells_check.py"; then
             echo "installed push check"
         else
             problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"
@@ -139,10 +155,12 @@ for root in "$workspace"/*/; do
     else
         done_ok=yes
         for h in pre-push tells_check.py; do
-            if [ -f "$hooks/$h" ]; then cp -p "$hooks/$h" "$hooks/$h.$stamp.bak" || done_ok=no; fi
+            if [ -f "$hooks/$h" ] && ! replace "$hooks/$h" "$hooks/$h.$stamp.bak" backup; then
+                done_ok=no
+                continue
+            fi
             replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
         done
-        chmod +x "$hooks/pre-push" || done_ok=no
         if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
         else problems=$((problems + 1)); echo "PROBLEM  the push check could not be updated; the .bak copies hold the old one"; fi
     fi
@@ -175,7 +193,7 @@ for root in "$workspace"/*/; do
             for copy in "${stale[@]}"; do
                 # Git holds the old text of a tracked copy; an untracked one keeps it beside it.
                 if ! git -C "$root" ls-files --error-unmatch -- "$copy" >/dev/null 2>&1; then
-                    cp -p "$copy" "$copy.$stamp.bak"
+                    replace "$copy" "$copy.$stamp.bak" backup
                 fi
                 replace "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" "$copy"
             done
