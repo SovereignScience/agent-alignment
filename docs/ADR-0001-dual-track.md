@@ -1,7 +1,18 @@
+---
+status: accepted
+date: 2026-05-10
+decision-makers: Patrick Deegan
+applies-to:
+  - CLAUDE.md
+  - README.md
+  - .claude/*
+  - swe/CLAUDE.md
+  - flourishing/CLAUDE.md
+---
+
 # ADR-0001: Dual-track repository, SWE protocols + Inner Commons alignment
 
-Status: accepted (revised 2026-05-10 to hard-split layout)
-Date:   2026-04-30 (original) · 2026-05-10 (revised)
+First decided 2026-04-30, and revised 2026-05-10 to the hard-split layout.
 
 ## Context
 
