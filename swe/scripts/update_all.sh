@@ -2,7 +2,7 @@
 # Bring every project in the workspace up to date with this kit. Run it
 # yourself, after switch_rules.sh apply:
 #
-#   update_all.sh [--skip <folder>]... [--yes]
+#   update_all.sh [--skip <folder>]... [--yes] [--push]
 #
 # The workspace is SWE_WORKSPACE, else the folder this kit's main checkout
 # is in. For each Git repository directly inside it, other than this kit and
@@ -15,7 +15,10 @@
 #   2. finds copies of the kit's agents and slash commands in the
 #      repository's own .claude folder that differ from the kit, and asks
 #      before bringing them up to date (a project's copy wins over the one
-#      installed for every project); the change is left for you to commit;
+#      installed for every project). It commits those files and nothing
+#      else, unless something else is staged, they are not tracked or HEAD
+#      is on no branch. With --push it pushes that commit when it is the
+#      only one the branch's upstream lacks;
 #   3. brings the board up to date with board_update.sh --apply where the
 #      repository has one.
 # It says first whether this machine's installed rules, agents and commands
@@ -30,12 +33,13 @@ source "$swe/scripts/kit_files.sh"
 kit_root="$(dirname "$(git -C "$swe" rev-parse --path-format=absolute --git-common-dir)")"
 kit_physical="$(cd "$kit_root" && pwd -P)"
 workspace="${SWE_WORKSPACE:-$(dirname "$kit_root")}"
-skip=() yes=no
+skip=() yes=no push=no
 while [ $# -gt 0 ]; do
     case $1 in
         --skip) [ $# -ge 2 ] || die "--skip needs a folder name"; skip+=("$2"); shift 2 ;;
         --yes) yes=yes; shift ;;
-        *) die "unknown argument $1; usage: $0 [--skip <folder>]... [--yes]" ;;
+        --push) push=yes; shift ;;
+        *) die "unknown argument $1; usage: $0 [--skip <folder>]... [--yes] [--push]" ;;
     esac
 done
 # The push hook installed before this kit's own: it runs an older copy of the
@@ -116,7 +120,33 @@ for root in "$workspace"/*/; do
             for copy in "${stale[@]}"; do
                 render "$swe/.claude/$(basename "$(dirname "$copy")")/$(basename "$copy")" > "$copy"
             done
-            echo "updated  ${#stale[@]} kit copies; commit them in this repository"
+            echo "updated  ${#stale[@]} kit copies"
+            files=("${stale[@]#"$root"/}")
+            branch=$(git -C "$root" symbolic-ref -q --short HEAD || true)
+            if [ -z "$branch" ]; then
+                echo "note     not committed: HEAD is on no branch here; commit them yourself"
+            elif ! git -C "$root" diff --cached --quiet; then
+                echo "note     not committed: something else is already staged here"
+            elif ! git -C "$root" ls-files --error-unmatch -- "${files[@]}" >/dev/null 2>&1; then
+                echo "note     not committed: Git does not track them here"
+            elif ! { git -C "$root" add -- "${files[@]}" \
+                    && git -C "$root" commit -q -m "chore(agents): update the kit's agents and commands"; }; then
+                problems=$((problems + 1)); echo "PROBLEM  the kit copies could not be committed; the lines above say why"
+            else
+                echo "commit   $(git -C "$root" rev-parse --short HEAD) on $branch holds the kit copies"
+                ahead=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || true)
+                if [ "$push" = no ]; then
+                    echo "note     not pushed; push it with: git -C $root push"
+                elif [ -z "$ahead" ]; then
+                    echo "note     not pushed: $branch has no upstream"
+                elif [ "$ahead" != 1 ]; then
+                    echo "note     not pushed: $branch has $ahead commits its upstream lacks; check them, then push"
+                elif git -C "$root" push -q; then
+                    echo "pushed   $branch"
+                else
+                    problems=$((problems + 1)); echo "PROBLEM  the push of $branch did not go through; the commit stays here"
+                fi
+            fi
         else
             echo "skipped  kit copies"
         fi
