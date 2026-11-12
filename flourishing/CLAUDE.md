@@ -1,29 +1,12 @@
 # CLAUDE.md: agent-alignment / flourishing
 
-Project-level conventions for the **Inner Commons + Flourishing**
-alignment-prompt library. Loaded automatically by Claude Code,
-Codex CLI (via the `AGENTS.md` symlink), Cursor, and any agent
-that follows the AGENTS.md convention.
-
-This file adds to parent and global instructions; it does not loosen them. If you are authoring,
-composing, or evaluating alignment prompts in this folder, read
-this first; you do not need to read anything outside this subtree.
-
----
-
-## What this folder is
-
-A four-canonical-module prompt library for sovereign AI agents
-that are honest, consent-aware, repair-capable, and oriented toward
-human and planetary flourishing. Plus four provider-specific
-derived files, ten specialist subagents for authoring / composing /
-evaluating, eight slash commands, evaluation scenarios, and the
-hooks that keep canonical-vs-derived in sync.
-
-(There is a sibling track in `../swe/` for agentic software-
-engineering work. It is independent. You can ignore it.)
-
----
+Conventions for the Inner Commons + Flourishing alignment-prompt library:
+four canonical modules, their provider variants, specialist subagents,
+slash commands, evaluation scenarios and the hooks that keep canonical
+and derived files in sync. This file is loaded after the root
+`CLAUDE.md`, whose rules apply here too; it adds to parent and global
+instructions and does not loosen them. `AGENTS.md` is a symlink to this
+file. The sibling track in `../swe/` is independent.
 
 ## Canonical alignment modules (source of truth)
 
@@ -42,8 +25,6 @@ engineering work. It is independent. You can ignore it.)
 | [FOR_CLAUDE.md](FOR_CLAUDE.md) | XML-tagged + abbreviated User-Preferences variant. |
 | [FOR_CHATGPT.md](FOR_CHATGPT.md) | ChatGPT system-prompt. |
 | [FOR_API.md](FOR_API.md) | API system-prompt + composition guidance. |
-
----
 
 ## Architectural commitments (do not weaken)
 
@@ -75,8 +56,6 @@ affected canonical module.
     over aspirational.
 11. No AI co-author trailers. Preserve human co-authors and required provenance.
 
----
-
 ## Subagent dispatch table (when to spawn which)
 
 | Task | Subagent | Slash command |
@@ -98,8 +77,6 @@ affected canonical module.
 Dispatch only agents the user requested by name or through an
 explicit slash command. Run at most three at once.
 
----
-
 ## Build, verify
 
 | Goal | Command |
@@ -111,40 +88,6 @@ explicit slash command. Run at most three at once.
 
 There is no test suite for prose. Evaluation runs through
 `scenario-evaluator` and `eval/scenarios/*.md`.
-
----
-
-## Repo map (this subtree)
-
-```
-flourishing/
-├── README.md                     # quickstart + dispatch table
-├── CLAUDE.md                     # this file
-├── AGENTS.md                     # symlink to CLAUDE.md
-│
-├── INNER_COMMONS_CORE.md         # canonical
-├── FLOURISHING_PROTOCOL.md       # canonical
-├── SKEPTIC_ARBITER.md            # canonical
-├── REPAIR_PROTOCOL.md            # canonical
-│
-├── COMPOSED_AGENT.md             # derived (all four in one)
-├── FOR_CLAUDE.md                 # derived
-├── FOR_CHATGPT.md                # derived
-├── FOR_API.md                    # derived
-│
-├── eval/
-│   └── scenarios/                # behavioral evaluation cases (.md)
-├── scripts/
-│   └── check_drift.sh
-│
-└── .claude/
-    ├── settings.json             # alignment-only permissions, hooks, status line
-    ├── README.md                 # roster + hook architecture
-    ├── agents/                   # 10 specialists
-    └── commands/                 # 8 slash commands
-```
-
----
 
 ## How to add things
 
@@ -173,27 +116,9 @@ questions and scaffolding steps.
 1. Update `.claude/settings.json` `ALIGN_PROVIDER_VARIANTS`.
 2. Add the file to `scripts/check_drift.sh`'s derived list.
 3. Update `.claude/agents/module-composer.md`'s derived-file table.
-4. Update this CLAUDE.md's repo map.
+4. Update the list of derived files in `README.md`.
 
----
-
-## Tone and standards
-
-- Plain language over jargon.
-- Operational rules over aspirational language.
-- Default to no comments; the modules speak for themselves.
-- Examples carry nuance that would otherwise bloat the main prompt.
-- Pushes, force-pushes and hook bypasses are denied. History rewrites
-  and destructive operations are the user's to run.
-- No AI co-author trailers; preserve human co-authors and provenance.
-
----
-
-## Cross-tool agent compatibility
-
-`AGENTS.md` is a symlink to this file. Agent-specific config lives
-in `.claude/`. The instructions in this file apply to **all**
-agents that drop into this subtree.
-
-When in doubt: read this file, read `README.md`, read the affected
-canonical module, then act.
+In a module, default to no comments, and let an example carry nuance that
+would otherwise bloat the rule. History rewrites and destructive
+operations are the user's to run. When in doubt, read this file, the
+README and the affected canonical module, then act.
