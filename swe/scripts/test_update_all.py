@@ -130,26 +130,49 @@ class UpdateAll(unittest.TestCase):
         self.assertIn("machine  BEHIND: run bash", out)
 
     def test_kit_copies_are_committed_and_pushed_only_where_nothing_else_waits(self):
-        clean, ahead, staged, detached = (self.project(n) for n in ("clean", "ahead", "staged", "detached"))
+        clean, ahead, staged, detached, merging = (
+            self.project(n) for n in ("clean", "ahead", "staged", "detached", "merging"))
+        # Another branch with a commit its remote lacks, which push.default=matching would also send.
+        self.git(clean, "checkout", "-q", "-b", "other")
+        self.git(clean, "push", "-q", "origin", "other")
+        (clean / "notes.txt").write_text("private\n")
+        self.git(clean, "add", "notes.txt")
+        self.git(clean, "commit", "-q", "-m", "private")
+        self.git(clean, "checkout", "-q", "main")
+        self.git(clean, "config", "push.default", "matching")
         (ahead / "notes.txt").write_text("work in progress\n")
         self.git(ahead, "add", "notes.txt")
         self.git(ahead, "commit", "-q", "-m", "work in progress")
         (staged / "notes.txt").write_text("staged by hand\n")
         self.git(staged, "add", "notes.txt")
         self.git(detached, "checkout", "-q", "--detach")
-        before = {root: self.git(root, "rev-parse", "HEAD") for root in (staged, detached)}
+        # A merge in progress whose index equals HEAD.
+        self.git(merging, "checkout", "-q", "-b", "side")
+        self.git(merging, "commit", "-q", "--allow-empty", "-m", "side")
+        self.git(merging, "checkout", "-q", "main")
+        self.git(merging, "merge", "-q", "--no-ff", "--no-commit", "-s", "ours", "side")
+        before = {root: self.git(root, "rev-parse", "HEAD") for root in (staged, detached, merging)}
         _, out = self.run_it("", "--yes", "--push")
         for root in (clean, ahead):
             self.assertEqual(self.git(root, "log", "-1", "--format=%s"), KIT_COMMIT, out)
             self.assertEqual(self.git(root, "show", "--name-only", "--format=", "HEAD"), ".claude/agents/code-reviewer.md")
         self.assertEqual(self.git(clean, "rev-parse", "HEAD"), self.git(clean, "rev-parse", "origin/main"))
-        self.assertIn("pushed   main", out)
+        remote = pathlib.Path(self.tmp.name, "clean.git")
+        self.assertNotEqual(self.git(self.tmp.name, "--git-dir", str(remote), "rev-parse", "other"),
+                            self.git(clean, "rev-parse", "other"))
+        self.assertIn("pushed   main to origin", out)
         self.assertEqual(self.git(ahead, "rev-list", "--count", "origin/main..HEAD"), "2")
         self.assertIn("not pushed: main has 2 commits its upstream lacks", out)
-        for root in (staged, detached):
+        for root in (staged, detached, merging):
             self.assertEqual(self.git(root, "rev-parse", "HEAD"), before[root])
         self.assertIn("not committed: something else is already staged here", out)
         self.assertIn("not committed: HEAD is on no branch here", out)
+        self.git(merging, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+        # A copy that differs only by an uncommitted edit is current once restored: no commit, no problem.
+        (clean / ".claude/agents/code-reviewer.md").write_text("a local edit\n")
+        _, again = self.run_it("", "--yes", "--push", "--skip", "broken", "--skip", "merging")
+        self.assertIn("nothing to commit: HEAD already holds the kit copies", again)
+        self.assertNotIn("PROBLEM", again)
 
 
 if __name__ == "__main__":

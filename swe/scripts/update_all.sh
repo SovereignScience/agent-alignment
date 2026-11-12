@@ -129,20 +129,26 @@ for root in "$workspace"/*/; do
                 echo "note     not committed: something else is already staged here"
             elif ! git -C "$root" ls-files --error-unmatch -- "${files[@]}" >/dev/null 2>&1; then
                 echo "note     not committed: Git does not track them here"
-            elif ! { git -C "$root" add -- "${files[@]}" \
-                    && git -C "$root" commit -q -m "chore(agents): update the kit's agents and commands"; }; then
+            elif git -C "$root" diff --quiet HEAD -- "${files[@]}" 2>/dev/null; then
+                echo "note     nothing to commit: HEAD already holds the kit copies"
+            elif ! git -C "$root" commit -q -m "chore(agents): update the kit's agents and commands" -- "${files[@]}"; then
+                # Naming the files keeps the commit to them, and Git refuses it during a merge.
                 problems=$((problems + 1)); echo "PROBLEM  the kit copies could not be committed; the lines above say why"
             else
                 echo "commit   $(git -C "$root" rev-parse --short HEAD) on $branch holds the kit copies"
+                # Push to the upstream that the count is taken against, and only this branch,
+                # whatever push.default or pushRemote say.
+                remote=$(git -C "$root" config "branch.$branch.remote" || true)
+                merge=$(git -C "$root" config "branch.$branch.merge" || true)
                 ahead=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || true)
-                if [ "$push" = no ]; then
-                    echo "note     not pushed; push it with: git -C $root push"
-                elif [ -z "$ahead" ]; then
+                if [ -z "$remote" ] || [ -z "$merge" ] || [ -z "$ahead" ]; then
                     echo "note     not pushed: $branch has no upstream"
+                elif [ "$push" = no ]; then
+                    echo "note     not pushed; push it with: git -C $root push $remote HEAD:$merge"
                 elif [ "$ahead" != 1 ]; then
                     echo "note     not pushed: $branch has $ahead commits its upstream lacks; check them, then push"
-                elif git -C "$root" push -q; then
-                    echo "pushed   $branch"
+                elif git -C "$root" push -q "$remote" "HEAD:$merge"; then
+                    echo "pushed   $branch to $remote"
                 else
                     problems=$((problems + 1)); echo "PROBLEM  the push of $branch did not go through; the commit stays here"
                 fi
