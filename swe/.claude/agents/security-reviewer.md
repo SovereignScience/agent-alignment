@@ -46,7 +46,8 @@ output is a punch list, not a rewrite.
    diffs against the project's allow-list (if any) and against the
    public CVE database for the named version.
 5. Output a numbered punch list with severity (CRITICAL / HIGH /
-   MEDIUM / LOW / INFO) and a concrete fix direction. Do not propose
+   MEDIUM / LOW / INFO) and a concrete fix direction. CRITICAL and
+   HIGH are blocking: the merge waits. The rest are optional. Do not propose
    code; the relevant specialist implements.
 
 ## Output format

@@ -45,7 +45,7 @@ your agent's word cap."
 
 After all five return, synthesize:
 
-- Deduplicated severity-sorted findings.
+- Deduplicated findings, blocking ones first.
 - Conflicts between agents (one says fix X, another says X is fine).
 - Items deliberately not reviewed (handoff gaps).
 - Final recommendation: SHIP / SHIP-WITH-NOTE / BLOCK.

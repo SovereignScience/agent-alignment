@@ -254,7 +254,8 @@ upstream, and every open acceptance criterion has evidence. Write an
 install or deploy as a criterion; its evidence is what lets the task
 close. The dashboard's status control is held to the
 same rule for tasks that have work; tasks without commits (decisions,
-spikes) need only evidence on every open criterion. Completion is `lattice status <ID> done
+spikes) need only evidence on every open criterion. A criterion whose
+newest linked note opens with "Not met" counts as open. Completion is `lattice status <ID> done
 --no-auto-review` with the review already on the task; the command
 itself is not gated, so agents never run it (`lattice complete` only
 works with a status literally named `review`). A Plannotator run that exits with an error or
