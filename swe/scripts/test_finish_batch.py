@@ -163,7 +163,7 @@ class FinishBatch(unittest.TestCase):
         self.git("push", "-q", "origin", "main")
         self.finish("y\ny\n\n")
         self.git("push", "-q", "origin", "main")
-        code, out = self.finish("")
+        code, out = self.finish("y\n")
         self.assertEqual(code, 0, out)
         notes = [event["data"]["body"] for path in (self.board / "events").glob("*.jsonl")
                  for event in map(json.loads, path.read_text().splitlines())
