@@ -482,6 +482,27 @@ class PureTests(RepoFixture):
         self.assertIn("deleted", lr.completion_block(self.repo, task_record, "main", [by_owner, later_by_agent, withdrawn]))
         self.assertIs(lr.latest_review([by_owner, dict(withdrawn, author="agent:x")]), by_owner)
 
+    def test_an_automatic_merge_adds_nothing_even_when_both_sides_changed_neighbouring_lines(self):
+        lines = ["l%d" % n for n in range(1, 9)]
+        commit(self.repo, "table", "docs: table", "\n".join(lines))
+        git(self.repo, "checkout", "-q", "-b", "left")
+        commit(self.repo, "table", "docs: left", "\n".join(lines).replace("l3", "l3 left"))
+        git(self.repo, "checkout", "-q", "main")
+        commit(self.repo, "table", "docs: right", "\n".join(lines).replace("l5", "l5 right"))
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "merge", "-q", "--no-ff", "left", "-m", "merge left")
+        merged = git(self.repo, "rev-parse", "HEAD")
+        self.assertTrue(git(self.repo, "diff-tree", "-p", "--cc", "--no-commit-id", merged))
+        self.assertTrue(lr.adds_nothing(self.repo, merged))
+        git(self.repo, "checkout", "-q", "-b", "other", "HEAD~1")
+        commit(self.repo, "other", "docs: other")
+        git(self.repo, "checkout", "-q", "main")
+        git(self.repo, "merge", "-q", "--no-ff", "--no-commit", "other")
+        (self.repo / "table").write_text("written by hand\n")
+        git(self.repo, "add", "table")
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "merge other")
+        self.assertFalse(lr.adds_nothing(self.repo, git(self.repo, "rev-parse", "HEAD")))
+        self.assertFalse(lr.adds_nothing(self.repo, git(self.repo, "rev-parse", "HEAD^2")))
+
     def test_earlier_approvals_cover_merged_history_but_not_new_work(self):
         record = lr.find_task(self.repo, "AB-2")
         ident = ("-c", "user.name=t", "-c", "user.email=t@example.invalid")
