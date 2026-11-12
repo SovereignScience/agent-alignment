@@ -72,6 +72,7 @@ class UpdateAll(unittest.TestCase):
         self.git(self.tmp.name, "init", "-q", "--bare", str(remote))
         self.git(root, "remote", "add", "origin", str(remote))
         self.git(root, "push", "-q", "-u", "origin", "main")
+        self.git(root, "remote", "set-head", "origin", "main")
         return root
 
     def hook(self, name):
@@ -145,6 +146,20 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual((root / ".claude/agents/code-reviewer.md").read_text(), "a local edit\n")
         self.assertEqual(self.git(root, "rev-parse", "HEAD"), head)
         self.assertIn("kept     .claude/agents/code-reviewer.md: it has uncommitted edits", out)
+
+    def test_the_kit_commit_goes_only_on_the_branch_that_tracks_the_remote_default(self):
+        feature, unknown = self.project("feature"), self.project("unknown")
+        self.git(feature, "checkout", "-q", "-b", "work")
+        self.git(feature, "push", "-q", "-u", "origin", "work")
+        self.git(unknown, "remote", "set-head", "origin", "--delete")
+        heads = {root: self.git(root, "rev-parse", "HEAD") for root in (feature, unknown)}
+        _, out = self.run_it("", "--yes", "--push")
+        for root, head in heads.items():
+            self.assertEqual(self.git(root, "rev-parse", "HEAD"), head, out)
+        self.assertIn("not committed: work is not the default branch of origin (origin/main)", out)
+        self.assertIn("not committed: the default branch of origin is not known here (git remote set-head origin --auto", out)
+        remote = str(pathlib.Path(self.tmp.name, "feature.git"))
+        self.assertEqual(self.git(self.tmp.name, "--git-dir", remote, "rev-parse", "work"), heads[feature])
 
     def test_the_push_sends_no_tags_even_where_push_follow_tags_is_on(self):
         root = self.project("tagged")

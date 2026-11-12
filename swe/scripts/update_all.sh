@@ -19,12 +19,13 @@
 #      installed for every project, and holds no path from this machine). A
 #      tracked copy with uncommitted edits
 #      is left alone; an untracked one keeps its old text as .bak. It
-#      commits those files and nothing else, unless something else is
-#      staged, they are not tracked, HEAD is on no branch or a merge,
-#      rebase, cherry-pick or revert is in progress. With --push it pushes
-#      that commit when it is the only one the branch's upstream lacks and
-#      the branch pushes to that upstream; the push check may ask at the
-#      terminal, once a repository;
+#      commits those files and nothing else, and only on the branch that
+#      tracks its remote's default branch; it does not commit when
+#      something else is staged, they are not tracked, HEAD is on no branch
+#      or a merge, rebase, cherry-pick or revert is in progress. With
+#      --push it pushes that commit when it is the only one the branch's
+#      upstream lacks and the branch pushes to that upstream; the push
+#      check may ask at the terminal, once a repository;
 #   3. brings the board up to date with board_update.sh --apply where the
 #      repository has one.
 # It says first whether this machine's installed rules, agents and commands
@@ -186,6 +187,16 @@ for root in "$workspace"/*/; do
             for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
                 [ ! -e "$(git -C "$root" rev-parse --path-format=absolute --git-path "$state")" ] || busy=$state
             done
+            # The kit commit goes only on the branch the remote calls its default, never
+            # into work on another branch.
+            remote="" merge="" upstream="" default=""
+            if [ -n "$branch" ]; then
+                remote=$(git -C "$root" config "branch.$branch.remote" || true)
+                merge=$(git -C "$root" config "branch.$branch.merge" || true)
+                upstream=$(git -C "$root" rev-parse --symbolic-full-name '@{u}' 2>/dev/null || true)
+                [ -z "$remote" ] || [ "$remote" = . ] \
+                    || default=$(git -C "$root" symbolic-ref -q "refs/remotes/$remote/HEAD" || true)
+            fi
             if [ -z "$branch" ]; then
                 echo "note     not committed: HEAD is on no branch here; commit them yourself"
             elif [ -n "$busy" ]; then
@@ -194,20 +205,21 @@ for root in "$workspace"/*/; do
                 echo "note     not committed: something else is already staged here"
             elif ! git -C "$root" ls-files --error-unmatch -- "${files[@]}" >/dev/null 2>&1; then
                 echo "note     not committed: Git does not track them here; untracked copies kept their old text as *.$stamp.bak"
+            elif [ -z "$remote" ] || [ "$remote" = . ]; then
+                echo "note     not committed: $branch tracks no remote branch; commit them yourself"
+            elif [ -z "$default" ]; then
+                echo "note     not committed: the default branch of $remote is not known here (git remote set-head $remote --auto sets it); commit them yourself"
+            elif [ "$upstream" != "$default" ]; then
+                echo "note     not committed: $branch is not the default branch of $remote (${default#refs/remotes/}); commit them yourself"
             elif ! git -C "$root" commit -q -m "chore(agents): update the kit's agents and commands" -- "${files[@]}"; then
                 problems=$((problems + 1)); echo "PROBLEM  the kit copies could not be committed; the lines above say why"
             else
                 echo "commit   $(git -C "$root" rev-parse --short HEAD) on $branch holds the kit copies"
                 # Push only where this branch's pushes go to the upstream the count is taken
                 # against, and name the one ref, whatever push.default says.
-                remote=$(git -C "$root" config "branch.$branch.remote" || true)
-                merge=$(git -C "$root" config "branch.$branch.merge" || true)
-                upstream=$(git -C "$root" rev-parse --symbolic-full-name '@{u}' 2>/dev/null || true)
                 pushes_to=$(git -C "$root" rev-parse --symbolic-full-name '@{push}' 2>/dev/null || true)
-                ahead=$(git -C "$root" rev-list --count '@{u}..HEAD' 2>/dev/null || true)
-                if [ -z "$upstream" ] || [ -z "$ahead" ] || [ "$remote" = . ]; then
-                    echo "note     not pushed: $branch has no remote upstream to compare with"
-                elif [ "$pushes_to" != "$upstream" ]; then
+                ahead=$(git -C "$root" rev-list --count '@{u}..HEAD')
+                if [ "$pushes_to" != "$upstream" ]; then
                     echo "note     not pushed: pushes from $branch do not go to its upstream $upstream; push it yourself"
                 elif [ "$push" = no ]; then
                     echo "note     not pushed; push it with: git -C $root push --no-follow-tags $remote HEAD:$merge"
