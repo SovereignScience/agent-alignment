@@ -172,6 +172,9 @@ def close(board, sids, ask=input, say=print):
         task = board.task(sid)
         if task.get("status") == "done":
             continue
+        if task.get("status") != "in_review":
+            say("%s: left open: it is %s, and only a task in review can be marked done" % (sid, task.get("status")))
+            continue
         block = lr.completion_block(board.repo, task, board.main, board.comments(sid))
         if block:
             say("%s: left open: %s" % (sid, block))
