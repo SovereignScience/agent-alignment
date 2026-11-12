@@ -288,7 +288,8 @@ stand and prints the command that takes it back. A rerun continues, and
 accepts a merge already on local main only when it has the same two
 parents and the same files as the one it would make. `--no-push` stops
 after the checks, and `--skip-unapproved` leaves out a task whose review
-does not cover its commits.
+does not cover its commits, together with every task whose branch
+contains that task's branch or a commit carrying its trailer.
 
 `owner_review.py` takes the same decisions in the terminal. `approve`
 shows a task's head commit and a one-line summary, lets you resolve an

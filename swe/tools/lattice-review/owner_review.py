@@ -8,8 +8,9 @@
     owner_review.py branches AA-7 [AA-8 ...]
 
 Run it yourself; it writes to the board as a person. approve shows each
-task's exact head commit and a one-line summary, asks y or n, and records a
-yes as a review bound to those commits, in the form the review section and
+task's exact head commit and a one-line summary, names the other tasks of
+the batch that its branch holds, asks y or n (d lists the commits and files
+first), and records a yes as a review bound to those commits, in the form the review section and
 merge_approved.py read. An open review thread is shown first and can be
 resolved there; a task with a thread left open is not approved. evidence
 records the note on each named criterion that has none yet, once the task
@@ -59,6 +60,15 @@ def first_line(text):
 def approve(board, sids, ask=input, say=print):
     """Ask about each task in turn. Returns the IDs approved in this run."""
     approved = []
+    heads = {}
+    for sid in sids:
+        waiting = lr.resolve_range(board.repo, board.task(sid), board.main)
+        if waiting["mode"] == "branch":
+            heads[sid] = waiting["head_sha"]
+
+    def contains(outer, inner):
+        return lr.git_result(board.repo, ("merge-base", "--is-ancestor", heads[inner], heads[outer])).returncode == 0
+
     for sid in sids:
         task = board.task(sid)
         rng = lr.resolve_range(board.repo, task, board.main)
@@ -85,7 +95,23 @@ def approve(board, sids, ask=input, say=print):
             stat = first_line(lr.run_git(board.repo, "diff", "--shortstat", rng["base_sha"], rng["head_sha"]))
             say("%s  %s  %s" % (sid, rng["head_sha"], task.get("title") or ""))
             say("    %d commit(s) past %s; %s" % (len(rng["commits"]), board.main, stat or "no file changed"))
-            answer = ask("    Approve %s at %s? [y/N/q] " % (sid, rng["head_sha"][:12])).strip().lower()
+            others = [other for other in sids if other != sid and other in heads]
+            carried = lr.carried_tasks(board.repo, rng["base_sha"], rng["head_sha"], others)
+            inner = [other for other in others if other in carried or contains(sid, other)]
+            if inner:
+                say("    its branch also holds %d other task(s) of this batch: %s" % (len(inner), " ".join(inner)))
+                say("    a yes here approves their commits too")
+                waiting = [other for other in inner
+                           if lr.review_block(board.repo, board.task(other), board.main, board.comments(other))]
+                if waiting:
+                    say("    not approved themselves: %s; this task is not merged until they are" % " ".join(waiting))
+            answer = "d"
+            while answer == "d":
+                answer = ask("    Approve %s at %s? [y/N/d for the commits and files/q] " % (sid, rng["head_sha"][:12])).strip().lower()
+                if answer == "d":
+                    span = "%s..%s" % (rng["base_sha"], rng["head_sha"])
+                    say(lr.run_git(board.repo, "log", "--oneline", "--no-merges", span).rstrip())
+                    say(lr.run_git(board.repo, "diff", "--stat", rng["base_sha"], rng["head_sha"]).rstrip())
         except EOFError:
             say("no more answers; the remaining tasks were not asked about")
             break
