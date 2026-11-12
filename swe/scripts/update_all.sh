@@ -29,6 +29,8 @@
 #      repository has one.
 # It says first whether this machine's installed rules, agents and commands
 # match the kit; installing them is switch_rules.sh apply, which needs sudo.
+# It stops before any project when there is neither that file nor --skip, or
+# when a name to leave out matches no folder; an empty file leaves out nothing.
 # It deletes nothing. Exits 1 when any project could not be brought up to date.
 set -euo pipefail
 
@@ -51,19 +53,21 @@ done
 skip_file="$HOME/.config/agent-alignment/skip"
 if [ -f "$skip_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
-        line=${line%$'\r'} && line=${line%/}
+        line=${line#"${line%%[![:space:]]*}"} && line=${line%"${line##*[![:space:]]}"} && line=${line%/}
         [ -z "$line" ] || skip+=("$line")
     done < "$skip_file"
-fi
-if [ ${#skip[@]} -gt 0 ]; then
-    echo "skip     ${skip[*]}"
-else
-    echo "skip     nothing: no --skip, and no $skip_file"
+elif [ ${#skip[@]} -eq 0 ]; then
+    die "no $skip_file: name the folders to leave out there, one a line; an empty file leaves out nothing"
 fi
 # The push hook installed before this kit's own: it runs an older copy of the
 # push check from /etc/claude-code/hooks that nothing updates any more.
 old_wrapper=23f9cb1e867513f69d570947f290386d14f06d39e185faa33b0f8744d89bae1b
 [ -d "$workspace" ] || die "no workspace at $workspace"
+for s in "${skip[@]}"; do
+    [ "$s" = "${s##*/}" ] && [ -e "$workspace/$s" ] \
+        || die "nothing in $workspace is named $s; correct it in --skip or $skip_file"
+done
+echo "skip     ${skip[*]:-nothing}"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 
 state=0
