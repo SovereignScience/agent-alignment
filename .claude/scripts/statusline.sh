@@ -18,5 +18,5 @@ dirty_colored="${c_dim}${dirty}${c_off}"
 ahead_segment=""
 [[ "$ahead" -gt 0 ]] && ahead_segment=" ${c_dim}+${ahead}${c_off}"
 
-printf "agent-alignment ${c_dim}(router)${c_off} ${c_dim}|${c_off} %s%s ${c_dim}|${c_off} dirty:%s ${c_dim}cd swe/ or flourishing/${c_off}\n" \
+printf "agent-alignment ${c_dim}(main checkout)${c_off} ${c_dim}|${c_off} %s%s ${c_dim}|${c_off} dirty:%s ${c_dim}tracks: swe/ flourishing/${c_off}\n" \
   "$branch" "$ahead_segment" "$dirty_colored"
