@@ -15,8 +15,8 @@
 #   4. refreshes the pre-push hook in this repository, if one is installed;
 #   5. with --context, installs that file as this repository's board context.
 # status --exit-code also answers by exit status, for a script: 0 when apply
-# would change nothing, 1 when it would change something, 2 when it could not
-# go ahead.
+# would change nothing, 3 when it would change something, 2 when it could not
+# go ahead. Any other status is an error.
 # revert restores each saved file and removes any that did not exist when the
 # snapshot was taken. With no name it goes back to the state before the first
 # apply that has not been reverted, however many times apply ran since, and
@@ -165,7 +165,7 @@ status)
     target="$(revert_target)"
     echo "Revert goes back to: ${target:-nothing, no apply is waiting to be reverted}"
     if [ "$answer" = yes ] && [ "$blocked" = 1 ]; then exit 2; fi
-    if [ "$answer" = yes ] && [ "$pending" = 1 ]; then exit 1; fi
+    if [ "$answer" = yes ] && [ "$pending" = 1 ]; then exit 3; fi
     ;;
 apply)
     context=""

@@ -276,10 +276,22 @@ def task_commits(repo, short_id, refs):
     return sorted(seen.values(), key=lambda c: run_git(repo, "rev-list", "--count", c["hash"]).strip().zfill(9))
 
 
+def range_owners(repo, base, head):
+    """Each commit in base..head as (sha, task IDs from its Task trailers, whether it is a merge)."""
+    out = run_git(repo, "log", "--format=%H%x1f%P%x1f%(trailers:key=Task,valueonly,separator=%x2C)%x1e",
+                  base + ".." + head)
+    rows = []
+    for record in out.split("\x1e"):
+        parts = record.strip("\n").split("\x1f")
+        if len(parts) == 3:
+            ids = [part.strip() for part in parts[2].replace("\n", ",").split(",") if part.strip()]
+            rows.append((parts[0], ids, len(parts[1].split()) > 1))
+    return rows
+
+
 def carried_tasks(repo, base, head, short_ids):
     """Which of the tasks have a commit of their own, by its Task trailer, in base..head."""
-    named = run_git(repo, "log", "--format=%(trailers:key=Task,valueonly,separator=%x2C)", base + ".." + head)
-    found = {part.strip() for line in named.splitlines() for part in line.split(",")}
+    found = {sid for _, ids, _ in range_owners(repo, base, head) for sid in ids}
     return [sid for sid in short_ids if sid in found]
 
 
