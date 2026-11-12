@@ -434,6 +434,9 @@ LATTICE_ACTOR_FLAGS = ("--actor", "--on-behalf-of")
 LATTICE_VALUES = {"--actor", "--on-behalf-of", "--name", "--model", "--session", "--triggered-by",
                   "--reason", "--note", "--role", "--file", "--title"}
 LATTICE_OWNER_ROLES = ("review", "plan-review")
+# The owner's terminal commands record approvals, merge, push and close. They
+# write the board as the owner, so the board's own refusals above do not see them.
+OWNER_SCRIPTS = ("owner_review.py", "merge_approved.py", "finish_batch.sh")
 
 
 def check_lattice(args):
@@ -705,6 +708,10 @@ def check_argv(argv):
             DEPTH[0] -= 1
     name = os.path.basename(argv[0])
     args = argv[1:]
+    owner_script = next((os.path.basename(a) for a in argv if os.path.basename(a) in OWNER_SCRIPTS), None)
+    if owner_script:
+        owner_only(owner_script,
+                   "It records the owner's approvals, merges or closes tasks. Hand the owner the command instead.")
     if any(os.path.basename(a) == "local_browser.py" for a in argv):
         # scripts/local_browser.py runs its --app value as a shell command.
         for i, a in enumerate(args):
