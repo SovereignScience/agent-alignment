@@ -29,9 +29,9 @@ class Board(unittest.TestCase):
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         self.log = self.tmp / "started.json"
 
-    def hold(self, *args):
+    def hold(self, *args, cwd=None):
         """The port of a process listening on a free one, with args on its command line."""
-        proc = subprocess.Popen([sys.executable, "-c", HOLD, *args], stdout=subprocess.PIPE, text=True)
+        proc = subprocess.Popen([sys.executable, "-c", HOLD, *args], cwd=cwd, stdout=subprocess.PIPE, text=True)
         self.addCleanup(proc.wait)
         self.addCleanup(proc.kill)
         self.addCleanup(proc.stdout.close)
@@ -50,7 +50,7 @@ class Board(unittest.TestCase):
         return run.stdout, started
 
     def test_a_port_another_board_holds_moves_this_board_to_a_free_one(self):
-        taken = self.hold("--board", str(self.tmp / "other"))
+        taken = self.hold("lattice_review.py", "--board", str(self.tmp / "other"))
         self.give_port(taken)
         out, started = self.board()
         self.assertIsNotNone(started, out)
@@ -63,12 +63,14 @@ class Board(unittest.TestCase):
         self.assertIn("now uses port %d" % new, out)
 
     def test_this_boards_own_server_is_left_running(self):
-        port = self.hold("--board", str(self.root))
-        self.give_port(port)
-        out, started = self.board()
-        self.assertIsNone(started)
-        self.assertIn("already running on port %d" % port, out)
-        self.assertEqual(json.loads((self.root / ".lattice/config.json").read_text())["dashboard_port"], port)
+        for how, port in (("board", self.hold("lattice_review.py", "--board", str(self.root))),
+                          ("the long way", self.hold("lattice_review.py", "--actor", "human:t", cwd=self.root))):
+            with self.subTest(how):
+                self.give_port(port)
+                out, started = self.board()
+                self.assertIsNone(started)
+                self.assertIn("already running on port %d" % port, out)
+                self.assertEqual(json.loads((self.root / ".lattice/config.json").read_text())["dashboard_port"], port)
 
 
 if __name__ == "__main__":
