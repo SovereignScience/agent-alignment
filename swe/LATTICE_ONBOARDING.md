@@ -99,9 +99,10 @@ bash <agent-alignment>/swe/scripts/board_setup.sh --actor human:<owner>
 
 It does steps 1, 2, 3 and 3b below and changes no tracked file. The
 project name is the folder name, the code its initials, and the port the
-first from 8803 that nothing listens on; if another board already has
-that port, change `dashboard_port` in `.lattice/config.json` and the port
-line in `context.md`. It ends with a line that starts `READY:`. Add
+first from 8803 that nothing listens on. When `board` finds that port
+held by anything else, it moves the board to the first free port and
+writes it to `.lattice/config.json` and `context.md`. It ends with a
+line that starts `READY:`. Add
 `--remote <url>` to push the new board to its private repository, which
 the owner creates first. It refuses a project that already has a board.
 

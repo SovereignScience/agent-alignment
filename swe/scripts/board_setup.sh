@@ -9,8 +9,8 @@
 # template, keeps .lattice/ and .worktrees/ out of source Git through
 # .git/info/exclude, makes the board its own Git repository and commits it.
 # The project name is the folder name, the project code its initials, and the
-# review page port the first from 8803 that nothing listens on. Change
-# dashboard_port in .lattice/config.json if another board already has it.
+# review page port the first from 8803 that nothing listens on; board
+# moves it when another program holds it.
 #
 # --remote names the board's private repository. If it already holds a board,
 # that board is cloned into .lattice instead of a new one being made, which
