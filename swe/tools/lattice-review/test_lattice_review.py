@@ -1,4 +1,5 @@
 import http.client
+import io
 import json
 import os
 import shutil
@@ -82,8 +83,13 @@ def wait_file(path, lines=1):
     return path.read_text() if path.exists() else ""
 
 
-def serve(handler):
+KEYS = {}
+
+
+def serve(handler, ctx):
+    """Serve handler on a free port; call() then signs in as the owner of ctx."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    KEYS[server.server_address[1]] = ctx.key
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 
@@ -93,9 +99,14 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def call(url, data=None, headers=None, method=None):
-    """(status, body, headers) for a request, redirects and errors included."""
-    request = urllib.request.Request(url, data=data, headers=headers or {}, method=method or ("POST" if data is not None else "GET"))
+def call(url, data=None, headers=None, method=None, owner=True):
+    """(status, body, headers) for a request, redirects and errors included.
+    owner sends the owner's cookie for a server started with serve()."""
+    headers = dict(headers or {})
+    port = urllib.parse.urlsplit(url).port
+    if owner and port in KEYS:
+        headers.setdefault("Cookie", "board_key_%d=%s" % (port, KEYS[port]))
+    request = urllib.request.Request(url, data=data, headers=headers, method=method or ("POST" if data is not None else "GET"))
     try:
         with urllib.request.build_opener(NoRedirect).open(request) as response:
             return response.status, response.read().decode(), response.headers
@@ -955,7 +966,7 @@ class SectionTests(RepoFixture):
         self.ctx.board_write = lambda key, *args: self.calls.append(args) or True
         self.reviews = {}
         self.ctx.comments = lambda sid: self.reviews.get(sid, [])
-        self.server = serve(lr.make_handler(self.ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        self.server = serve(lr.make_handler(self.ctx, base=StubDashboard, static_dir=StubDashboard.static_dir), self.ctx)
         self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
 
     def tearDown(self):
@@ -979,7 +990,7 @@ class SectionTests(RepoFixture):
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", b"[1]", headers)[0], 400)
         big = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
         big.putrequest("POST", "/api/tasks/task_AB9/status")
-        for name, value in headers.items():
+        for name, value in dict(headers, Cookie="board_key_%d=%s" % (self.server.server_address[1], self.ctx.key)).items():
             big.putheader(name, value)
         big.putheader("Content-Length", str(lr.MAX_BODY + 2))
         big.endheaders()
@@ -988,6 +999,32 @@ class SectionTests(RepoFixture):
         self.assertEqual(StubDashboard.received, [])
         self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, headers)[0], 200)
         self.assertEqual(StubDashboard.received[-1], ("/api/tasks/task_AB9/status", {"status": "todo", "actor": "human:t"}))
+
+    def test_only_the_owners_browser_gets_in(self):
+        port = self.server.server_address[1]
+        for path in ("/", "/api/tasks/task_AB2", "/review/t/AB-2", "/t/AB-2"):
+            self.assertEqual(call(self.base + path, owner=False)[0], 403, path)
+        body = json.dumps({"status": "todo"}).encode()
+        self.assertEqual(call(self.base + "/api/tasks/task_AB9/status", body, origin(self.base), owner=False)[0], 403)
+        self.assertEqual(call(self.base + "/review/t/AB-2/complete", form(self.ctx), owner=False)[0], 403)
+        for cookie in ("board_key_%d=%s" % (port + 1, self.ctx.key), "board_key_%d=wrong" % port):
+            self.assertEqual(call(self.base + "/", headers={"Cookie": cookie}, owner=False)[0], 403, cookie)
+        status, _, headers = call(self.base + "/?key=wrong", owner=False)
+        self.assertEqual((status, headers.get("Set-Cookie")), (403, None))
+        self.assertEqual((StubDashboard.received, self.calls), ([], []))
+
+    def test_the_printed_link_signs_a_browser_in_and_the_key_stays_out_of_the_log(self):
+        port = self.server.server_address[1]
+        with mock.patch("sys.stderr", new=io.StringIO()) as log:
+            status, _, headers = call(self.base + "/review/t/AB-2?key=%s&x=1" % self.ctx.key, owner=False)
+        self.assertEqual((status, headers["Location"]), (303, "/review/t/AB-2?x=1"))
+        cookie = headers["Set-Cookie"]
+        self.assertTrue(cookie.startswith("board_key_%d=%s;" % (port, self.ctx.key)), cookie)
+        for flag in ("HttpOnly", "SameSite=Strict", "Path=/"):
+            self.assertIn(flag, cookie)
+        self.assertIn("key=<key>", log.getvalue())
+        self.assertNotIn(self.ctx.key, log.getvalue())
+        self.assertEqual(call(self.base + "/", headers={"Cookie": "other=1; " + cookie.split(";")[0]}, owner=False)[0], 200)
 
     def test_dashboard_writes_without_an_actor_carry_the_owner(self):
         call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "native comment"}).encode(), origin(self.base))
@@ -1340,7 +1377,7 @@ class CliTests(RepoFixture):
         self.assertEqual(lr.review_decision(comments[0]["body"]), "approved")
         self.assertIsNone(lr.completion_block(self.repo, lr.find_task(board, sid), "main", comments))
         StubDashboard.static_dir = self.repo / "static"
-        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir), ctx)
         base = "http://127.0.0.1:%d" % server.server_address[1]
         try:
             self.assertIn("Mark done: approved at " + rng["head_sha"][:12], call(base + "/review/t/" + sid)[1])
@@ -1381,7 +1418,7 @@ class CliTests(RepoFixture):
         review("approved", "Code review completed")
         self.assertIn("2 review thread(s) are not resolved", lr.completion_block(self.repo, lr.find_task(board, sid), "main", ctx.comments(sid)))
         StubDashboard.static_dir = self.repo / "static"
-        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir), ctx)
         base = "http://127.0.0.1:%d" % server.server_address[1]
         try:
             self.assertIn("&gt; second line", call(base + "/review/t/" + sid)[1])
@@ -1415,7 +1452,7 @@ class CliTests(RepoFixture):
         restarted = self.context(board=board, repo=self.repo)
         self.assertIn("only 1 of the 2 notes", lr.completion_block(self.repo, lr.find_task(board, sid), "main", restarted.comments(sid)))
         StubDashboard.static_dir = self.repo / "static"
-        server = serve(lr.make_handler(restarted, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        server = serve(lr.make_handler(restarted, base=StubDashboard, static_dir=StubDashboard.static_dir), restarted)
         base = "http://127.0.0.1:%d" % server.server_address[1]
         try:
             page = call(base + "/review/t/" + sid)[1]
@@ -1517,7 +1554,7 @@ class CliTests(RepoFixture):
         review("approved", "")
         self.assertIsNone(lr.find_task(board, sid).get("needs_human"))
         StubDashboard.static_dir = self.repo / "static"
-        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir))
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir), ctx)
         base = "http://127.0.0.1:%d" % server.server_address[1]
         try:
             page = call(base + "/review/t/" + sid)[1]
@@ -1541,7 +1578,7 @@ class DashboardTests(RepoFixture):
         ctx = self.context(board=board, repo=self.repo)
         ctx.plannotator = fake_plannotator(self.tools, decision="approved", message="fine")
         ctx.code = fake_code(self.tools)
-        server = serve(lr.make_handler(ctx))
+        server = serve(lr.make_handler(ctx), ctx)
         base = "http://127.0.0.1:%d" % server.server_address[1]
         try:
             status, index, _ = call(base + "/")

@@ -12,6 +12,10 @@ work can be marked done, here or with the dashboard's own status control,
 only while its latest review approves exactly the commits it has now and
 every thread is resolved. Notes and plans opened from the dashboard open
 in VS Code.
+
+Only the owner's browsers get in. Each start makes a new key, kept in
+memory and printed in a link; opening the link once in a browser sets a
+cookie, and every request without that cookie is refused.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ import argparse
 import datetime
 import difflib
 import hashlib
+import hmac
 import html
 import io
 import json
@@ -53,6 +58,7 @@ REVISION = re.compile(r"^([0-9a-f]{7,40})\.\.([0-9a-f]{7,40})( live| dirty)?$")
 DECISION = re.compile(r"^(?:Plannotator|Owner) (approved|annotated) \(")
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 1_048_576
+KEY_DAYS = 30
 # The task side panel opens at 60% of the window instead of Lattice's 30rem,
 # on an opaque background (the themes' surface is translucent, so the board
 # showed through). Each section is a card one step lighter than the panel,
@@ -1106,6 +1112,7 @@ class Context:
         self.state = Path(args.state or Path.home() / ".local" / "state" / "lattice-review" / code)
         self.state.mkdir(parents=True, exist_ok=True)
         self.token = secrets.token_hex(16)
+        self.key = secrets.token_hex(16)
         self.jobs = {}
         self.notices = {}
         self.notice_at = {}
@@ -1901,10 +1908,39 @@ def make_handler(ctx, base=None, static_dir=None):
         base = dashboard._make_handler_class(ctx.board / ".lattice")
         static_dir = dashboard.STATIC_DIR
 
+    def is_key(value):
+        return hmac.compare_digest(value.encode(), ctx.key.encode())
+
     class Handler(base):
         def log_message(self, fmt, *args):
             if not self.path.startswith("/api/"):
-                sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
+                sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), (fmt % args).replace(ctx.key, "<key>")))
+
+        def parse_request(self):
+            """Every request, whatever its method, needs the owner's key: in the
+            link printed at start, which sets the cookie and comes back without
+            it, or in the cookie. The cookie is named for the port, because a
+            browser sends 127.0.0.1 cookies to every port."""
+            if not super().parse_request():
+                return False
+            name = "board_key_%d" % self.server.server_address[1]
+            url = urllib.parse.urlsplit(self.path)
+            query = urllib.parse.parse_qsl(url.query, keep_blank_values=True)
+            given = [value for field, value in query if field == "key"]
+            cookies = [part.strip().partition("=") for header in self.headers.get_all("Cookie", []) for part in header.split(";")]
+            if not given and any(field == name and is_key(value) for field, _, value in cookies):
+                return True
+            self.close_connection = True
+            if given and all(is_key(value) for value in given):
+                rest = urllib.parse.urlencode([(field, value) for field, value in query if field != "key"])
+                self.send_response(303)
+                self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (name, ctx.key, KEY_DAYS * 86400))
+                self.send_header("Location", urllib.parse.urlunsplit(("", "", url.path or "/", rest, "")))
+                self.end_headers()
+            else:
+                self.forbidden("This browser is not signed in to this board, or the board has restarted since. "
+                               "Open the link printed in the terminal where board runs.")
+            return False
 
         def send_page(self, data, status=200, content_type="text/html; charset=utf-8"):
             self.send_response(status)
@@ -2152,6 +2188,8 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx))
     print("board with review at http://127.0.0.1:%d (board %s, repo %s, actor %s, logs %s)" % (port, ctx.board, ctx.repo, ctx.actor, ctx.state))
+    print("Open this link once in each browser you use; it signs that browser in until the board stops:")
+    print("http://127.0.0.1:%d/?key=%s" % (port, ctx.key), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

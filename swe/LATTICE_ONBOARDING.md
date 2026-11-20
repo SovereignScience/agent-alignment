@@ -825,7 +825,8 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 
 `--main` defaults to `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
-http://127.0.0.1:<port> and click a task. Its detail view has a Review
+the link it prints, once in each browser, and click a task. Its detail
+view has a Review
 section with two blocks, after a Dependencies block when the task has
 links. Plan shows the plan's state with "Plannotator: review the plan"
 and "Open the plan in VS Code"; with no plan file its one button is
