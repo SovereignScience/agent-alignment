@@ -434,7 +434,9 @@ cookie gets 403. Review POSTs also carry a per-run token; dashboard
 POSTs must carry an Origin equal to the address the page was served
 from, a JSON object body, and at most 1 MiB. None of these is a
 boundary against an agent that can already edit the files and the
-board.
+board. Open the board in a Windows browser: no session can read its
+profile, while a WSL browser's is covered only where the sandbox's read
+denials name it.
 
 ## Tests
 

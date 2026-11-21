@@ -244,7 +244,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   plus the plans of tasks it depends on; agents never use lattice next,
   lattice complete or lattice status <ID> done.
 - A session uses only this project's board, through the lattice command.
-  It never connects to a board or review server port on localhost (8800
+  It never connects to a board or review server port on localhost (8799
   to 8899), this board's included, and never writes as human:.
 - An owner comment or plan note is reconciled into the plan, description,
   criteria, needs_human reason and status before the result is reported;
