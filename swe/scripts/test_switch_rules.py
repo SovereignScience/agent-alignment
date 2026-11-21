@@ -103,7 +103,10 @@ class SwitchRules(unittest.TestCase):
         code, out = self.switch("apply")
         self.assertEqual(code, 0, out)
         note = ("The kit's files that this names (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under "
-                "scripts/ or tools/) are in %s, whichever project you are in." % (self.repo / "swe"))
+                "scripts/ or tools/) are in %s, whichever project you are in; where the sandbox hides that folder, read "
+                "them in .agent-alignment/swe at the top of the project's main checkout, and still name %s in any "
+                "command for the "
+                "owner." % (self.repo / "swe", self.repo / "swe"))
         for source in sources:
             lines = source.read_text().split("\n")
             end = lines.index("---", 1)

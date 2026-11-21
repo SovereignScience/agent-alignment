@@ -303,6 +303,11 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Task tracking
 
+Where the sandbox hides the agent-alignment kit's main checkout, read the
+kit from `.agent-alignment` at the top of the project's main checkout,
+never write there, and name the kit's main checkout, not the clone, in
+any command for me.
+
 When the repository has a `.lattice/` board and `lattice` is installed:
 - Work only on the task I selected or authorized; resume it with
   `lattice show <id>`. Never use `lattice next` to pick or claim work, and
@@ -330,7 +335,9 @@ When the repository has a `.lattice/` board and `lattice` is installed:
   selected task is complete.
 
 If there is no board or no `lattice`, do the task and say tracking was
-unavailable. Never initialize or install Lattice yourself.
+unavailable. Where the project has the kit clone and no board, first
+offer me "Start here" in its `swe/LATTICE_ONBOARDING.md`, once.
+Never initialize or install Lattice yourself.
 
 ## Sessions
 

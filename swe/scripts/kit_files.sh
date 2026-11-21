@@ -4,7 +4,7 @@
 # swe folder first.
 
 kit_mark="The kit's files that this names"
-kit_note="$kit_mark (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in."
+kit_note="$kit_mark (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in; where the sandbox hides that folder, read them in .agent-alignment/swe at the top of the project's main checkout, and still name $swe in any command for the owner."
 # The first line of the kit's push check, which tells it from another tool's hook.
 kit_hook_mark="pre-push: show what is about to leave this machine"
 
