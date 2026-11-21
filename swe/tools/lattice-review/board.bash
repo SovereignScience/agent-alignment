@@ -9,9 +9,8 @@ board() {
     # Something holds the port. Leave this board's own server running,
     # however it was started; otherwise move this board to a free port.
     new=$(/usr/bin/python3 -I - "$root" "$port" <<'PY'
-import argparse, json, os, re, socket, subprocess, sys
+import argparse, errno, json, os, re, secrets, socket, subprocess, sys
 root, old = sys.argv[1], int(sys.argv[2])
-lattice = os.path.join(root, ".lattice")
 
 def served_board(port):
     """The board directory of the lattice_review.py listening on port, else None."""
@@ -21,8 +20,27 @@ def served_board(port):
         return None
     with open("/proc/%s/cmdline" % pid[1], "rb") as f:
         argv = [os.fsdecode(arg) for arg in f.read().split(b"\0")]
-    script = next((i for i, arg in enumerate(argv) if arg.endswith("lattice_review.py")), None)
-    if script is None:
+    # The script is the first argument after Python's own options, read as
+    # Python reads them: flags group, -W and -X take a value attached or
+    # next, and -c or -m anywhere in a group means there is no script.
+    script = 1
+    while script < len(argv) and argv[script].startswith("-") and argv[script] != "-":
+        option = argv[script]
+        script += 1
+        if option == "--":
+            break
+        if option.startswith("--"):
+            if option == "--check-hash-based-pycs":
+                script += 1
+            continue
+        for at, letter in enumerate(option[1:], 2):
+            if letter in "cm":
+                return None
+            if letter in "WX":
+                if at == len(option):
+                    script += 1
+                break
+    if script >= len(argv) or os.path.basename(argv[script]) != "lattice_review.py":
         return None
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--board", default=".")
@@ -40,21 +58,35 @@ def free(port):
 new = next((p for p in range(8803, 8900) if free(p)), None)
 if new is None:
     sys.exit("board: port %d is in use by something else and no port from 8803 to 8899 is free" % old)
-config = os.path.join(lattice, "config.json")
-with open(config) as f:
+
+# Sessions can write the board and board runs outside the sandbox, so
+# nothing here follows a link or writes to a name a session could predict.
+def open_nofollow(name, flags, **where):
+    try:
+        return os.open(name, flags | os.O_NOFOLLOW, **where)
+    except OSError as err:
+        if err.errno not in (errno.ELOOP, errno.ENOTDIR):
+            raise
+        sys.exit("board: the board in %s holds a link (%s); nothing was changed" % (root, os.path.basename(name)))
+
+def write(name, text):
+    temp = ".%s.%s" % (name, secrets.token_hex(8))
+    with os.fdopen(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=board), "w") as out:
+        out.write(text)
+    os.replace(temp, name, src_dir_fd=board, dst_dir_fd=board)
+
+board = open_nofollow(os.path.join(root, ".lattice"), os.O_RDONLY | os.O_DIRECTORY)
+with os.fdopen(open_nofollow("config.json", os.O_RDONLY, dir_fd=board)) as f:
     data = json.load(f)
+try:
+    with os.fdopen(open_nofollow("context.md", os.O_RDONLY, dir_fd=board)) as f:
+        context = f.read()
+except FileNotFoundError:
+    context = None
 data["dashboard_port"] = new
-with open(config + ".new", "w") as out:
-    json.dump(data, out, indent=2, sort_keys=True)
-    out.write("\n")
-os.replace(config + ".new", config)
-context = os.path.join(lattice, "context.md")
-if os.path.exists(context):
-    with open(context) as f:
-        text = f.read()
-    with open(context + ".new", "w") as out:
-        out.write(text.replace("127.0.0.1:%d" % old, "127.0.0.1:%d" % new))
-    os.replace(context + ".new", context)
+write("config.json", json.dumps(data, indent=2, sort_keys=True) + "\n")
+if context is not None:
+    write("context.md", context.replace("127.0.0.1:%d" % old, "127.0.0.1:%d" % new))
 print(new)
 PY
     ) || return 1
