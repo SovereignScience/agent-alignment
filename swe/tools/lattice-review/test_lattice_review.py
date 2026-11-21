@@ -1022,9 +1022,18 @@ class SectionTests(RepoFixture):
         self.assertTrue(cookie.startswith("board_key_%d=%s;" % (port, self.ctx.key)), cookie)
         for flag in ("HttpOnly", "SameSite=Strict", "Path=/"):
             self.assertIn(flag, cookie)
-        self.assertIn("key=<key>", log.getvalue())
+        self.assertIn("?<query>", log.getvalue())
         self.assertNotIn(self.ctx.key, log.getvalue())
         self.assertEqual(call(self.base + "/", headers={"Cookie": "other=1; " + cookie.split(";")[0]}, owner=False)[0], 200)
+        status, _, headers = call(self.base + "/?key=from-an-earlier-run")
+        self.assertEqual((status, headers["Location"]), (303, "/"))
+        encoded = "".join("%%%02X" % ord(c) for c in self.ctx.key)
+        for before in ("", "x='&", 'x="&'):
+            with self.subTest(before=before), mock.patch("sys.stderr", new=io.StringIO()) as log:
+                status, _, headers = call(self.base + "/?%s%%6Bey=%s" % (before, encoded), owner=False)
+                self.assertEqual(status, 303)
+                self.assertNotIn(encoded, log.getvalue())
+                self.assertNotIn(self.ctx.key, log.getvalue())
 
     def test_dashboard_writes_without_an_actor_carry_the_owner(self):
         call(self.base + "/api/tasks/task_AB2/comment", json.dumps({"body": "native comment"}).encode(), origin(self.base))

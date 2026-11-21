@@ -1913,8 +1913,11 @@ def make_handler(ctx, base=None, static_dir=None):
 
     class Handler(base):
         def log_message(self, fmt, *args):
+            # The key can arrive percent-encoded in any query field, so no query
+            # is logged. A target holds no whitespace, so the query ends at one.
             if not self.path.startswith("/api/"):
-                sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), (fmt % args).replace(ctx.key, "<key>")))
+                line = re.sub(r"\?\S*", "?<query>", fmt % args).replace(ctx.key, "<key>")
+                sys.stderr.write("%s %s\n" % (time.strftime("%H:%M:%S"), line))
 
         def parse_request(self):
             """Every request, whatever its method, needs the owner's key: in the
@@ -1928,10 +1931,11 @@ def make_handler(ctx, base=None, static_dir=None):
             query = urllib.parse.parse_qsl(url.query, keep_blank_values=True)
             given = [value for field, value in query if field == "key"]
             cookies = [part.strip().partition("=") for header in self.headers.get_all("Cookie", []) for part in header.split(";")]
-            if not given and any(field == name and is_key(value) for field, _, value in cookies):
+            signed_in = any(field == name and is_key(value) for field, _, value in cookies)
+            if signed_in and not given:
                 return True
             self.close_connection = True
-            if given and all(is_key(value) for value in given):
+            if given and (signed_in or all(is_key(value) for value in given)):
                 rest = urllib.parse.urlencode([(field, value) for field, value in query if field != "key"])
                 self.send_response(303)
                 self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (name, ctx.key, KEY_DAYS * 86400))
@@ -2187,7 +2191,7 @@ def main(argv=None):
     port = args.port or ctx.config.get("dashboard_port", 8799)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(ctx))
-    print("board with review at http://127.0.0.1:%d (board %s, repo %s, actor %s, logs %s)" % (port, ctx.board, ctx.repo, ctx.actor, ctx.state))
+    print("board with review on port %d (board %s, repo %s, actor %s, logs %s)" % (port, ctx.board, ctx.repo, ctx.actor, ctx.state))
     print("Open this link once in each browser you use; it signs that browser in until the board stops:")
     print("http://127.0.0.1:%d/?key=%s" % (port, ctx.key), flush=True)
     try:
