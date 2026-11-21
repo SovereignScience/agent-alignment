@@ -253,6 +253,35 @@ side. A Codex rule can be checked without a session:
 codex execpolicy check --pretty --rules ~/.codex/rules/default.rules -- git commit -n -m x
 ```
 
+### Recover a Codex chat that requests `:read-only`
+
+If a saved VS Code chat fails to send with `invalid thread settings
+override` and the error names `:read-only` and `alignment_workstation`,
+try a fresh chat in the same project. If it works, carry over the task
+summary and continue there. The managed profile stays in effect.
+
+The owner can switch the old chat back with the permission picker.
+
+1. Leave other Codex windows idle. From your own terminal, save an exact copy of
+   `/etc/codex/requirements.toml` in protected storage outside your
+   checkouts. Check that the default and sole allowed profile are
+   `alignment_workstation`.
+2. With `sudoedit /etc/codex/requirements.toml`, add
+   `":read-only" = true` under the existing
+   `[allowed_permission_profiles]` table. Keep the default profile.
+   While that entry is present, the built-in profile is selectable and
+   it lacks the managed profile's filesystem denials.
+3. Run **Developer: Reload Window** in the affected VS Code window and
+   open the old chat. Select `alignment_workstation` in the permission
+   picker. Save project work for after the original policy is back.
+4. Restore the saved requirements file even if the picker did not work.
+   Use `cmp` to check the file against the backup. Reload every window
+   that loaded the temporary policy.
+5. Send a reply-only prompt in that same old chat and in a fresh chat.
+   Check that Full Access and the built-in profiles are unavailable and
+   that a throwaway file matching a managed deny remains unreadable. If the
+   old chat still fails, continue in the fresh chat.
+
 ---
 
 ## sources
