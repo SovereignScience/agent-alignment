@@ -1,5 +1,10 @@
 # CLAUDE.md: agent-alignment (root)
 
+Reading this from a project's `.agent-alignment` clone? This file is for
+work on the kit itself. Read the kit from the clone and never write to
+it; in a project with no `.lattice/` board, offer the owner "Start here"
+in [swe/LATTICE_ONBOARDING.md](swe/LATTICE_ONBOARDING.md) once.
+
 This file is a router. The repository holds two independent toolkits.
 Open the window at this folder, the main checkout: a session reaches only
 the folder it was opened in, and Git, the board and every task worktree

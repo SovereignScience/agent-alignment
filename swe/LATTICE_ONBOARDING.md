@@ -89,6 +89,81 @@ Lattice itself is assumed present (`lattice --version`).
 
 ## Per project, setup by the owner
 
+### Getting the kit into a project
+
+A session sees only the folder it was opened in, so a project's sessions
+read the kit from a clone at the top of the project. From the top of the
+project:
+
+```
+exclude=$(git rev-parse --path-format=absolute --git-path info/exclude)
+grep -qxF /.agent-alignment/ "$exclude" || echo /.agent-alignment/ >> "$exclude"
+git clone -q https://github.com/SovereignScience/agent-alignment .agent-alignment
+git -C .agent-alignment remote set-url --push origin no-push
+```
+
+Sessions read the agent files, protocols and this guide from the clone
+and never write to it. Its push address is `no-push`, so a `git push`
+from it fails. Sessions can write the clone's own Git files, so the
+owner never runs Git inside an old clone: refresh it by cloning it again,
+from the top of the project:
+
+```
+rm -rf .agent-alignment
+git clone -q https://github.com/SovereignScience/agent-alignment .agent-alignment
+git -C .agent-alignment remote set-url --push origin no-push
+```
+
+Sessions learn about the clone from the user rules and the note on each
+kit agent and command, which `swe/scripts/switch_rules.sh apply` installs
+from the kit's main checkout; run it again after updating the kit.
+
+Run the kit's scripts, `board_setup.sh` among them, from the kit's main
+checkout (`<agent-alignment>` in this guide, the path the installed
+commands name), never from the clone: the project's sessions can write
+the clone. Commands a session gives the owner name that path.
+
+### Start here: a session in a new project
+
+A session that finds the kit clone and no `.lattice/` board offers the
+owner this setup once, before other work. If the owner declines, it does
+the task it was given and says tracking was unavailable. The steps below
+are the owner's standing request: they need no board task or plan, though
+the board rules that board_setup.sh writes would otherwise ask for one.
+
+The session checks that the project is a Git checkout on its integration
+branch, then gives the owner this block with `<project>` and
+`<agent-alignment>` filled in, and waits for the output:
+
+```
+(
+set -euo pipefail
+cd "<project>"
+login=$(gh api user --jq .login)
+board="$login/$(basename "$PWD")-lattice"
+if gh repo view "$board" >/dev/null 2>&1; then echo "STOP: $board already exists; to bring this project's board back, see Bringing a board back"; exit 1; fi
+gh repo create "$board" --private
+[ "$(gh repo view "$board" --json visibility --jq .visibility)" = PRIVATE ] || { echo "STOP: $board is not private"; exit 1; }
+bash "<agent-alignment>/swe/scripts/board_setup.sh" --actor "human:$(git config user.name | cut -d' ' -f1 | tr '[:upper:]' '[:lower:]')" --remote "https://github.com/$board.git"
+echo SETUP-DONE
+)
+```
+
+It makes a new board repository under the owner's GitHub account,
+private. It stops before anything else if that repository already exists,
+which could be another project's board with the same folder name, or if
+it is not private. Once the output ends in `SETUP-DONE`, the session
+finishes on its own:
+
+1. Adds the step 3a block to the project's instruction files as step 3a
+   says, and gives the owner the commit block for them.
+2. Asks the owner to start the review server: `board`, installed as
+   [tools/lattice-review/README.md](tools/lattice-review/README.md)
+   describes, or the step 6 command.
+3. Works through the step 4a message as its own instructions.
+4. Puts the tags from that report into `.lattice/context.md`, in place of
+   "to be set after the first session".
+
 ### The short way
 
 From the top of the project:
@@ -603,9 +678,11 @@ A spike or a chore waits for plan approval like any other task.
 
 ### 3a. Agent instructions
 
-Sessions read the project's AGENTS.md (or CLAUDE.md) at start and
-`context.md` only when they follow a pointer to it. Put the rules that
-must hold from the first edit in AGENTS.md as well:
+Sessions read the project's instruction files at start and `context.md`
+only when they follow a pointer to it. Put the rules that must hold from
+the first edit in the project's CLAUDE.md, which Claude Code reads, and
+AGENTS.md, which Codex reads. Where one is missing, make it a link to the
+other; where both are missing, make CLAUDE.md and link AGENTS.md to it:
 
 ```
 ## Working a task (every agent)

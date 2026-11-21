@@ -135,6 +135,10 @@ commands, scripts and settings are copied by hand from `.claude/`
 if you want them there. The scripts and commands default to `main`
 as the base branch.
 
+A project's sessions read the kit from a clone at `.agent-alignment`;
+[LATTICE_ONBOARDING.md](LATTICE_ONBOARDING.md#getting-the-kit-into-a-project)
+has the commands that make it.
+
 ---
 
 ## Task board and review flow
