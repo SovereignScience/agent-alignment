@@ -97,13 +97,18 @@ From the top of the project:
 bash <agent-alignment>/swe/scripts/board_setup.sh --actor human:<owner>
 ```
 
-It does steps 1, 2, 3 and 3b below and changes no tracked file. The
+It does steps 1, 2, 3 and 3b below, changes no tracked file and sets
+`lattice-review.base` when the branch is not main. The
 project name is the folder name, the code its initials, and the port the
 first from 8803 that nothing listens on; if another board already has
 that port, change `dashboard_port` in `.lattice/config.json` and the port
 line in `context.md`. It ends with a line that starts `READY:`. Add
 `--remote <url>` to push the new board to its private repository, which
-the owner creates first. It refuses a project that already has a board.
+the owner creates first, names `<owner>/<project folder>-lattice` and
+checks is private (step 3b). The script takes only the repository's https
+address. It stops when the repository can be read without signing in,
+when it cannot tell, and when your Git settings would push somewhere
+else. It also refuses a project that already has a board.
 
 Then fill in the tags in `context.md`, do step 3a, start the review
 server (step 6) and give the project's first session the message in
@@ -112,7 +117,7 @@ step 4a.
 ### Bringing a board back
 
 On another machine, or after `.lattice/` was lost, run the same command
-with the board's repository:
+with the board's repository, from a checkout on the integration branch:
 
 ```
 bash <agent-alignment>/swe/scripts/board_setup.sh --remote <url>
@@ -641,6 +646,14 @@ and rules for answering review threads.
 - The comment roles review and plan-review are only for the owner's
   Plannotator results. Agents use validation, or no role.
 - At most three workers at once, each in its own task's worktree.
+- Inside the sandbox, paths it denies (.env files, .mcp.json, parts of
+  .claude/) show as empty character devices that git status lists; they
+  are not project files or unfinished work.
+- List tests that fail only because of the sandbox (a denied .env, a
+  read-only /tmp, a browser that cannot start) apart from real failures,
+  with the exact command for the owner to run outside the sandbox.
+- Never write to the agent-alignment board; anything for the kit goes to
+  the owner as a message to pass to the agent-alignment session.
 - Write board comments for the owner in plain language: the point first, then
   why, what a thing is before its path, one idea per paragraph, raw output
   attached rather than pasted. The full rule is "Writing on the board" in
@@ -674,6 +687,11 @@ attachments together. Preserve the board's .gitignore for locks and other
 runtime files. Stage named paths and inspect the staged diff before a
 requested checkpoint. The owner creates a private remote and checks its
 visibility before pushing; source repository visibility is independent.
+This prints `PRIVATE` for a private repository:
+
+```
+gh repo view <owner>/<project folder>-lattice --json visibility --jq .visibility
+```
 
 Set LATTICE_ROOT to the main project checkout, not its .lattice/ directory.
 Source task worktrees share that board. Run source Git commands from the
@@ -745,7 +763,8 @@ How to go about it
    to result.
 3. Run the project's own checks where they are local and safe (tests, lint,
    type check). Give each command with its result, and say which you did
-   not run and why.
+   not run and why. List failures the sandbox caused apart from real ones,
+   with the exact command for me to run outside it.
 4. Read recent history: what changed lately and what looks half finished.
 5. Read the files that matter yourself; use a subagent only for a wide
    search. Say nothing about code you have not opened, and mark anything
@@ -772,7 +791,8 @@ Then on the board. I authorize these and nothing else:
 - one backlog task for each confirmed P0 to P2 finding, with acceptance
   criteria and a description in this shape: Request, Scope, Owner,
   Coverage boundary, Remaining: not started.
-Start none of them.
+Start none of them. Never write to the agent-alignment board; anything for
+the kit goes in your reply, for me to pass to the agent-alignment session.
 
 Done when: the report is in your reply, the tasks are in backlog, lattice
 doctor is clean, and you have listed what you did not look at.
