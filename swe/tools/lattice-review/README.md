@@ -359,7 +359,8 @@ window), inside the board directory:
 python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name>
 ```
 
-Then open http://127.0.0.1:<dashboard_port> and click a task. Options:
+Then open the link it prints, once in each browser, and click a task.
+Options:
 `--board DIR`, `--repo DIR` when the git repository is not the board
 directory, `--port` (default: the board's `dashboard_port`, else
 8799), `--main` (integration branch, default `main`), `--actor` (default
@@ -428,10 +429,16 @@ notes and plans handlers), written against Lattice 0.2.
 | `/t/<ID>` | redirects to the task in the dashboard; the Dependencies and History links use it |
 | `/review` | redirects to `/` |
 
-Review POSTs carry a per-run token; dashboard POSTs must carry an Origin
-equal to the address the page was served from, a JSON object body, and
-at most 1 MiB. Neither is a boundary against an agent that can already
-edit the files and the board.
+Every request needs the owner's key. The server makes a new one at each
+start, keeps it only in memory and prints it in a link; opening the link
+sets it as a cookie named for the port, and a request without that
+cookie gets 403. Review POSTs also carry a per-run token; dashboard
+POSTs must carry an Origin equal to the address the page was served
+from, a JSON object body, and at most 1 MiB. None of these is a
+boundary against an agent that can already edit the files and the
+board. Open the board in a Windows browser: no session can read its
+profile, while a WSL browser's is covered only where the sandbox's read
+denials name it.
 
 ## Tests
 

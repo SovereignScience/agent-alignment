@@ -244,6 +244,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   they were given, then lattice comments <ID> --json and the task's plan,
   plus the plans of tasks it depends on; agents never use lattice next,
   lattice complete or lattice status <ID> done.
+- A session uses only this project's board, through the lattice command.
+  It never connects to a board or review server port on localhost (8799
+  to 8899), this board's included, and never writes as human:.
 - An owner comment or plan note is reconciled into the plan, description,
   criteria, needs_human reason and status before the result is reported;
   a comment that asks a question gets a reply. Detailed decisions live in
@@ -823,7 +826,8 @@ python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor hum
 
 `--main` defaults to `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
-http://127.0.0.1:<port> and click a task. Its detail view has a Review
+the link it prints, once in each browser, and click a task. Its detail
+view has a Review
 section with two blocks, after a Dependencies block when the task has
 links. Plan shows the plan's state with "Plannotator: review the plan"
 and "Open the plan in VS Code"; with no plan file its one button is
