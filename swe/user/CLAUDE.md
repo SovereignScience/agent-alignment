@@ -274,6 +274,15 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Handing work to me
 
+- When reporting finished or reviewed work to me, answer these in
+  plain words, a line each, and stop; this replaces the closing sentences:
+  What changed: the change, and who can now do what.
+  Why: the problem it solves.
+  Why this way: the cause it removes, and the simpler option turned down.
+  Reviews: who reviewed it, whether they agreed, and what stayed open.
+  Smallest version: why this is the least that works in production.
+  Checked: what ran, and what never ran.
+  For you: the decision or command needed from me, or "nothing".
 - Commands you hand me run in a subshell with `set -euo pipefail` and carry
   scripts inline, never as files in a shared temp folder.
 - Before a block depends on state the session cannot see, hand over a
