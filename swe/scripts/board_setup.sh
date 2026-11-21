@@ -12,15 +12,27 @@
 # review page port the first from 8803 that nothing listens on; board
 # moves it when another program holds it.
 #
-# --remote names the board's private repository. If it already holds a board,
-# that board is cloned into .lattice instead of a new one being made, which
-# is how a board comes back on another machine. Otherwise the new board is
-# pushed there. Without --remote nothing is pushed.
+# --remote names the board's private repository, by convention
+# <owner>/<project folder>-lattice, as its https address. If it already holds a
+# board, that board is cloned into .lattice instead of a new one being made,
+# which is how a board comes back on another machine; a local path also works
+# for that. Otherwise the new board is pushed there. Without --remote nothing
+# is pushed.
+# An https address passes only when a read without signing in is refused for
+# want of credentials, and only when the owner's Git settings push to exactly
+# that address; anything else stops the script.
 #
-# It changes no tracked file and refuses a project that already has .lattice.
+# It changes no tracked file, sets git config lattice-review.base when the
+# branch is not main, and refuses a project that already has .lattice.
 set -euo pipefail
 
 die() { echo "board_setup: $*" >&2; exit 1; }
+# Pushes for origin in repository $1 must go to --remote and nowhere else.
+same_push() {
+    pushes=$(git -C "$1" remote get-url --push --all origin)
+    [ "$pushes" = "$remote" ] || die "your Git settings send pushes for $remote to $(printf '%s' "$pushes" |
+        tr '\n' ' ' | sed -E 's#//[^/@]*@#//<user>@#g'); $2"
+}
 
 actor="human:${USER:-owner}" remote=""
 while [ $# -gt 0 ]; do
@@ -40,13 +52,42 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || die "this folder is not in 
 [ ! -e .lattice ] || die "this project already has a board in .lattice; nothing was changed"
 branch=$(git branch --show-current)
 [ -n "$branch" ] || die "the checkout is not on a branch"
+base=$(git config --get lattice-review.base) || base=$branch
+[ "$base" = "$branch" ] || die "lattice-review.base is $base but the checkout is on $branch; nothing was changed"
 
 restore=no
 if [ -n "$remote" ]; then
+    case $remote in
+        https://*)
+            authority=${remote#https://}; authority=${authority%%/*}
+            [[ $authority != *@* ]] || die "--remote carries a user or token; give it without one" ;;
+        file://*) ;;
+        *://*) die "give the board's https address as --remote" ;;
+        *) [[ ${remote%%/*} != *:* ]] || die "give the board's https address as --remote" ;;
+    esac
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    git init -q "$tmp/probe"
+    git -C "$tmp/probe" remote add origin "$remote"
+    same_push "$tmp/probe" "nothing was changed"
     if git ls-remote --exit-code "$remote" refs/heads/main >/dev/null 2>&1; then
         restore=yes
     elif [ $? -ne 2 ]; then
         die "cannot reach $remote"
+    fi
+    [ "$restore" = yes ] || [[ $remote == https://* ]] \
+        || die "a new board is pushed only to the https address of its private repository"
+    if [[ $remote == https://* ]]; then
+        empty="$tmp/home"
+        mkdir "$empty"
+        if env -u GIT_ASKPASS -u SSH_ASKPASS -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT LC_ALL=C \
+                HOME="$empty" XDG_CONFIG_HOME="$empty" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+                GIT_CEILING_DIRECTORIES="$tmp" GIT_TERMINAL_PROMPT=0 \
+                git -C "$empty" ls-remote -- "$remote" >/dev/null 2>"$tmp/anonymous"; then
+            die "$remote can be read without signing in; make it private and run this again"
+        fi
+        grep -qF "could not read Username for 'https://$authority': terminal prompts disabled" "$tmp/anonymous" \
+            || die "cannot check that $remote is private; nothing was changed"
     fi
 fi
 
@@ -55,6 +96,7 @@ mkdir -p "$common/info"
 for line in .lattice/ /.worktrees/; do
     grep -qxF "$line" "$common/info/exclude" 2>/dev/null || echo "$line" >> "$common/info/exclude"
 done
+[ "$branch" = main ] || git config lattice-review.base "$branch"
 
 if [ "$restore" = yes ]; then
     git clone -q "$remote" .lattice
@@ -113,6 +155,7 @@ PY
     git -C .lattice commit -q -m "chore(board): start the board"
     if [ -n "$remote" ]; then
         git -C .lattice remote add origin "$remote"
+        same_push .lattice "nothing was pushed; the board is committed here"
         git -C .lattice push -q -u origin main || die "the push to $remote failed; the board is committed here"
     fi
 fi

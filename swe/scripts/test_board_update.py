@@ -25,8 +25,10 @@ class BoardUpdate(unittest.TestCase):
         self.remote = pathlib.Path(self.tmp.name, "board.git")
         self.run_in(self.tmp.name, "git", "init", "-q", "--bare", "-b", "main", str(self.remote))
         self.here, self.there = self.project("one"), self.project("two")
-        for repo in (self.here, self.there):
-            self.script("board_setup.sh", "--actor", "human:owner", "--remote", str(self.remote), cwd=repo)
+        self.script("board_setup.sh", "--actor", "human:owner", cwd=self.here)
+        self.run_in(self.here, "git", "-C", ".lattice", "remote", "add", "origin", str(self.remote))
+        self.run_in(self.here, "git", "-C", ".lattice", "push", "-q", "-u", "origin", "main")
+        self.script("board_setup.sh", "--actor", "human:owner", "--remote", str(self.remote), cwd=self.there)
 
     def project(self, parent):
         repo = pathlib.Path(self.tmp.name, parent, "demo-project")
