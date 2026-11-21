@@ -320,10 +320,12 @@ goes on from there.
 
 The short way is `board`, a bash function in [board.bash](board.bash).
 In any folder of a repository with a board, including a linked worktree,
-it prints the URL when the board's port already answers, and otherwise
-starts the server in the foreground (Ctrl-C stops it). It fails when the
-repository has no board. Install or update it from the main checkout,
-then open a new terminal:
+it starts the server in the foreground (Ctrl-C stops it), or says so
+when this board's server already runs. When another program holds the
+board's port, it moves the board to the first free port from 8803,
+writes that port to `.lattice/config.json` and `context.md`, and starts
+there. It fails when the repository has no board. Install or update it
+from the main checkout, then open a new terminal:
 
 ```
 (
