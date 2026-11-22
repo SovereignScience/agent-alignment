@@ -103,13 +103,18 @@ that don't validate become CVEs.
     this machine; the sandbox's network limits stay the boundary. If the
     headless shell is missing, ask the user to install it; never fall
     back to another browser. A project's own Playwright suite may also
-    run inside the sandbox, against the app the suite itself starts.
+    run inside the sandbox, against the app started for that run.
     Set its `executablePath` to `/usr/bin/chromium-headless-shell`, the
     same browser, kept current by the system's package updates; never
     a copy in a cache or project folder, full Chromium, a `channel`,
-    Firefox or WebKit. Leave `chromiumSandbox` unset, start the app
-    with the runner's `webServer`, and set `serviceWorkers: 'block'`.
-    Use no launch `args`, `ignoreDefaultArgs`, `proxy`, `storageState`,
+    Firefox or WebKit. Leave `chromiumSandbox` unset and set
+    `serviceWorkers: 'block'`. With Playwright Test, its `webServer`
+    starts the app; otherwise start the app in the same command as the
+    script. For a made-up camera and microphone, pass both
+    `--use-fake-device-for-media-stream` and
+    `--use-fake-ui-for-media-stream` or neither; use no other launch
+    `args`, and ask the user when a test needs more. Use no
+    `ignoreDefaultArgs`, `proxy`, `storageState`,
     `ignoreHTTPSErrors` or persistent context, and do not use
     `connect`, `connectOverCDP`, `launchServer`, `--ui`, `--debug`,
     `codegen` or `show-report`. Every other limit of this rule still

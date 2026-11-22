@@ -28,10 +28,12 @@ complete the loop.
 # The browser
 
 `scripts/local_browser.py`, in the agent-alignment `swe/` folder, is the
-one browser route. It applies security rule 12: the headless shell only,
-a fresh profile, local addresses only, every other request failed. Do not
-use Playwright, Puppeteer, another browser or a debugging port. If it
-says the headless shell is missing, ask the user to install it.
+kit's browser route. It applies security rule 12: the headless shell only,
+a fresh profile, local addresses only, every other request failed. A
+project's own Playwright suite is the other route, within the limits
+rule 12 sets for it. Do not use Puppeteer, another browser or a
+debugging port. If the tool says the headless shell is missing, ask the
+user to install it.
 
 ```bash
 python3 scripts/local_browser.py --app '<command that starts the app>' \
