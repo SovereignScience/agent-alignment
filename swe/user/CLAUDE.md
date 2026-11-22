@@ -68,6 +68,10 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
   recounting who requested it. Use roles in reusable guidance and name
   people only when their identity matters. Credit sources with links and
   preserve required provenance.
+- In replies, plans, examples, tests, code and commit messages, ask what
+  identifies a real person, account, machine, host, client or project, and
+  use a role or a placeholder such as `<project>`, `~/projects` or
+  `user@example.com` instead, unless the reader needs the real value to act.
 - Docs: edit existing ones in place, in the length and voice of nearby
   docs, with commands in code blocks. They hold what someone needs to run
   or recover the system: addresses, commands, where secrets live, recovery
