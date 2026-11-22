@@ -67,23 +67,30 @@ and rules for answering review threads.
   its format. The plan says which of these it checked. When in doubt it
   is not small. The owner's review of the code is still required before
   a merge.
-- If source Git metadata is read-only, the owner runs worktree setup and
-  source Git writes. Agents edit and test allowed files in the created
-  worktree and keep Lattice updated. Give the owner named-path staging
-  and commit commands; never widen Git access or use another Git directory
-  to bypass a refusal.
-- Before the first edit for AA-<n>, from this checkout:
+- In a managed local session, the owner creates worktrees and runs
+  source Git writes. Use `git worktree list` to find the task worktree
+  before editing. If it is missing, give the owner a block for their
+  normal terminal before trying any Git write. Replace the sample
+  checkout path, task ID and slug with the actual values:
 
-  ```
-  grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
-  git worktree add .worktrees/AA-<n> -b feature/AA-<n>-<slug> main
-  LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n> feature/AA-<n>-<slug> --actor agent:<tool>
+  ```bash
+  (
+    set -euo pipefail
+    trap 'rc=$?; printf "exit=%s\nTASK_WORKTREE_SETUP_END\n" "$rc"; exit "$rc"' EXIT
+    cd "$HOME/projects/agent-alignment"
+    bash swe/scripts/task_worktree.sh add AA-12 fix-widget --base main
+    git -C .worktrees/AA-12 status --short --branch
+  )
   ```
 
-  Candidate branches for competing versions stay unlinked until the
-  owner picks one.
-  Then edit, test and run servers only there, with `LATTICE_ROOT` set to
-  this checkout.
+  Continue any reads and checks that can run without the worktree.
+  Once the worktree exists, verify its path and branch. From this
+  checkout with `LATTICE_ROOT` set here, link the branch if needed with
+  `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n>
+  feature/AA-<n>-<slug> --actor agent:<tool>`. Candidate branches stay
+  unlinked until the owner picks one. Edit, test and run servers only in
+  the task worktree. Give the owner named-path staging and commit commands
+  where Git metadata is read-only.
 - End every commit for a task with the trailer line `Task: AA-<n>`, so the
   review section can find it.
 - One question per needs_human flag, starting "Need:"; other decisions go
