@@ -253,6 +253,13 @@ side. A Codex rule can be checked without a session:
 codex execpolicy check --pretty --rules ~/.codex/rules/default.rules -- git commit -n -m x
 ```
 
+### Recover a Codex chat that requests `:read-only`
+
+If a saved VS Code chat fails to send with `invalid thread settings
+override` and the error names `:read-only` and `alignment_workstation`,
+try a fresh chat in the same project. If it works, carry over the task
+summary and continue there. The managed profile stays in effect.
+
 ---
 
 ## sources
