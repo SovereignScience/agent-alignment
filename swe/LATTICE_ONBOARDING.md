@@ -432,11 +432,13 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   one branch with lattice branch-link and reviews it like any other
   task. Without a clear winner, say so. The rest are removed after the
   merge.
-- If source Git metadata is read-only, the owner runs worktree setup and
-  source Git writes. Agents edit and test allowed files in the created
-  worktree and keep Lattice updated. Give the owner named-path staging
-  and commit commands; never widen Git access or use another Git directory
-  to bypass a refusal.
+- In a managed local session, the owner creates worktrees and runs source
+  Git writes. Use git worktree list before editing. If the task worktree
+  is missing, give the owner the setup block from "Working a task" in
+  the kit guide. Fill in the actual checkout, task ID, slug and base
+  branch before trying a Git write. Continue reads and checks while waiting.
+  Verify the worktree and link its branch after the owner creates it.
+  Give the owner named-path staging and commit commands.
 - The comment roles review and plan-review record the owner's decisions:
   the review server writes them after Plannotator, and owner_review.py
   writes a review when the owner approves from the terminal. Agents use
@@ -740,17 +742,17 @@ and rules for answering review threads.
 - The acceptance criteria are the finish line: work until each has
   evidence or waits on the owner, and when one step is blocked finish
   the others before stopping.
-- If source Git metadata is read-only, the owner runs worktree setup and
-  source Git writes. Agents edit and test allowed files in the created
-  worktree and keep Lattice updated. Give the owner named-path staging
-  and commit commands; never widen Git access or use another Git directory
-  to bypass a refusal.
-- Before the first edit for <CODE>-<n>:
-    grep -qxF /.worktrees/ .git/info/exclude || echo /.worktrees/ >> .git/info/exclude
-    git worktree add .worktrees/<CODE>-<n> -b feature/<CODE>-<n>-<slug> <branch>
-    LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n> feature/<CODE>-<n>-<slug> --actor agent:<tool>
-  Then edit, test and run servers only there, with
-  LATTICE_ROOT=<board directory>.
+- In a managed local session, the owner creates worktrees and runs source
+  Git writes. Use git worktree list before editing. If the task worktree
+  is missing, give the owner the setup block from "Working a task" in
+  the kit guide. Fill in the actual checkout, task ID, slug and base
+  branch before trying a Git write. Continue reads and checks while waiting.
+  Verify the worktree and branch when the owner has created it. From the
+  main checkout with LATTICE_ROOT=<board directory>, link the branch if
+  needed with LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n>
+  feature/<CODE>-<n>-<slug> --actor agent:<tool>. Candidate branches stay
+  unlinked until the owner picks one. Edit, test and run servers only in
+  the task worktree. Give the owner named-path staging and commit commands.
 - End every commit for a task with the trailer line Task: <CODE>-<n>, so
   the review section can find it.
 - One question per needs_human flag, starting "Need:"; other decisions
@@ -928,15 +930,30 @@ and [best practices](https://code.claude.com/docs/en/best-practices), and
    and work starts, `lattice status <ID> in_progress --no-auto-review`.
 2. When asked to commit, use the project's convention and end with a
    blank line and `Task: <ID>`. Several IDs: `Task: <ID>, <ID>`.
-3. Before the first edit, the task's worktree and branch:
-   `git worktree add .worktrees/<ID> -b feature/<ID>-<slug> <branch>`
-   and `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <ID>
-   feature/<ID>-<slug> --actor agent:<tool>`. Edit, test and run
-   dev servers only there. Lattice finds the board by walking up from the
-   working directory, so the session sets `LATTICE_ROOT=<board
-   directory>`. The owner can make the worktree with
-   `<agent-alignment>/swe/scripts/task_worktree.sh add <ID> <slug>`,
-   adding `--candidates 2` when the approved plan has competing versions.
+3. In a managed local session, check the task worktree with
+   `git worktree list`. If it is missing, give the owner this block for
+   their normal terminal. Substitute the actual checkout, trusted kit
+   path, task ID, slug and base branch. Keep checking what you can read
+   while the owner creates it.
+
+   ```bash
+   (
+     set -euo pipefail
+     trap 'rc=$?; printf "exit=%s\nTASK_WORKTREE_SETUP_END\n" "$rc"; exit "$rc"' EXIT
+     cd "$HOME/projects/example"
+     bash "$HOME/projects/agent-alignment/swe/scripts/task_worktree.sh" add EX-12 fix-widget --base staging
+     git -C .worktrees/EX-12 status --short --branch
+   )
+   ```
+
+   Use `--candidates 2` when the approved plan calls for two versions and
+   show the status of each candidate worktree in the block. Once the owner
+   confirms setup, verify each path and branch. For a single branch, set
+   `LATTICE_ROOT` to the main project checkout and link it if needed with
+   `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <ID>
+   feature/<ID>-<slug> --actor agent:<tool>`. The owner links the chosen
+   branch for competing versions. Edit, test and run servers only in the
+   task worktree.
 4. Before handing over: the round summary, a top-level comment with each
    thread answered and its Status, the checks run, their results, what
    was mocked, what never ran, and what remains for the owner.

@@ -55,9 +55,13 @@ a fault.
   files. A rules file, tool or cache that looks missing there may be
   hidden. A denied path can also show as an empty placeholder file;
   never stage one.
-- Where Git's own folder is read-only, staging, commits, merges and
-  worktree changes are mine. Edit and test in the task worktree and hand
-  me the commands. Commit hooks and the tools they need run in my
+- In a managed local session, worktree setup, staging, commits and merges
+  are mine. Check for the task worktree with `git worktree list`. If it is
+  missing, give me a ready-to-paste block for my normal terminal with the
+  actual checkout, task ID, slug and base branch before trying a Git write.
+  Use the owner block under "Working a task" in `swe/LATTICE_ONBOARDING.md`.
+  Continue reads and checks while waiting. Verify the worktree and branch
+  after I create it, then edit and test there. Commit hooks run in my
   terminal.
 - Start a local server and whatever calls it in the same command. Under
   Claude Code a Unix socket cannot be created.
