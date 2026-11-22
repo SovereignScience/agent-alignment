@@ -72,6 +72,7 @@ KEY_DAYS = 30
 # localStorage, and a double-click on the edge resets it. The edge sits outside the panel, so its
 # clicks stop before the dashboard's click-outside-closes-the-panel listener.
 PANEL = """<style>
+div:has(>a[href="/stats-demo"]){display:none}
 .detail-panel{width:var(--lr-panel-w,60vw);max-width:96vw;background:linear-gradient(var(--surface),var(--surface)),var(--bg-base,#111)}
 .dp-section,.detail-section{--lr-hue:#94a3b8;margin-top:.75rem;padding:.7rem .9rem .8rem;border:1px solid color-mix(in srgb,var(--lr-hue) 22%,transparent);border-left:3px solid color-mix(in srgb,var(--lr-hue) 70%,transparent);border-radius:10px;background:color-mix(in srgb,var(--lr-hue) 7%,var(--bg-base,#111))}
 .dp-section h3,.detail-section h3{margin:0 0 .5rem;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:color-mix(in srgb,var(--lr-hue) 60%,var(--text-primary))}
@@ -1109,6 +1110,10 @@ class Context:
         self.main = args.main
         self.actor = args.actor
         code = self.config.get("project_code", "board")
+        # A session can write the board's config, and this names a folder the
+        # owner's review output is written to.
+        if code != "board" and not (isinstance(code, str) and re.fullmatch("[A-Z][A-Z0-9]{0,4}", code)):
+            sys.exit("project_code in .lattice/config.json must be a capital letter and up to 4 more capitals or digits, as Lattice sets it")
         self.state = Path(args.state or Path.home() / ".local" / "state" / "lattice-review" / code)
         self.state.mkdir(parents=True, exist_ok=True)
         self.token = secrets.token_hex(16)
@@ -1998,8 +2003,14 @@ def make_handler(ctx, base=None, static_dir=None):
             parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
             if parts[:1] == ["t"] and len(parts) == 2:
                 task = find_task(ctx.board, parts[1])
-                return self.redirect("/#/task/" + task["id"]) if task else self.not_found()
+                return self.redirect("/#/task/" + urllib.parse.quote(task["id"])) if task else self.not_found()
             if parts[:1] != [REVIEW_PATH.strip("/")]:
+                # Lattice's dashboard also serves a page from the project's own
+                # folder (/stats-demo). A session can write that file and its
+                # scripts would run as the signed-in owner, so only the
+                # dashboard page, its assets and its data pass through.
+                if parts and parts[0] not in ("api", "static", "favicon.ico"):
+                    return self.not_found()
                 try:
                     return super().do_GET()
                 except RuntimeError as exc:
