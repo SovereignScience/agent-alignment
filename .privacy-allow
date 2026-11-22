@@ -1,0 +1,12 @@
+# This file turns on the kit's privacy check (swe/.claude/scripts/privacy_check.py)
+# for this repository, and lists the values it accepts here, one exact value a
+# line. It is published with the code, so only values that are already public
+# belong here: an essay author's name, a public test address. Never a private
+# name, path or address, and never a credential; the check refuses a line with
+# a credential shape.
+Patrick Deegan
+noreply@anthropic.com
+cursoragent@cursor.com
+user@code.claude.com
+10.0.0.1
+192.168.1.10

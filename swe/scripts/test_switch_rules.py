@@ -165,6 +165,9 @@ class SwitchRules(unittest.TestCase):
         self.assertIn(FILLED, merged)
         self.assertIn("- A rule this checkout adds.\n", merged)
         self.assertEqual(self.hook.read_bytes(), (self.repo / "swe/.claude/scripts/pre-push").read_bytes())
+        for name in ("pre-commit", "commit-msg", "privacy_check.py"):
+            self.assertEqual(self.hook.with_name(name).read_bytes(), (self.repo / "swe/.claude/scripts" / name).read_bytes())
+        self.assertTrue(os.access(self.hook.with_name("pre-commit"), os.X_OK))
         self.assertEqual(self.context.read_text(), "new context\n")
         self.assertEqual(len(self.snapshots()), 1)
 
@@ -175,7 +178,8 @@ class SwitchRules(unittest.TestCase):
         self.assertEqual(self.rules.read_text(), before)
         self.assertEqual(self.hook.read_text(), "old hook\n")
         self.assertEqual(self.context.read_text(), "old context\n")
-        self.assertFalse((self.repo / ".git/hooks/tells_check.py").exists())
+        for name in ("tells_check.py", "pre-commit", "commit-msg", "privacy_check.py"):
+            self.assertFalse((self.repo / ".git/hooks" / name).exists())
 
     def test_revert_after_two_applies_goes_back_to_the_start(self):
         before = self.rules.read_text()

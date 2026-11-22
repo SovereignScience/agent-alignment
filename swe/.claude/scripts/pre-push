@@ -7,6 +7,8 @@ total, a new doc file, an AI tell in docs or commit messages, AI attribution
 anywhere, a commit whose author or committer is not this clone's user, or a
 branch named for an agent. If git cannot work out what is being pushed, the push
 is refused.
+In a repository with a .privacy-allow file, privacy_check.py checks each pushed
+commit first, and any finding refuses the push without asking.
 An executable pre-push.local beside this hook runs after it.
 """
 import os
@@ -18,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 # git and pre-push.local resolve from root-owned directories, never from a PATH
 # that a project venv put first.
 os.environ["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+from privacy_check import AllowError, GitError, check_push, git, report
 try:
     from tells_check import find_tells
 except ImportError:
@@ -32,19 +35,12 @@ ZERO = "0" * 40
 AGENT_BRANCH = re.compile(r"^refs/heads/(claude|codex|copilot|cursor|devin|gemini)/", re.I)
 
 
-class GitError(Exception):
-    pass
-
-
-def git(*args):
-    out = subprocess.run(["git", *args], capture_output=True, text=True)
-    if out.returncode != 0:
-        raise GitError("git %s: %s" % (" ".join(args[:2]), out.stderr.strip()[:200]))
-    return out.stdout
-
-
-def pushed_commits(updates):
-    shas = []
+def pushed(updates, remote):
+    """(local tip, the ref's commit on the remote or None, the commits it adds) for each ref being pushed;
+    a deleted ref adds none. Only what this remote already has is left out: a commit another remote has
+    may still be new here."""
+    known = ["--not", "--remotes=" + remote] if remote in git("remote").split() else []
+    ranges = []
     for line in updates.splitlines():
         parts = line.split()
         if len(parts) != 4:
@@ -53,14 +49,28 @@ def pushed_commits(updates):
         if local_sha == ZERO:
             continue
         if remote_sha == ZERO:
-            shas += git("rev-list", local_sha, "--not", "--remotes").split()
+            ranges.append((local_sha, None, git("rev-list", local_sha, *known).split()))
             continue
         try:
             git("cat-file", "-e", remote_sha + "^{commit}")
         except GitError:
             raise GitError("remote commit %s is not in this clone; fetch first" % remote_sha[:12])
-        shas += git("rev-list", "%s..%s" % (remote_sha, local_sha)).split()
-    return list(dict.fromkeys(shas))
+        ranges.append((local_sha, remote_sha, git("rev-list", "%s..%s" % (remote_sha, local_sha)).split()))
+    return ranges
+
+
+def public_commit(updates, remote):
+    """A commit the remote already has, whose files show which words are public there: the old tip of a
+    ref being pushed, else the remote's default branch, else None."""
+    for line in updates.splitlines():
+        if line.split()[3] != ZERO:
+            return line.split()[3]
+    if remote not in git("remote").split():
+        return None
+    try:
+        return git("rev-parse", "--verify", "-q", "refs/remotes/%s/HEAD^{commit}" % remote).strip()
+    except GitError:
+        return None
 
 
 def measure(shas):
@@ -120,11 +130,16 @@ def confirm(summary):
 def main():
     updates = sys.stdin.read()
     try:
-        shas = pushed_commits(updates)
+        remote = sys.argv[1] if len(sys.argv) > 1 else ""
+        ranges = pushed(updates, remote)
+        shas = list(dict.fromkeys(sha for _, _, commits in ranges for sha in commits))
+        private = check_push(ranges, public_commit(updates, remote))
         doc_lines, all_lines, new_docs, tells = measure(shas)
         others, branches = not_mine(shas), agent_branches(updates)
-    except GitError as err:
+    except (GitError, AllowError) as err:
         print("Push check could not read this push (%s); push refused." % err, file=sys.stderr)
+        return 1
+    if report(private, "push"):
         return 1
     summary = "Push check: %d commits, %d lines added (%d in docs), %d new doc files%s%s." % (
         len(shas), all_lines, doc_lines, len(new_docs),

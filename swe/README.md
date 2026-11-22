@@ -218,7 +218,7 @@ different way.
 | What | Where it lives | How a session gets it |
 |---|---|---|
 | Agents, commands, protocols, project instructions | the checkout | They load from the folder a window is opened in. A window opened in a worktree can read them but loses Git and the board, so use one for a look and merge the branch to work under it |
-| Managed settings and hooks, the Codex profile and rules, your user rules, the pre-push hook, the kit's agents and slash commands for every project | this machine | `scripts/switch_rules.sh apply` |
+| Managed settings and hooks, the Codex profile and rules, your user rules, the Git hooks (push check and privacy check), the kit's agents and slash commands for every project | this machine | `scripts/switch_rules.sh apply` |
 | Board conventions | `.lattice/context.md` | `apply --context <file>` |
 
 From a worktree of the branch you want to try:

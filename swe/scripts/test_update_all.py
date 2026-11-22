@@ -13,6 +13,8 @@ STATUS = '#!/usr/bin/env bash\n[ "$1 $2" = "status --exit-code" ] || exit 64\nex
 BOARD = '#!/usr/bin/env bash\necho "board_update $* in $(basename "$PWD")"\n[ "$(basename "$PWD")" != broken ] || exit 1\n'
 WRAPPER = '#!/bin/sh\n# agent-safety push check\nexec python3 /etc/claude-code/hooks/pre-push "$@"\n'
 KIT_COMMIT = "chore(agents): update the kit's agents and commands"
+HOOKS = ("pre-push", "pre-commit", "commit-msg", "tells_check.py", "privacy_check.py")
+LINT = "#!/bin/sh\nnpx lint-staged\n"
 
 
 class UpdateAll(unittest.TestCase):
@@ -29,7 +31,7 @@ class UpdateAll(unittest.TestCase):
         shutil.copy(SWE / ".claude/agents/code-reviewer.md", kit / "swe/.claude/agents/code-reviewer.md")
         (kit / "swe/scripts/switch_rules.sh").write_text(STATUS)
         (kit / "swe/scripts/board_update.sh").write_text(BOARD)
-        for name in ("pre-push", "tells_check.py"):
+        for name in HOOKS:
             shutil.copy(SWE / ".claude/scripts" / name, kit / "swe/.claude/scripts" / name)
         self.git(kit, "init", "-q", "-b", "main")
         (self.home / "machine").write_text("0")
@@ -40,6 +42,7 @@ class UpdateAll(unittest.TestCase):
         (self.home / ".config/agent-alignment/skip").write_bytes(b"excluded/\r\n")
         self.hook("old-hook").write_text('#!/usr/bin/env python3\n"""pre-push: show what is about to leave this machine, older."""\n')
         self.hook("wrapped").write_text(WRAPPER)
+        self.hook("old-hook").with_name("pre-commit").write_text(LINT)
         self.hook("private").write_text("private hook\n")
         self.hook("foreign").write_text('#!/bin/sh\ngit lfs pre-push "$@"\n')
         self.git(self.work / "husky", "config", "core.hooksPath", ".husky/_")
@@ -269,7 +272,7 @@ class UpdateAll(unittest.TestCase):
                       " this project is left alone", out)
         for path, count in ((".claude/agents", 2), (".lattice", 1)):
             self.assertEqual(out.count("note     %s is a link or not a plain folder; left alone" % path), count, out)
-        self.assertIn("note     the push hook or tells_check.py is a link (left alone)", out)
+        self.assertIn("note     the push hook or a file it imports is a link (left alone)", out)
 
     def test_with_a_relative_workspace_a_tracked_copy_with_edits_is_kept(self):
         root = self.project("edited")
@@ -316,6 +319,12 @@ class UpdateAll(unittest.TestCase):
         self.assertEqual(self.hook("old-hook").read_bytes(), kit_hook)
         self.assertTrue(os.access(self.hook("old-hook"), os.X_OK))
         self.assertEqual(len(list(self.hook("old-hook").parent.glob("pre-push.*.bak"))), 1)
+        for name in ("commit-msg", "privacy_check.py"):
+            self.assertEqual(self.hook("old-hook").with_name(name).read_bytes(), (SWE / ".claude/scripts" / name).read_bytes())
+        self.assertTrue(os.access(self.hook("old-hook").with_name("commit-msg"), os.X_OK))
+        self.assertEqual(self.hook("old-hook").with_name("pre-commit").read_text(), LINT)
+        self.assertIn("note     another tool's pre-commit is here (left alone)", out)
+        self.assertEqual(self.hook("broken").with_name("pre-commit").read_bytes(), (SWE / ".claude/scripts/pre-commit").read_bytes())
         self.assertEqual(self.hook("broken").read_bytes(), kit_hook)
         self.assertFalse(self.hook("declined").exists())
         self.assertFalse(self.hook("no-hook").exists())
