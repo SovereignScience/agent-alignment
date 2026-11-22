@@ -1013,6 +1013,26 @@ class SectionTests(RepoFixture):
         self.assertEqual((status, headers.get("Set-Cookie")), (403, None))
         self.assertEqual((StubDashboard.received, self.calls), ([], []))
 
+    def test_a_page_from_the_project_folder_is_not_served(self):
+        for path in ("/stats-demo", "/stats-demo/", "/stats-demo?x=1", "/anything"):
+            status, body, _ = call(self.base + path)
+            self.assertEqual(status, 404, path)
+            self.assertIn("<h1>Nothing at this address</h1>", body)
+        for path in ("/static/app.js", "/favicon.ico"):
+            self.assertEqual(json.loads(call(self.base + path)[1])["data"]["path"], path)
+
+    def test_a_task_id_cannot_add_a_header_to_the_redirect(self):
+        (self.repo / ".lattice" / "tasks" / "odd.json").write_text(json.dumps({"id": "x\r\nSet-Cookie: a=b", "short_id": "AB-8"}))
+        status, _, headers = call(self.base + "/t/AB-8")
+        self.assertEqual((status, headers["Location"], headers["Set-Cookie"]), (303, "/#/task/x%0D%0ASet-Cookie%3A%20a%3Db", None))
+
+    def test_a_project_code_that_is_not_lattices_form_stops_the_server(self):
+        config = self.repo / ".lattice" / "config.json"
+        for code in ("../../x", "a/b", "", 7, "TOOLONG", "1AB"):
+            config.write_text(json.dumps({"project_code": code}))
+            with self.assertRaises(SystemExit, msg=repr(code)):
+                self.context()
+
     def test_a_refused_browser_gets_a_readable_page_that_says_what_to_do(self):
         status, body, _ = call(self.base + "/", owner=False)
         self.assertEqual(status, 403)
@@ -1607,6 +1627,11 @@ class DashboardTests(RepoFixture):
             self.assertEqual(status, 200)
             self.assertIn(lr.HOOK + "</head>", index)
             self.assertIn("<html", index)
+            (board / "notes" / "stats-demo").mkdir(parents=True)
+            (board / "notes" / "stats-demo" / "demo.html").write_text("<script>1</script>")
+            status, body, _ = call(base + "/stats-demo")
+            self.assertEqual(status, 404)
+            self.assertNotIn("<script>1</script>", body)
             tasks = json.loads(call(base + "/api/tasks")[1])["data"]
             self.assertEqual([t["short_id"] for t in tasks], [sid])
             task_id = tasks[0]["id"]
