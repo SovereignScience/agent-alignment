@@ -72,8 +72,8 @@ a fault.
   swe/SECURITY_PROTOCOL.md has the other limits; if you cannot read it,
   do not use the suite. Full Chromium does not start under Claude Code.
   The kit's tool has run in both clients. A Playwright script has
-  passed once under Claude Code and none has run under Codex: tell me
-  the result of a first run.
+  passed under Claude Code and a Playwright Test run under Codex: tell
+  me the result of any other first run.
 - Only approved hosts answer. When a test needs a download, give me the
   command that fetches it once into the project. When a page is off the
   reading list, name the host in one line and use other sources.
@@ -331,6 +331,13 @@ a fault.
   Smallest version: why this is the least that works in production.
   Checked: what ran, and what never ran.
   For you: the decision or command needed from me, or "nothing".
+- When you ask me to decide, approve or choose, give me what I need to
+  answer without remembering the task: what the thing is in plain
+  words, what goes wrong today without it, with one real example, or
+  that nothing does, what a yes changes for me, what it costs, what a
+  no or a wait means, the options and your recommendation. A flag, a
+  one-line scope question and the For you line stay short and point to
+  where this is written: the plan, a task comment, or the lines above.
 - Commands you hand me run in a subshell with `set -euo pipefail` and carry
   scripts inline, never as files in a shared temp folder.
 - Before a block depends on state the session cannot see, hand over a

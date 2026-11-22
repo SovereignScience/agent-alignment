@@ -89,8 +89,8 @@ and rules for answering review threads.
   `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n>
   feature/AA-<n>-<slug> --actor agent:<tool>`. Candidate branches stay
   unlinked until the owner picks one. Edit, test and run servers only in
-  the task worktree. Give the owner named-path staging and commit commands
-  where Git metadata is read-only.
+  the task worktree. Give the owner named-path staging and commit
+  commands.
 - End every commit for a task with the trailer line `Task: AA-<n>`, so the
   review section can find it.
 - One question per needs_human flag, starting "Need:"; other decisions go

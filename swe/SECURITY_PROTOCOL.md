@@ -110,7 +110,9 @@ that don't validate become CVEs.
     Firefox or WebKit. Leave `chromiumSandbox` unset and set
     `serviceWorkers: 'block'`. With Playwright Test, its `webServer`
     starts the app; otherwise start the app in the same command as the
-    script. For a made-up camera and microphone, pass both
+    script. Under Codex the `webServer` check of a `url` timed out;
+    have it wait for a line the app prints. For a made-up camera and
+    microphone, pass both
     `--use-fake-device-for-media-stream` and
     `--use-fake-ui-for-media-stream` or neither; use no other launch
     `args`, and ask the user when a test needs more. Use no
