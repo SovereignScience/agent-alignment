@@ -10,3 +10,10 @@ cursoragent@cursor.com
 user@code.claude.com
 10.0.0.1
 192.168.1.10
+# Binary files accepted by their exact content, one Git blob id a line:
+# media/agent-alignment-repo-qr.png, the QR code for this repository's address
+82f094b7b6a69e464d7abd92fc0753f85ff09ce0
+# media/agent-aligment-repo-qr.png, an older QR code for a misspelled address, in old commits only
+1aabee1f92d4058bf8444f1b31bed0655d34d4a8
+# swe/tools/lattice-review/lattice-review-links-0.1.0.vsix, the kit's own editor extension, in old commits only
+1a2bbfd274a432cad5bede5180efa867602c9739
