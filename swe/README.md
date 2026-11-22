@@ -260,6 +260,107 @@ override` and the error names `:read-only` and `alignment_workstation`,
 try a fresh chat in the same project. If it works, carry over the task
 summary and continue there. The managed profile stays in effect.
 
+#### Recover the original chat in VS Code (AA-93)
+
+Ask:
+
+> Give me the AA-93 temporary `:read-only` allowlist toggle for the
+> VS Code picker, with `--enable` and `--restore`. Verify the current
+> policy hash first.
+
+The owner runs the toggle from a normal WSL terminal. It allows the
+built-in profile machine-wide for the time needed to switch the chat.
+That profile lacks the managed filesystem denials. Close other Codex
+windows and avoid tasks or tool calls while the exception is enabled.
+Wait until the policy is restored before running another policy install.
+
+Run this read-only check while the policy is locked, and save both hashes
+until the policy is restored.
+
+```bash
+(
+  set -euo pipefail
+  trap 'rc=$?; printf "exit=%s\nAA93_POLICY_CHECK_END\n" "$rc"; exit "$rc"' EXIT
+  /usr/bin/python3 -I - <<'PY'
+import hashlib
+import tomllib
+from pathlib import Path
+
+raw = Path("/etc/codex/requirements.toml").read_bytes()
+policy = tomllib.loads(raw.decode())
+profile = {"alignment_workstation": True}
+if policy.get("default_permissions") != "alignment_workstation" or policy.get("allowed_permission_profiles") != profile:
+    raise SystemExit("Expected a locked alignment_workstation policy.")
+header = b"[allowed_permission_profiles]\n"
+if raw.count(header) != 1:
+    raise SystemExit("Expected one exact allowlist header.")
+enabled = raw.replace(header, header + b'":read-only" = true\n', 1)
+policy["allowed_permission_profiles"][":read-only"] = True
+if tomllib.loads(enabled.decode()) != policy:
+    raise SystemExit("The temporary file changes more than the allowlist.")
+print("Locked SHA-256:", hashlib.sha256(raw).hexdigest())
+print("Enabled SHA-256:", hashlib.sha256(enabled).hexdigest())
+PY
+)
+```
+
+Run the block below with `--enable`, and enter the checked hashes.
+In the affected VS Code window, run **Developer: Reload Window** and
+open the old chat. Confirm that it selects `alignment_workstation` or
+select it in the permission picker.
+
+Run the same block with `--restore` and the same hashes, even if the
+picker fails. Reload every window that loaded the exception. Send
+`Reply OK. Do not use tools.` in the same old chat to check that the
+selection survived. A fresh chat in the same project is the fallback.
+
+```bash
+(
+  set -euo pipefail
+  trap 'rc=$?; printf "exit=%s\nAA93_ALLOWLIST_TOGGLE_END\n" "$rc"; exit "$rc"' EXIT
+  read -r -p 'Enter --enable or --restore: ' mode
+  read -r -p 'Locked SHA-256: ' locked
+  read -r -p 'Enabled SHA-256: ' enabled
+
+  sudo /bin/bash -s -- "$mode" "$locked" "$enabled" <<'AA93'
+set -euo pipefail
+policy=/etc/codex/requirements.toml
+hash() { sha256sum | cut -d' ' -f1; }
+add='/^\[allowed_permission_profiles\]$/a ":read-only" = true'
+remove='/^":read-only" = true$/d'
+
+case "$1" in
+  --enable) before=$2; after=$3; edit=$add; undo=$remove ;;
+  --restore) before=$3; after=$2; edit=$remove; undo=$add ;;
+  *) printf '%s\n' 'Enter --enable or --restore.' >&2; exit 2 ;;
+esac
+if [[ ! -f "$policy" || -L "$policy" || -L "${policy%/*}" ]]; then
+  printf '%s\n' 'Unexpected policy path.' >&2; exit 1
+fi
+current=$(hash < "$policy")
+if [[ "$current" == "$after" ]]; then
+  if [[ "$before" == "$after" || "$(sed "$undo" "$policy" | hash)" != "$before" ]]; then
+    printf '%s\n' 'Locked and enabled hashes do not match the toggle.' >&2; exit 1
+  fi
+  printf 'Already applied: %s\n' "$1"
+  exit 0
+fi
+if [[ "$current" != "$before" ]]; then printf '%s\n' 'Policy hash differs from the checked version.' >&2; exit 1; fi
+
+staged=$(mktemp -- "$policy.aa93.XXXXXXXX")
+trap 'if [[ -e "$staged" ]]; then unlink -- "$staged"; fi' EXIT
+cp --preserve=all -- "$policy" "$staged"
+sed "$edit" "$policy" > "$staged"
+if [[ "$(hash < "$staged")" != "$after" || "$(hash < "$policy")" != "$before" ]]; then
+  printf '%s\n' 'Policy verification failed before replacement.' >&2; exit 1
+fi
+mv -fT -- "$staged" "$policy"
+test "$(hash < "$policy")" = "$after"
+printf 'Applied and verified: %s\n' "$1"
+AA93
+)
+```
+
 ---
 
 ## sources
