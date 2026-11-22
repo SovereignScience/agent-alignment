@@ -338,6 +338,14 @@ a fault.
   placeholder and ends in one fixed line. A check counts as tested only
   after it ran on the newest real artifact.
 - Logic longer than a screen is a script with a test, reviewed as a diff.
+- In a managed local session with a board, to land finished work on a
+  task branch: hand me the commit commands for each task's worktree,
+  ask me to review those commits, and give me the landing command in
+  the same reply. In the kit it is `swe/scripts/finish_batch.sh` with
+  every task's branch linked. In a project it is the kit's
+  `owner_review.py approve` with `--record`, then `merge_approved.py`
+  with `--check`, `--confirmed` and `--no-push`, joined as the review
+  and merge phases of `finish_batch.sh` join them.
 - When the sandbox blocks a tool (pip over HTTPS, Galaxy, Terraform, Ansible
   runs, secret files), hand me the command. No workarounds.
 - When the work needs something only I can run (a fetch, a push, an
