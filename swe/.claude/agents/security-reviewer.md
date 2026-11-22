@@ -35,6 +35,10 @@ output is a punch list, not a rewrite.
   no maintenance signal.
 - No log leakage. Request bodies, headers, or session tokens
   written to a log sink.
+- No private details in public files. A real person, account,
+  machine, host, client or project, a home path or an internal
+  identifier in code, docs, tests or commit messages, where a role
+  or placeholder would do.
 
 ## How you work
 1. Read the change as [code-reviewer.md](code-reviewer.md) sets out

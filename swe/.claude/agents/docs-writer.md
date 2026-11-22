@@ -33,6 +33,9 @@ for. The default disposition for new docs is *no*; earn the page.
 - CHANGELOG entries are user-facing. "Refactored internal
   helper" is not a CHANGELOG entry. "Fixed off-by-one in pagination
   causing duplicate rows on page 2" is.
+- Examples name no real person, account, machine or project. Use roles
+  and placeholders such as `<project>`, `~/projects` and
+  `user@example.com`; keep genuine author and source credit.
 
 ## How you work
 1. Read the code or system in scope.

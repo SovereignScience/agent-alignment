@@ -1,0 +1,3 @@
+#!/bin/sh
+# commit-msg: the kit's privacy check on the commit message; see privacy_check.py.
+exec /usr/bin/python3 -I "$(dirname "$0")/privacy_check.py" message "$1"

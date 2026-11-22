@@ -85,6 +85,11 @@ change.
   choice that is hard to undo, with no record drafted, is a P2.
 - Is each added piece of code needed? Would an existing mechanism give the
   same required behaviour with less complexity?
+- Private details: does the change put a real person, account, machine,
+  host, client or project, a home path or an identifier into code, docs,
+  tests, examples or a commit message where a role or placeholder would
+  do? The privacy hook catches shapes; judge the ordinary words it cannot.
+  Genuine authorship, source credit and a command the owner must run stay.
 - Tests: does an existing test pin the old behaviour? Ask for a focused
   regression test only when one is needed to show a material bug or an
   unmet requirement. Never ask for new test infrastructure, or for tests

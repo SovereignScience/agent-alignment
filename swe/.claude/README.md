@@ -78,13 +78,30 @@ commits, more than 80 added doc lines, more than 400 added lines, a new doc
 file, an AI tell in docs or commit messages, AI attribution anywhere, a
 commit whose author or committer is not the clone's `user.name` and
 `user.email`, or a new branch under an agent's name such as `claude/`. It refuses when there is no
-terminal. Install it with tells_check.py beside it:
+terminal.
+
+pre-commit and commit-msg run privacy_check.py on the staged change and the
+commit message, and pre-push runs it on every pushed commit. It runs only
+where the repository has a `.privacy-allow` file at its top, and refuses a
+commit or push that removes that file; use `--no-verify` to do that. It prints each
+private detail it finds with a placeholder to use, and Git cancels; it changes
+nothing. Names with no telling shape come from the machine as it runs: the
+committer's Git name and email, the login and hostname, the folders beside
+the main checkout whose names the tracked files do not already hold, and
+`~/.config/agent-alignment/privacy-names`, one name a
+line, when it exists. Every new binary, images included, waits for its blob
+id in `.privacy-allow` after someone has looked at it.
+A value that is public anyway goes on its own line in `.privacy-allow`. It
+does not see an annotated tag's message, or anything pushed from a clone
+without these hooks or by cloud_push.sh.
+
+Install the hooks with the files they import beside them:
 
 ```bash
 (
   set -eu
   hook_dir="$(git rev-parse --git-path hooks)"
-  for name in pre-push pre-push.local tells_check.py; do
+  for name in pre-push pre-push.local pre-commit commit-msg tells_check.py privacy_check.py; do
     if [ -e "$hook_dir/$name" ] || [ -L "$hook_dir/$name" ]; then
       echo "Existing $name; preserve and integrate it before installing." >&2
       exit 1
@@ -92,8 +109,10 @@ terminal. Install it with tells_check.py beside it:
   done
   mkdir -p "$hook_dir"
   source_dir="$(git rev-parse --show-toplevel)/swe/.claude/scripts"
-  cp "$source_dir/pre-push" "$source_dir/tells_check.py" "$hook_dir/"
-  chmod +x "$hook_dir/pre-push"
+  for name in pre-push pre-commit commit-msg tells_check.py privacy_check.py; do
+    cp "$source_dir/$name" "$hook_dir/"
+  done
+  chmod +x "$hook_dir/pre-push" "$hook_dir/pre-commit" "$hook_dir/commit-msg"
 )
 ```
 

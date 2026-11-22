@@ -12,7 +12,9 @@
 #   2. merges this checkout's changes to the user rules template (user/CLAUDE.md)
 #      into ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md, keeping what you filled in;
 #   3. copies codex/default.rules to ~/.codex/rules/, if ~/.codex exists;
-#   4. refreshes the pre-push hook in this repository, if one is installed;
+#   4. where this repository has a pre-push hook, refreshes it with the kit's
+#      push check and puts the kit's pre-commit and commit-msg privacy check
+#      beside it, leaving another tool's commit hook alone;
 #   5. with --context, installs that file as this repository's board context;
 #   6. installs every agent and slash command of the kit in the user-level
 #      folders that every project loads, each with a note naming this folder.
@@ -52,9 +54,12 @@ files=(
     "$etc/hooks/after_summary.sh" "$etc/hooks/fetch_allow.txt"
     "$codex_etc/requirements.toml"
     "$HOME/.claude/settings.json" "$HOME/.codex/config.toml" "${rules[@]}" "$codex_rules"
-    "$hooks/pre-push" "$hooks/tells_check.py" "$root/.lattice/context.md"
+    "$root/.lattice/context.md"
 )
 source "$swe/scripts/kit_files.sh"
+for hook in "${kit_hooks[@]}"; do
+    files+=("$hooks/$hook")
+done
 # The kit's agents and slash commands, installed where every project loads them.
 kit_sources=("$swe"/.claude/agents/*.md "$swe"/.claude/commands/*.md)
 kit_targets=()
@@ -178,12 +183,21 @@ status)
         echo "absent     $hooks/pre-push (left alone)"
     elif [ -L "$hooks/pre-push" ]; then
         echo "linked     $hooks/pre-push follows the file it points to (left alone)"
-    elif cmp -s "$hooks/pre-push" "$swe/.claude/scripts/pre-push" \
-            && cmp -s "$hooks/tells_check.py" "$swe/.claude/scripts/tells_check.py"; then
-        echo "unchanged  $hooks/pre-push"
     else
-        echo "would update $hooks/pre-push"
-        pending=1
+        stale=no
+        for hook in "${kit_hooks[@]}"; do
+            if foreign_hook "$hooks/$hook"; then
+                echo "foreign    $hooks/$hook is another tool's (left alone)"
+            elif ! cmp -s "$hooks/$hook" "$swe/.claude/scripts/$hook"; then
+                stale=yes
+            fi
+        done
+        if [ "$stale" = no ]; then
+            echo "unchanged  the Git hooks in $hooks"
+        else
+            echo "would update the Git hooks in $hooks"
+            pending=1
+        fi
     fi
     current=0
     for i in "${!kit_sources[@]}"; do
@@ -261,9 +275,13 @@ apply)
         echo "installed  $codex_rules"
     fi
     if [ -f "$hooks/pre-push" ] && [ ! -L "$hooks/pre-push" ]; then
-        cp "$swe/.claude/scripts/pre-push" "$swe/.claude/scripts/tells_check.py" "$hooks/"
-        chmod +x "$hooks/pre-push"
-        echo "installed  $hooks/pre-push"
+        for hook in "${kit_hooks[@]}"; do
+            foreign_hook "$hooks/$hook" || cp "$swe/.claude/scripts/$hook" "$hooks/$hook"
+        done
+        for hook in pre-push pre-commit commit-msg; do
+            foreign_hook "$hooks/$hook" || chmod +x "$hooks/$hook"
+        done
+        echo "installed  the Git hooks in $hooks"
     fi
     if [ -n "$context" ]; then
         cp "$context" "$root/.lattice/context.md"

@@ -130,39 +130,55 @@ for root in "$workspace"/*/; do
         continue
     fi
     hooks=$(git -C "$root" rev-parse --path-format=absolute --git-path hooks)
+    own=()
+    for h in "${kit_hooks[@]}"; do
+        foreign_hook "$hooks/$h" || own+=("$h")
+    done
     if [ "$hooks" != "$root/.git/hooks" ]; then
         echo "note     its hooks come from $hooks (core.hooksPath); push check left alone"
-    elif [ -L "$hooks/pre-push" ] || [ -L "$hooks/tells_check.py" ]; then
-        echo "note     the push hook or tells_check.py is a link (left alone)"
-    elif [ ! -f "$hooks/pre-push" ]; then
-        answer=$yes
-        if [ "$yes" = no ]; then
-            read -r -p "ask      no push hook here; install the kit's push check (your commits only, no AI tells, asks before large pushes)? [y/N] " answer || answer=""
-        fi
-        if [ "$answer" != y ] && [ "$answer" != yes ]; then
-            echo "skipped  push check"
-        elif mkdir -p "$hooks" && replace "$swe/.claude/scripts/pre-push" "$hooks/pre-push" \
-                && replace "$swe/.claude/scripts/tells_check.py" "$hooks/tells_check.py"; then
-            echo "installed push check"
-        else
-            problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"
-        fi
-    elif ! grep -qF "$kit_hook_mark" "$hooks/pre-push" \
+    elif [ -L "$hooks/pre-push" ] || [ -L "$hooks/tells_check.py" ] || [ -L "$hooks/privacy_check.py" ]; then
+        echo "note     the push hook or a file it imports is a link (left alone)"
+    elif [ -f "$hooks/pre-push" ] && ! grep -qF "$kit_hook_mark" "$hooks/pre-push" \
             && [ "$(sha256sum < "$hooks/pre-push" | cut -d' ' -f1)" != "$old_wrapper" ]; then
         echo "note     another tool's push hook is here (left alone)"
-    elif cmp -s "$hooks/pre-push" "$swe/.claude/scripts/pre-push" && cmp -s "$hooks/tells_check.py" "$swe/.claude/scripts/tells_check.py"; then
-        echo "current  push check"
     else
-        done_ok=yes
-        for h in pre-push tells_check.py; do
-            if [ -f "$hooks/$h" ] && ! replace "$hooks/$h" "$hooks/$h.$stamp.bak" backup; then
-                done_ok=no
-                continue
-            fi
-            replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
+        for h in pre-commit commit-msg; do
+            ! foreign_hook "$hooks/$h" || echo "note     another tool's $h is here (left alone)"
         done
-        if [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
-        else problems=$((problems + 1)); echo "PROBLEM  the push check could not be updated; the .bak copies hold the old one"; fi
+        if [ ! -f "$hooks/pre-push" ]; then
+            answer=$yes
+            if [ "$yes" = no ]; then
+                read -r -p "ask      no push hook here; install the kit's Git hooks (your commits only, no AI tells, asks before large pushes, privacy check where .privacy-allow exists)? [y/N] " answer || answer=""
+            fi
+            done_ok=yes
+            if [ "$answer" != y ] && [ "$answer" != yes ]; then
+                echo "skipped  push check"
+            elif mkdir -p "$hooks"; then
+                for h in "${own[@]}"; do
+                    replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
+                done
+                if [ "$done_ok" = yes ]; then echo "installed push check"
+                else problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"; fi
+            else
+                problems=$((problems + 1)); echo "PROBLEM  the push check could not be installed"
+            fi
+        else
+            stale=()
+            for h in "${own[@]}"; do
+                cmp -s "$hooks/$h" "$swe/.claude/scripts/$h" || stale+=("$h")
+            done
+            done_ok=yes
+            for h in "${stale[@]}"; do
+                if [ -f "$hooks/$h" ] && ! replace "$hooks/$h" "$hooks/$h.$stamp.bak" backup; then
+                    done_ok=no
+                    continue
+                fi
+                replace "$swe/.claude/scripts/$h" "$hooks/$h" || done_ok=no
+            done
+            if [ ${#stale[@]} -eq 0 ]; then echo "current  push check"
+            elif [ "$done_ok" = yes ]; then echo "updated  push check (old copies kept as *.$stamp.bak)"
+            else problems=$((problems + 1)); echo "PROBLEM  the push check could not be updated; the .bak copies hold the old one"; fi
+        fi
     fi
     stale=() edited=()
     for kind in agents commands; do
