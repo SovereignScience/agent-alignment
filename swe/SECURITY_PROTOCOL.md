@@ -102,7 +102,20 @@ that don't validate become CVEs.
     hosts at a closed port, and it fails every request that is not to
     this machine; the sandbox's network limits stay the boundary. If the
     headless shell is missing, ask the user to install it; never fall
-    back to another browser.
+    back to another browser. A project's own Playwright suite may also
+    run inside the sandbox, against the app the suite itself starts.
+    Set its `executablePath` to `/usr/bin/chromium-headless-shell`, the
+    same browser, kept current by the system's package updates; never
+    a copy in a cache or project folder, full Chromium, a `channel`,
+    Firefox or WebKit. Leave `chromiumSandbox` unset, start the app
+    with the runner's `webServer`, and set `serviceWorkers: 'block'`.
+    Use no launch `args`, `ignoreDefaultArgs`, `proxy`, `storageState`,
+    `ignoreHTTPSErrors` or persistent context, and do not use
+    `connect`, `connectOverCDP`, `launchServer`, `--ui`, `--debug`,
+    `codegen` or `show-report`. Every other limit of this rule still
+    holds, with one exemption: a suite need not abort requests to other
+    hosts, so a page's remote resources reach every host the sandbox
+    approves. The sandbox's network limits are the boundary.
 
 ## When to surface
 
