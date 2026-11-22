@@ -47,30 +47,34 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Sandbox limits
 
-These are normal. Work within them. Do not probe the sandbox, diagnose
-it or report a limit as a fault.
+On my machine, commands run in a sandbox. These limits are normal. Work
+within them. Do not probe the sandbox, diagnose it or report a limit as
+a fault.
 
 - Your home folder is hidden, apart from the project and a few Git
-  files. A rules file, tool or cache that looks missing there is hidden,
-  not absent. A denied path can also show as an empty placeholder file;
+  files. A rules file, tool or cache that looks missing there may be
+  hidden. A denied path can also show as an empty placeholder file;
   never stage one.
 - Where Git's own folder is read-only, staging, commits, merges and
   worktree changes are mine. Edit and test in the task worktree and hand
   me the commands. Commit hooks and the tools they need run in my
   terminal.
-- Start a local server and whatever calls it in the same command. A
-  named Unix socket cannot be created.
-- The only browser is chromium-headless-shell, through the kit's
-  swe/scripts/local_browser.py or the project's own runner pointed at
-  that binary. Full Chromium and downloaded browsers do not start.
+- Start a local server and whatever calls it in the same command. Under
+  Claude Code a Unix socket cannot be created.
+- Under Claude Code the browser for local pages is
+  chromium-headless-shell, through the kit's
+  swe/scripts/local_browser.py. Full Chromium does not start. Codex has
+  no browser route yet; that step is mine.
 - Only approved hosts answer. When a test needs a download, give me the
   command that fetches it once into the project. When a page is off the
   reading list, name the host in one line and use other sources.
 - Secret files such as .env read as empty or missing. A step that needs
   one runs in my terminal.
-- When a limit stops a step, try the real command once. Then tell me in
-  one line what could not run, give me the exact command for my
-  terminal, and finish everything else.
+- Do not test the sandbox to see whether a step will run. Run the
+  step's own command once. If a limit in this list refuses it, tell me
+  in one line what could not run, give me the exact command for my
+  terminal, and finish everything else. This never applies to a hard
+  limit.
 
 ## Voice
 
