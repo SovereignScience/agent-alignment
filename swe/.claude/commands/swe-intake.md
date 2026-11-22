@@ -30,7 +30,10 @@ Steps:
    - NOT A DEFECT: the behaviour is intended. The doc or test that
      says so.
    - DUPLICATE: the task that covers it.
-4. For VALID only, ask until the task is clear, by the "Ask before the
+4. For VALID only, check whether the owner gave the coordinator a
+   release mandate. Within that mandate, follow Release admission in
+   the board context. If the issue can wait, give one reason to return
+   and stop. Otherwise ask until it is clear, by the "Ask before the
    plan" rule in `.lattice/context.md`: who needs the fix, the result
    they expect, how the owner will check it and what is out of scope.
 5. Draft the task in the board's description shape (Request, Scope,
@@ -40,7 +43,7 @@ Steps:
    owner's answers in the Request.
 
 Do not create the task, write a test into the checkout or start the
-fix. The owner authorizes the task; after a yes, create it with
+fix. When task creation is authorized, use
 `lattice create` and `lattice criterion add`, passing
 `--actor agent:<tool>`. The failing test is written later, in the
 task's worktree, with `/swe-add-test`.

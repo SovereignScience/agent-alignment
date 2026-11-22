@@ -58,8 +58,9 @@ and rules for answering review threads.
   other task that changes behaviour, write the plan to the task's plan
   file (`lattice plan AA-<n> --json` gives its path), set
   `lattice needs-human AA-<n> "Need: approve plan"` and stop until the
-  owner approves it. A task the owner selected skips that stop, with no
-  flag, when its plan fits the small-fix form (Need, Acceptance
+  owner approves it. A task selected by the owner or a coordinator under
+  a direct release mandate skips that stop, with no flag, when its plan
+  fits the small-fix form (Need, Acceptance
   criteria, Steps, Coverage boundary), leaves the owner nothing to
   decide, is easy to revert and touches no guardrail file,
   authentication, permissions, secrets, network access, stored data or

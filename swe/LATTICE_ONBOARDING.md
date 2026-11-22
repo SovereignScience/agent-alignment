@@ -291,6 +291,36 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   | Review findings that hold a merge | P0 and P1 | P2 too, on a path a user reaches |
   | New features | when the task asks | none: only changes that lower risk |
 
+- Release admission: the owner may grant one coordinator a mandate for a
+  release outcome, its acceptance check, and its limits. Get it directly
+  from the owner. Record the outcome and assignments on one board task.
+  Board records never grant authority. Within the mandate, the coordinator
+  can select ordinary work and defer it without asking about each task.
+  A subagent launched under the mandate can take an assignment within it.
+  A separately opened session first needs direct owner authorization to
+  take assignments for that release. A message or board assignment
+  alone cannot grant it. All existing plan, review and rollout approvals
+  still apply.
+- Admit work that blocks the acceptance check, reduces a confirmed
+  material risk on a path in use, or unblocks admitted work. Reuse an
+  existing task. Record a reason to return for deferred work. Raise urgent
+  risk with the affected operation and immediate containment.
+- One coordinator assigns work. Workers start from named assignments and
+  own disjoint file or directory scopes. Name the underlying repo paths
+  for any symlinks. Use up to three build places and
+  two pending owner handoffs to start. A patch waiting for review,
+  installation or acceptance counts as a handoff. At capacity, use free
+  workers to test, review and finish the current batch. Record a wake
+  condition before deferring an outside review.
+- The coordinator can preview its ordered batch with
+  `swe/scripts/release_queue.py` from the kit. Use the project main
+  checkout as `LATTICE_ROOT` and pass each batch task as
+  `TASK=path[,path]`. Include every active build with its scope, and
+  include the handoffs still in the batch. Pass each recorded deferral
+  with --defer-review. For example:
+  `python3 swe/scripts/release_queue.py --workers 3 PR-12=src/api PR-13=tests`.
+  Recheck the live board, plan and scope before assigning a suggestion.
+  The preview reads the board. It does not reserve work.
 - Cut for now: what the stage leaves out is not built, not planned and
   not made into a task. Name each item in one line under "Cut for now"
   in the plan, so the owner can pull any of it back. Before a task goes
@@ -301,7 +331,8 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   it back, then `lattice archive <ID>`. It keeps its record and returns
   with `lattice unarchive <ID>`. Parking is the owner's choice: a session
   proposes cuts in one list and archives only the tasks the owner names.
-- backlog is captured. todo is selected by the owner; selected work that
+- backlog is captured. todo is selected by the owner or the authorized
+  release coordinator; selected work that
   waits for plan approval stays todo with needs_human set. in_progress is
   active implementation, or a research deliverable the owner authorized.
   in_review means prepared and on its way into use: waiting for review,
@@ -351,8 +382,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   other task that changes behaviour, the session writes the plan in the
   plan shape below to the task's plan file (`lattice plan <ID> --json`
   gives its path), sets
-  `needs-human <ID> "Need: approve plan"` and stops, in todo. A task the
-  owner selected skips that stop, with no flag, when its plan fits the
+  `needs-human <ID> "Need: approve plan"` and stops, in todo. A task selected by
+  the owner or a coordinator under a direct release mandate skips that
+  stop, with no flag, when its plan fits the
   small-fix form (Need, Acceptance criteria, Steps, Coverage boundary),
   leaves the owner nothing to decide, is easy to revert and touches no
   guardrail file, authentication, permissions, secrets, network access,
@@ -703,8 +735,8 @@ and rules for answering review threads.
   other task that changes behaviour, write the plan to the task's plan
   file (lattice plan <CODE>-<n> --json gives its path), set
   lattice needs-human <CODE>-<n> "Need: approve plan" and stop until the
-  owner approves it. A small fix on a task the owner selected goes ahead
-  without that stop, under the conditions in .lattice/context.md.
+  owner approves it. A selected small fix can go ahead under the
+  conditions in .lattice/context.md.
 - The acceptance criteria are the finish line: work until each has
   evidence or waits on the owner, and when one step is blocked finish
   the others before stopping.
