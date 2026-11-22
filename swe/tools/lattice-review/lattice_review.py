@@ -1390,6 +1390,10 @@ class Context:
 # --------------------------------------------------------------------------
 
 STYLE = """
+html{background:#14171c;color-scheme:dark}.alone body{max-width:54rem;margin:0 auto;padding:1.5rem 1.25rem}
+.problem{margin:.4rem 0;padding:1rem 1.2rem;border:1px solid var(--border,#3a4250);border-left:4px solid var(--color-warning,#f6c343);border-radius:8px;background:var(--surface-raised,#1d222a)}
+.problem h1{margin:0 0 .5rem;font-size:1.15rem;line-height:1.3}.problem p{margin:.45rem 0;font-size:.95rem}.problem .do{font-weight:600}
+.problem code{display:block;padding:.4rem .6rem;border-radius:4px;white-space:pre-wrap;background:color-mix(in srgb,var(--text-primary,#e4e7eb) 10%,transparent)}
 body{margin:0;padding:0 0 .5rem;background:transparent;color:var(--text-primary,#e4e7eb);font:.85rem/1.45 var(--font-body,system-ui,sans-serif)}
 table{border-collapse:collapse;width:100%;margin:.3rem 0}td,th{text-align:left;padding:.15rem .4rem;border-bottom:1px solid var(--border,#2a2f37);vertical-align:top}
 th{color:var(--text-muted,#9aa4b2);font-weight:600}code{font-family:var(--font-mono,monospace);font-size:.8rem}
@@ -1421,11 +1425,14 @@ body[data-f=change] .event.comment,body[data-f=comment] .event.change{display:no
 textarea{flex:1;min-height:2.6rem;font:inherit;color:inherit;background:var(--surface,#2a2f37);border:1px solid var(--border,#3a4250);border-radius:var(--radius-sm,4px);padding:.25rem}
 """
 
-INHERIT = """<script>try{var s=getComputedStyle(parent.document.documentElement);
+# Inside the dashboard a page takes the dashboard's theme and shows it through.
+# In a tab of its own it keeps STYLE's dark background, so its light text stays
+# readable.
+INHERIT = """<script>var r=document.documentElement;if(parent===window)r.className="alone";else try{var s=getComputedStyle(parent.document.documentElement);
 ["--text-primary","--text-muted","--accent-primary","--text-on-accent","--surface","--surface-hover","--surface-raised","--border","--radius-sm",
 "--font-body","--font-mono","--color-warning","--color-danger","--color-success","--bg-base"].forEach(function(v){
-document.documentElement.style.setProperty(v,s.getPropertyValue(v))});
-document.documentElement.style.colorScheme=s.colorScheme}catch(e){}</script>"""
+r.style.setProperty(v,s.getPropertyValue(v))});
+r.style.colorScheme=s.colorScheme;r.style.background="transparent"}catch(e){}</script>"""
 
 
 def e(value):
@@ -1447,6 +1454,17 @@ if(n)setTimeout(function(){n.scrollIntoView({block:"center"})},300)})</script>""
 def page(title, body, refresh=False):
     return ("<!doctype html><html><head><meta charset='utf-8'><title>" + e(title) + "</title>" + INHERIT
             + "<style>" + STYLE + "</style></head><body>" + body + FORMS + (RELOAD if refresh else "") + "</body></html>").encode()
+
+
+def problem(title, what, todo, detail="", home=False):
+    """A page for something that went wrong: what happened, then what to do."""
+    body = "<div class='problem'><h1>%s</h1><p>%s</p>" % (e(title), e(what))
+    if detail:
+        body += "<code>%s</code>" % e(detail)
+    body += "<p class='do'>%s</p>" % e(todo)
+    if home:
+        body += "<p><a href='/' target='_top'>Open the board</a></p>"
+    return page(title, body + "</div>")
 
 
 def button(ctx, action, label, fields=None, primary=False, tab=False, small=False, confirm=None):
@@ -1942,8 +1960,12 @@ def make_handler(ctx, base=None, static_dir=None):
                 self.send_header("Location", urllib.parse.urlunsplit(("", "", url.path or "/", rest, "")))
                 self.end_headers()
             else:
-                self.forbidden("This browser is not signed in to this board, or the board has restarted since. "
-                               "Open the link printed in the terminal where board runs.")
+                self.forbidden("This browser is not signed in to the board",
+                               "The board answers only a browser that opened its sign-in link. "
+                               "Each start of the board makes a new link, so a restart signs every browser out.",
+                               "In the terminal where board runs, copy the link it printed and open it in this browser. "
+                               "If that terminal is closed, the board is still running without it: "
+                               "stop the process on port %d, then run board again." % self.server.server_port)
             return False
 
         def send_page(self, data, status=200, content_type="text/html; charset=utf-8"):
@@ -1961,16 +1983,22 @@ def make_handler(ctx, base=None, static_dir=None):
             self.send_header("Location", location)
             self.end_headers()
 
-        def forbidden(self, why):
-            self.send_page(page("forbidden", "<p>" + e(why) + "</p>"), 403)
+        def forbidden(self, title, what, todo):
+            self.send_page(problem(title, what, todo), 403)
+
+        def not_found(self):
+            self.send_page(problem("Nothing at this address", "No task or page on this board matches it.",
+                                   "Check the task ID, or start again from the board.", home=True), 404)
 
         def do_GET(self):
             if not local_host(self.headers.get("Host")):
-                return self.forbidden("requests must address this machine")
+                return self.forbidden("This address does not name this machine",
+                                      "The board answers only requests addressed to 127.0.0.1 or localhost.",
+                                      "Open the link that board printed in the terminal.")
             parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
             if parts[:1] == ["t"] and len(parts) == 2:
                 task = find_task(ctx.board, parts[1])
-                return self.redirect("/#/task/" + task["id"]) if task else self.send_page(page("not found", "<p>not found</p>"), 404)
+                return self.redirect("/#/task/" + task["id"]) if task else self.not_found()
             if parts[:1] != [REVIEW_PATH.strip("/")]:
                 try:
                     return super().do_GET()
@@ -1986,10 +2014,11 @@ def make_handler(ctx, base=None, static_dir=None):
                         return self.send_page(page(task["short_id"] + " history", render_history(ctx, task["short_id"], entries)
                                                    or "<p class='muted'>Nothing has happened on this task yet.</p>"))
                 except RuntimeError as exc:
-                    return self.send_page(page("Git read refused", "<p class='err'>%s</p>" % e(exc)), 409)
+                    return self.send_page(problem("Git could not read this task's commits", "The review section stopped before showing anything.",
+                                                  "Fix what the message names, then reload.", detail=exc), 409)
             if len(parts) == 1:
                 return self.redirect("/")
-            self.send_page(page("not found", "<p>not found</p>"), 404)
+            self.not_found()
 
         def _serve_static(self, filename, content_type):
             path = static_dir / filename
@@ -2000,10 +2029,13 @@ def make_handler(ctx, base=None, static_dir=None):
         def do_POST(self):
             host = self.headers.get("Host")
             if not local_host(host):
-                return self.forbidden("requests must address this machine")
+                return self.forbidden("This address does not name this machine",
+                                      "The board answers only requests addressed to 127.0.0.1 or localhost.",
+                                      "Open the link that board printed in the terminal.")
             origin = self.headers.get("Origin")
             if origin and not same_origin(origin, host):
-                return self.forbidden("cross-site request refused")
+                return self.forbidden("A request from another site was refused", "The board accepts changes only from its own pages.",
+                                      "Open the board in a tab of its own and make the change there.")
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -2015,7 +2047,9 @@ def make_handler(ctx, base=None, static_dir=None):
             if parts[:1] == [REVIEW_PATH.strip("/")]:
                 return self.review_post(parts, raw)
             if not origin:
-                return self.forbidden("dashboard writes need an Origin header from this machine")
+                return self.forbidden("The change was refused",
+                                      "The request did not say which page sent it, so the board cannot tell it is its own.",
+                                      "Make the change from the board's own page.")
             try:
                 record = json.loads(raw)
             except ValueError:
@@ -2053,14 +2087,15 @@ def make_handler(ctx, base=None, static_dir=None):
         def review_post(self, parts, raw):
             form = {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode()).items()}
             if form.get("token") != ctx.token:
-                return self.forbidden("This page is from before the review server restarted (bad token). "
+                return self.forbidden("This page is out of date",
+                                      "The review server restarted after this page loaded, so its buttons no longer work.",
                                       "Reload the dashboard page, then try again.")
             if len(parts) != 4 or parts[1] != "t":
-                return self.send_page(page("not found", "<p>not found</p>"), 404)
+                return self.not_found()
             sid, action = parts[2], parts[3]
             task = find_task(ctx.board, sid)
             if not task:
-                return self.send_page(page("not found", "<p>not found</p>"), 404)
+                return self.not_found()
             try:
                 if action == "plannotator":
                     return self.open_session(sid, form)
@@ -2114,7 +2149,8 @@ def make_handler(ctx, base=None, static_dir=None):
                 url = session_url(job.err_path.read_text()) if job and not job.done and job.err_path.is_file() else None
                 if url:
                     return self.redirect(url)
-                return self.send_page(page("Plannotator", "<p class='err'>%s</p>" % e(exc)))
+                return self.send_page(problem("Plannotator did not start", "No review session was opened for this task.",
+                                              "Close this tab, fix what the message names and press the button again.", detail=exc))
             for _ in range(100):
                 if job.err_path.is_file():
                     url = session_url(job.err_path.read_text())
@@ -2124,7 +2160,8 @@ def make_handler(ctx, base=None, static_dir=None):
                     break
                 time.sleep(0.2)
             why = job.error or "Plannotator printed no session URL within 20 seconds; see %s" % job.err_path
-            self.send_page(page("Plannotator", "<p class='err'>%s</p>" % e(why)))
+            self.send_page(problem("Plannotator did not start", "No review session was opened for this task.",
+                                   "Close this tab, fix what the message names and press the button again.", detail=why))
 
         def _handle_post_open_notes(self, ld, task_id):
             self.open_prose(ld, task_id, "notes")

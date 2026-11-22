@@ -1013,6 +1013,19 @@ class SectionTests(RepoFixture):
         self.assertEqual((status, headers.get("Set-Cookie")), (403, None))
         self.assertEqual((StubDashboard.received, self.calls), ([], []))
 
+    def test_a_refused_browser_gets_a_readable_page_that_says_what_to_do(self):
+        status, body, _ = call(self.base + "/", owner=False)
+        self.assertEqual(status, 403)
+        for part in ("<h1>This browser is not signed in to the board</h1>", "copy the link it printed",
+                     "html{background:#14171c", 'if(parent===window)r.className="alone"'):
+            self.assertIn(part, body)
+        self.assertIn("stop the process on port %d, then run board again" % self.server.server_address[1], body)
+        self.assertNotIn(self.ctx.key, body)
+        status, body, _ = call(self.base + "/review/t/AB-99")
+        self.assertEqual(status, 404)
+        self.assertIn("<h1>Nothing at this address</h1>", body)
+        self.assertIn("<a href='/' target='_top'>Open the board</a>", body)
+
     def test_the_printed_link_signs_a_browser_in_and_the_key_stays_out_of_the_log(self):
         port = self.server.server_address[1]
         with mock.patch("sys.stderr", new=io.StringIO()) as log:
