@@ -83,7 +83,9 @@ terminal.
 pre-commit and commit-msg run privacy_check.py on the staged change and the
 commit message, and pre-push runs it on every pushed commit. It runs only
 where the repository has a `.privacy-allow` file at its top, and refuses a
-commit or push that removes that file; use `--no-verify` to do that. It prints each
+commit or push that removes that file. Removing it is the owner's decision,
+made with `--no-verify`, which also skips the other pre-commit, commit-msg
+and pre-push checks for that commit and push. It prints each
 private detail it finds with a placeholder to use, and Git cancels; it changes
 nothing. Names with no telling shape come from the machine as it runs: the
 committer's Git name and email, the login and hostname, the folders beside

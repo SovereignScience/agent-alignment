@@ -72,8 +72,8 @@ a fault.
   swe/SECURITY_PROTOCOL.md has the other limits; if you cannot read it,
   do not use the suite. Full Chromium does not start under Claude Code.
   The kit's tool has run in both clients. A Playwright script has
-  passed once under Claude Code and none has run under Codex: tell me
-  the result of a first run.
+  passed under Claude Code and a Playwright Test run under Codex: tell
+  me the result of any other first run.
 - Only approved hosts answer. When a test needs a download, give me the
   command that fetches it once into the project. When a page is off the
   reading list, name the host in one line and use other sources.
