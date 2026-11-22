@@ -331,6 +331,13 @@ a fault.
   Smallest version: why this is the least that works in production.
   Checked: what ran, and what never ran.
   For you: the decision or command needed from me, or "nothing".
+- When you ask me to decide, approve or choose, give me what I need to
+  answer without remembering the task: what the thing is in plain
+  words, what goes wrong today without it, with one real example, or
+  that nothing does, what a yes changes for me, what it costs, what a
+  no or a wait means, the options and your recommendation. A flag, a
+  one-line scope question and the For you line stay short and point to
+  where this is written: the plan, a task comment, or the lines above.
 - Commands you hand me run in a subshell with `set -euo pipefail` and carry
   scripts inline, never as files in a shared temp folder.
 - Before a block depends on state the session cannot see, hand over a
