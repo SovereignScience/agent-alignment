@@ -203,6 +203,7 @@ accept one, by changing its status.
 | Bring every project in the workspace up to date with the kit: push checks, agent and command copies, and boards (owner-run, after `apply`; folders named in `~/.config/agent-alignment/skip`, one a line, are left out, and it stops when that file is missing; with `--push` the push check may ask at the terminal) | `bash scripts/update_all.sh --yes --push` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Screenshot or click through a local page, app started in the same command | `python3 scripts/local_browser.py --app '<start command>' http://127.0.0.1:<port>/ shot:page` (`--help` lists the steps) |
+| Run a project's own Playwright check in the sandbox ([security rule 12](SECURITY_PROTOCOL.md) has the limits) | Launch with `executablePath: '/usr/bin/chromium-headless-shell'` and make the context with `serviceWorkers: 'block'`. With Playwright Test, its `webServer` starts the app; otherwise start the app in the same command as the script |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done; python3 -m py_compile .claude/scripts/*.py .claude/scripts/pre-push` |
 
 There is no test suite for these protocols (they're prose). The

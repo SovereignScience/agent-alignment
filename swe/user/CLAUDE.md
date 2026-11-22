@@ -68,11 +68,12 @@ a fault.
 - For local pages use the kit's swe/scripts/local_browser.py, or the
   project's own Playwright suite with executablePath set to
   /usr/bin/chromium-headless-shell, service workers blocked, and only
-  the app the suite's runner starts. Rule 12 in the kit's
+  the app started for that run. Rule 12 in the kit's
   swe/SECURITY_PROTOCOL.md has the other limits; if you cannot read it,
   do not use the suite. Full Chromium does not start under Claude Code.
-  The suite route is untested in both clients, and under Codex so is
-  the kit's tool: try a route once and tell me the result.
+  The kit's tool has run in both clients. A Playwright script has
+  passed once under Claude Code and none has run under Codex: tell me
+  the result of a first run.
 - Only approved hosts answer. When a test needs a download, give me the
   command that fetches it once into the project. When a page is off the
   reading list, name the host in one line and use other sources.
