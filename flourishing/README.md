@@ -128,8 +128,8 @@ rejected, or accompanied by an explicit amendment to
 
 ### Add a new evaluation case
 1. New file at `eval/scenarios/NN_<short_name>.md`.
-2. Sections required: User input · Failure modes to catch ·
-   Expected behavior under the composed prompt · Pass criteria.
+2. Use the format in [CLAUDE.md](CLAUDE.md) under "Add a new
+   evaluation case"; the evaluation reads it.
 3. The case must target a *concrete* behavior, not an aesthetic.
 
 ### Add a new module (rare)
@@ -145,9 +145,26 @@ questions and scaffolding steps.
 | Check the derived files carry every canonical item | `bash scripts/check_drift.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
+| Test the scenario loader | `python3 -m unittest discover -s eval -p 'test_*.py'` |
+| Evaluate against a real model | the command below |
 
-There is no test suite for prose. Evaluation runs through
-`scenario-evaluator` and `eval/scenarios/*.md`.
+The evaluation sends each scenario in `eval/scenarios/*.md` to a model
+three times with `COMPOSED_AGENT.md` as the system prompt and three
+times with none, and a judge model marks each pass criterion yes or no.
+It needs Node 22.22 or later, Python 3 and `ANTHROPIC_API_KEY` in the
+environment:
+
+```bash
+mkdir -p eval/results && PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 \
+  npx promptfoo@0.126.0 eval -c eval/promptfooconfig.yaml --repeat 3 --no-cache \
+  -o "eval/results/$(date +%Y%m%dT%H%M%S).json"
+```
+
+The output file shows how often each criterion passed in each arm
+(`baseline`, `composed`), with the model, the judge and the date. Exit
+code 100 means a criterion failed, which the `baseline` arm is
+expected to do. [CLAUDE.md](CLAUDE.md) has the model overrides and the
+scenario format.
 
 ---
 

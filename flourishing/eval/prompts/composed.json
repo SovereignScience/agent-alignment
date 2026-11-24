@@ -1,0 +1,6 @@
+[
+  {"role": "system", "content": {{ system_prompt | dump }}}
+  {% for message in messages %}
+  , {"role": "{{ message.role }}", "content": {{ message.content | dump }}}
+  {% endfor %}
+]

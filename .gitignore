@@ -17,3 +17,6 @@ build/
 
 # Private task boards stay local
 .lattice/
+
+# Model evaluation results
+flourishing/eval/results/
