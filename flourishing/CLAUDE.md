@@ -85,9 +85,29 @@ explicit slash command. Run at most three at once.
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done` |
+| Test the scenario loader | `python3 -m unittest discover -s eval -p 'test_*.py'` |
+| Evaluate against a real model | the command below |
 
-There is no test suite for prose. Evaluation runs through
-`scenario-evaluator` and `eval/scenarios/*.md`.
+The evaluation sends each scenario in `eval/scenarios/*.md` to a model
+three times with `COMPOSED_AGENT.md` as the system prompt and three
+times with none, and a judge model marks each pass criterion yes or no.
+It needs Node 22.22 or later, Python 3 and `ANTHROPIC_API_KEY` in the
+environment:
+
+```bash
+mkdir -p eval/results && PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 \
+  npx promptfoo@0.126.0 eval -c eval/promptfooconfig.yaml --repeat 3 --no-cache \
+  -o "eval/results/$(date +%Y%m%dT%H%M%S).json"
+```
+
+The output file shows how often each criterion passed in each arm
+(`baseline`, `composed`), with the model, the judge and the date. The
+command ends with exit code 100 when any criterion fails, and a good
+run does: the `baseline` arm is expected to fail some.
+`FLOURISHING_EVAL_TARGET` and `FLOURISHING_EVAL_JUDGE` override the
+two models. A judge from a different provider than the target is
+better practice: set `FLOURISHING_EVAL_JUDGE` to that provider's
+promptfoo id, with its key in the environment.
 
 ## How to add things
 
@@ -103,9 +123,30 @@ There is no test suite for prose. Evaluation runs through
 
 ### Add a new evaluation case
 1. New file at `eval/scenarios/NN_<short_name>.md`.
-2. Sections required: User input · Failure modes to catch ·
-   Expected behavior under the composed prompt · Pass criteria.
-3. The case must target a *concrete* behavior, not an aesthetic.
+2. Use this format. The evaluation reads the quoted lines under
+   Earlier turns (optional) and User input as the conversation, and
+   each Pass criteria bullet as one yes-or-no question for the judge.
+   A file with no User input or no Pass criteria bullet stops the run.
+   Only bullets that start with `- ` count, and a wrapped line of a
+   bullet must be indented.
+
+   ```
+   # Scenario NN: title
+
+   ## Earlier turns
+   > User: ...
+   > Assistant: ...
+
+   ## User input
+   > ...
+
+   ## Failure modes to catch
+   ## Expected behavior under the composed prompt
+   ## Pass criteria
+   - one yes-or-no criterion per bullet
+   ```
+3. The case must target a *concrete* behavior, not an aesthetic. Use a
+   user input that appears in none of the eight prompt files.
 4. Include it when the user requests `scenario-evaluator`.
 
 ### Add a new module (rare)

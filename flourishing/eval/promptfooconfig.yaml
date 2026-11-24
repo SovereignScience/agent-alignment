@@ -1,0 +1,28 @@
+# Run with the command in ../CLAUDE.md under "Build, verify".
+description: Flourishing scenarios, composed system prompt against none
+
+prompts:
+  - id: file://prompts/baseline.json
+    label: baseline
+  - id: file://prompts/composed.json
+    label: composed
+
+# max_tokens also covers thinking; promptfoo's default of 2048 can cut a reply short.
+# showThinking is off so the judge marks the reply, not the model's thinking text.
+providers:
+  - id: "{{ env.FLOURISHING_EVAL_TARGET | default('anthropic:messages:claude-sonnet-5-5') }}"
+    config:
+      max_tokens: 8192
+      showThinking: false
+
+defaultTest:
+  vars:
+    system_prompt: file://../COMPOSED_AGENT.md
+  options:
+    provider:
+      id: "{{ env.FLOURISHING_EVAL_JUDGE | default('anthropic:messages:claude-opus-5-5') }}"
+      config:
+        max_tokens: 8192
+        showThinking: false
+
+tests: file://load_scenarios.py:generate_tests
