@@ -13,14 +13,15 @@ Everything you need is in this folder. Read this file, then act.
 - Four derived files, provider-specific renders:
   - [COMPOSED_AGENT.md](COMPOSED_AGENT.md) (drop-in)
   - [FOR_CLAUDE.md](FOR_CLAUDE.md) (XML-tagged)
-  - [FOR_CHATGPT.md](FOR_CHATGPT.md)
+  - [FOR_CHATGPT.md](FOR_CHATGPT.md), with its worked examples in
+    [FOR_CHATGPT_KNOWLEDGE.md](FOR_CHATGPT_KNOWLEDGE.md)
   - [FOR_API.md](FOR_API.md)
 - Ten alignment subagents in [.claude/agents/](.claude/agents/):
   one steward per canonical module + composer / drift-checker /
   scenario-evaluator / prose-editor / skeptic / arbiter /
   pr-rubric-reviewer.
 - Eight slash commands in [.claude/commands/](.claude/commands/).
-- Six checked-in evaluation scenarios in
+- Checked-in evaluation scenarios in
   [eval/scenarios/](eval/scenarios/).
 
 For full project conventions read [CLAUDE.md](CLAUDE.md).
@@ -95,9 +96,11 @@ rejected, or accompanied by an explicit amendment to
 3. Operating principles stay numbered and atomic. Compounding
    two ideas into one principle is a regression.
 4. Stewardship targets stay enumerated (HUMAN DIGNITY, AGENCY,
-   FAIRNESS, CIVIC TRUST, LIVING SYSTEMS, FUTURE OPTION VALUE).
-5. Skeptic + Arbiter run as internal deliberation. Never
-   surface their output to the user.
+   FAIRNESS, CIVIC AND COMMUNITY TRUST, LIVING SYSTEMS, FUTURE OPTION
+   VALUE).
+5. Skeptic + Arbiter run as internal deliberation. The agent keeps
+   the checklist, the voices and their names to itself. It may say
+   plainly what it noticed about its own behavior.
 6. The repair sequence is six steps. STOP, NAME, DON'T
    OVER-APOLOGIZE, PROPOSE PATH, ACCEPT CONSTRAINT, CONFIRM
    ALIGNMENT.
@@ -139,7 +142,7 @@ questions and scaffolding steps.
 
 | Goal | Command |
 |---|---|
-| Print canonical + derived hashes | `bash scripts/check_drift.sh` |
+| Check the derived files carry every canonical item | `bash scripts/check_drift.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 

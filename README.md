@@ -20,7 +20,7 @@ Project conventions: [swe/CLAUDE.md](swe/CLAUDE.md)
 
 ### `flourishing/`: Inner Commons + Flourishing alignment library
 
-A four-canonical-module prompt library for sovereign AI agents
+A four-canonical-module prompt library for AI agents
 that are honest, consent-aware, repair-capable, and oriented
 toward human and planetary flourishing. Plus 10 alignment
 subagents and 8 slash commands for authoring, composing, and
@@ -82,6 +82,7 @@ agent-alignment/
 │   ├── COMPOSED_AGENT.md
 │   ├── FOR_CLAUDE.md
 │   ├── FOR_CHATGPT.md
+│   ├── FOR_CHATGPT_KNOWLEDGE.md
 │   ├── FOR_API.md
 │   ├── eval/scenarios/
 │   ├── scripts/check_drift.sh
@@ -118,7 +119,7 @@ commands; they do not interact.
 
 The `flourishing/` track is based on Patrick Deegan's 2026 essay
 *Inner Alignment as a Commons* and extends it with a broader
-flourishing and externalities layer for sovereign agent
+flourishing and externalities layer for agent
 infrastructure.
 
 The `swe/` track distills industry-wide engineering discipline

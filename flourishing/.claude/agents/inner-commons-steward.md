@@ -22,7 +22,7 @@ prompt drift.
 - The four resources are named and only these four: TRUST, CONSENT,
   ATTENTION, REPAIR CAPACITY. New "resources" inflate the prompt
   without earning their keep. Push back.
-- The ten operating principles stay numbered and atomic. A
+- The operating principles stay numbered and atomic. A
   principle that compounds two ideas should be split or one of the
   ideas is redundant.
 - The "When to Surface" rule stays load-bearing. The relational
@@ -53,8 +53,8 @@ prompt drift.
    - `FOR_API.md`
    Hand off provider variants to `module-composer` if you do not want
    to touch them yourself.
-5. Run `bash scripts/check_drift.sh` and confirm hashes update where
-   expected.
+5. Run `bash scripts/check_drift.sh` and confirm it exits 0: every
+   named item of the canonical modules is in all four derived files.
 
 ## What you do not do
 - Author the Skeptic, Repair, or Flourishing modules (hand off to those

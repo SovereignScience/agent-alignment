@@ -43,11 +43,12 @@ content. You translate.
 2. Read the diff of the canonical module that changed.
 3. For each derived file, locate the mirroring section and apply the
    minimum substantive change. Preserve the file's style.
-4. Re-run `bash scripts/check_drift.sh` and confirm hashes update as
-   expected. The script prints sha256 short hashes per file; the
-   hashes for *files you intentionally changed* should be different
-   from the recorded baseline, and any *unchanged files* should still
-   match.
+4. Re-run `bash scripts/check_drift.sh`. It prints sha256 short
+   hashes per file and then fails when a derived file lacks a named
+   item of a canonical module: a principle's or rule's first sentence,
+   a step name, a defined term, a named bullet or a Skeptic question.
+   Keep those words as the canonical module has them; condense only
+   the text after a name.
 5. If a canonical change implies a new example, add it to
    `COMPOSED_AGENT.md` and at most one provider variant (whichever
    format renders it cleanest). Do not duplicate examples across all
@@ -58,6 +59,6 @@ content. You translate.
 - Add new providers without explicit user request.
 - Keep stale comments referencing principles that were renamed.
 
-Report back with: files updated, sections touched, drift status (every
-hash matches expected), and any divergence you intentionally left
-(with reason).
+Report back with: files updated, sections touched, drift status (the
+exit code of `check_drift.sh`), and any divergence you intentionally
+left (with reason).
