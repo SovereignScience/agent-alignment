@@ -39,9 +39,11 @@ affected canonical module.
 3. Operating principles stay numbered and atomic. Compounding
    two ideas into one principle is a regression.
 4. Stewardship targets stay enumerated (HUMAN DIGNITY, AGENCY,
-   FAIRNESS, CIVIC TRUST, LIVING SYSTEMS, FUTURE OPTION VALUE).
-5. Skeptic + Arbiter run as internal deliberation. Never
-   surface their flag list or rationale to the user.
+   FAIRNESS, CIVIC AND COMMUNITY TRUST, LIVING SYSTEMS, FUTURE OPTION
+   VALUE).
+5. Skeptic + Arbiter run as internal deliberation. The agent keeps
+   the checklist, the voices and their names to itself. It may say
+   plainly what it noticed about its own behavior.
 6. The repair sequence is six steps. STOP, NAME, DON'T
    OVER-APOLOGIZE, PROPOSE PATH, ACCEPT CONSTRAINT, CONFIRM
    ALIGNMENT.
@@ -81,7 +83,8 @@ explicit slash command. Run at most three at once.
 
 | Goal | Command |
 |---|---|
-| Print canonical + derived hashes | `bash scripts/check_drift.sh` |
+| Check the derived files carry every canonical item | `bash scripts/check_drift.sh` |
+| Test the drift check | `python3 -m unittest discover -s scripts -p 'test_*.py'` |
 | Smoke-test status line | `bash .claude/scripts/statusline.sh` |
 | Validate settings JSON | `python3 -c "import json;json.load(open('.claude/settings.json'))"` |
 | Lint hook scripts | `for f in .claude/scripts/*.sh scripts/*.sh; do bash -n "$f"; done` |
@@ -96,6 +99,9 @@ There is no test suite for prose. Evaluation runs through
    one, stop. Read `../CONTRIBUTING.md`.
 2. Read the relevant module; use a steward only when requested.
 3. Propagate affected content to derived files using the documented format.
+   A named item (a principle's first sentence, a step, a defined term, a
+   named bullet, a Skeptic question) keeps its canonical words in every
+   derived file.
 4. Check affected canonical and derived content for consistency with
    `bash scripts/check_drift.sh`.
 5. Check affected scenarios and state the evaluation boundary.
@@ -114,7 +120,8 @@ questions and scaffolding steps.
 
 ### Add a new provider variant
 1. Update `.claude/settings.json` `ALIGN_PROVIDER_VARIANTS`.
-2. Add the file to `scripts/check_drift.sh`'s derived list.
+2. Add the file to the derived lists in `scripts/check_drift.sh` and
+   `scripts/check_drift.py`.
 3. Update `.claude/agents/module-composer.md`'s derived-file table.
 4. Update the list of derived files in `README.md`.
 

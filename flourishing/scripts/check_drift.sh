@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Print sha256 short hashes for the four canonical alignment modules
-# and the four derived provider variants. Caller decides whether the
-# pattern looks consistent — this script only reports.
+# and the four derived provider variants, then fail when a derived file
+# lacks a named item of a canonical module (check_drift.py has the rule).
 set -euo pipefail
-cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/..}" 2>/dev/null || exit 0
+cd "$(dirname "$0")/.."
 
 short_hash() {
   if [[ -f "$1" ]]; then
@@ -34,3 +34,5 @@ echo "[supporting]"
 for f in README.md CLAUDE.md; do
   printf "%-26s  %-14s  %s\n" "$f" "$(short_hash "$f")" "$(last_commit "$f")"
 done
+
+python3 scripts/check_drift.py

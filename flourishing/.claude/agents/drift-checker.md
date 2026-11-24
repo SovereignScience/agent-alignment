@@ -15,7 +15,10 @@ You audit cross-file consistency. You do not edit anything.
 - [scripts/check_drift.sh](../../scripts/check_drift.sh)
 
 ## How you work
-1. Run `bash scripts/check_drift.sh`. Capture the per-file hashes.
+1. Run `bash scripts/check_drift.sh`. Capture the per-file hashes
+   and its exit code. It fails when a derived file lacks a named item
+   of a canonical module. It checks names only, so steps 2 and 3 are
+   still yours.
 2. For each canonical module that changed since the recorded baseline
    (use `git diff main..HEAD -- <file>`), grep the derived files for
    the mirroring section and confirm the substantive content matches.
