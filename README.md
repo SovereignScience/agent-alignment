@@ -82,6 +82,7 @@ agent-alignment/
 │   ├── COMPOSED_AGENT.md
 │   ├── FOR_CLAUDE.md
 │   ├── FOR_CHATGPT.md
+│   ├── FOR_CHATGPT_KNOWLEDGE.md
 │   ├── FOR_API.md
 │   ├── eval/scenarios/
 │   ├── scripts/check_drift.sh

@@ -79,6 +79,33 @@ class DriftCases(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn('FOR_API.md lacks "Acknowledge growth"', done.stderr)
 
+    def test_an_item_only_above_the_full_version_marker_does_not_count(self):
+        body = DERIVED.replace("- Acknowledge growth.\n", "")
+        done = self.run_check("# - Acknowledge growth.\n\n# ── FULL VERSION (paste this) ──\n" + body)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn('FOR_API.md lacks "Acknowledge growth"', done.stderr)
+
+    def test_a_chatgpt_full_version_over_its_field_limit_fails(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            for name in ("INNER_COMMONS_CORE.md", "FLOURISHING_PROTOCOL.md",
+                         "SKEPTIC_ARBITER.md", "REPAIR_PROTOCOL.md"):
+                (root / name).write_text(MODULE)
+            for name in ("COMPOSED_AGENT.md", "FOR_CLAUDE.md", "FOR_API.md"):
+                (root / name).write_text(DERIVED)
+            counted = len(DERIVED) + DERIVED.count("\n")
+            codes = {}
+            for size in (7999, 8000):
+                (root / "FOR_CHATGPT.md").write_text(
+                    "\n# ── FULL VERSION ──\n" + DERIVED + "x" * (size - counted)
+                    + "\n# ── ABBREVIATED VERSION ──\n")
+                done = subprocess.run([sys.executable, str(SCRIPT), folder],
+                                      text=True, capture_output=True, timeout=20)
+                codes[size] = done.returncode
+        self.assertEqual(codes, {7999: 0, 8000: 1})
+        self.assertIn("FOR_CHATGPT.md is 8000 characters", done.stderr)
+        self.assertIn("its field holds 8000", done.stderr)
+
     def test_a_module_with_no_tagged_block_is_an_error(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)

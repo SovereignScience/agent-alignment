@@ -23,7 +23,7 @@ file. The sibling track in `../swe/` is independent.
 |---|---|
 | [COMPOSED_AGENT.md](COMPOSED_AGENT.md) | All four modules in one drop-in. |
 | [FOR_CLAUDE.md](FOR_CLAUDE.md) | XML-tagged + abbreviated User-Preferences variant. |
-| [FOR_CHATGPT.md](FOR_CHATGPT.md) | ChatGPT system-prompt. |
+| [FOR_CHATGPT.md](FOR_CHATGPT.md) | ChatGPT system-prompt, under the 8,000 characters a Custom GPT's Instructions field holds. Its worked examples are in [FOR_CHATGPT_KNOWLEDGE.md](FOR_CHATGPT_KNOWLEDGE.md), which the user uploads. |
 | [FOR_API.md](FOR_API.md) | API system-prompt + composition guidance. |
 
 ## Architectural commitments (do not weaken)
@@ -102,6 +102,9 @@ There is no test suite for prose. Evaluation runs through
    A named item (a principle's first sentence, a step, a defined term, a
    named bullet, a Skeptic question) keeps its canonical words in every
    derived file.
+   The ChatGPT full version is the short one: it keeps every name and
+   stays under 8,000 characters, and the check fails over that. Its
+   longer wording and examples go in `FOR_CHATGPT_KNOWLEDGE.md`.
 4. Check affected canonical and derived content for consistency with
    `bash scripts/check_drift.sh`.
 5. Check affected scenarios and state the evaluation boundary.

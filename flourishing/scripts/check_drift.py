@@ -6,7 +6,10 @@ capitals, a bullet that opens with a name and then explains it, and a
 Skeptic question. Each must appear word for word in every derived file;
 case and line breaks are ignored except for the defined terms. A derived
 file's abbreviated version, a commented short form after the full prompt,
-does not count. The check sees names only: it does not compare the text
+does not count, and where a file marks its full version only that part
+counts. The ChatGPT full version must also fit the 8,000 characters a
+Custom GPT's Instructions field holds, with each line break counted as
+two characters in case the field counts them that way. The check sees names only: it does not compare the text
 after a name, and it does not notice text a derived file should have lost.
 """
 import pathlib
@@ -19,6 +22,8 @@ DERIVED = ["COMPOSED_AGENT.md", "FOR_CLAUDE.md", "FOR_CHATGPT.md", "FOR_API.md"]
 
 TERM = re.compile(r"^([A-Z][A-Z ]+): ")
 ABBREVIATED = "\n# ── ABBREVIATED VERSION"
+FULL = "\n# ── FULL VERSION"
+FIELD_LIMIT = {"FOR_CHATGPT.md": 8000}
 NAMED = [
     re.compile(r"^\d+\. (.+?)\.(?: |$)"),
     re.compile(r"^### Step \d+: (.+?)(?: \(.*\))?$"),
@@ -54,10 +59,26 @@ def items(text):
     return terms, names
 
 
+def full_version(text):
+    text = text.split(ABBREVIATED)[0]
+    if FULL in text:
+        text = text.split(FULL, 1)[1].split("\n", 1)[1]
+    return text
+
+
+def too_long(root):
+    root = pathlib.Path(root)
+    sizes = {}
+    for name in FIELD_LIMIT:
+        text = full_version((root / name).read_text()).strip()
+        sizes[name] = len(text) + text.count("\n")
+    return [(name, size, FIELD_LIMIT[name]) for name, size in sizes.items()
+            if size >= FIELD_LIMIT[name]]
+
+
 def missing(root):
     root = pathlib.Path(root)
-    derived = {name: squash((root / name).read_text().split(ABBREVIATED)[0])
-               for name in DERIVED}
+    derived = {name: squash(full_version((root / name).read_text())) for name in DERIVED}
     lacks = []
     for module in CANONICAL:
         terms, names = items((root / module).read_text())
@@ -79,8 +100,13 @@ def main(argv):
     lacks = missing(root)
     for name, module, item in lacks:
         print("check_drift: %s lacks \"%s\" (%s)" % (name, item, module), file=sys.stderr)
+    long = too_long(root)
+    for name, size, limit in long:
+        print("check_drift: the full version in %s is %d characters with line breaks "
+              "counted twice; its field holds %d" % (name, size, limit), file=sys.stderr)
     if lacks:
         print("check_drift: %d named item(s) missing from derived files" % len(lacks), file=sys.stderr)
+    if lacks or long:
         return 1
     print("check_drift: every named item of the canonical modules is in all four derived files")
     return 0

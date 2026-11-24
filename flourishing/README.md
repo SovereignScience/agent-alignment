@@ -13,7 +13,8 @@ Everything you need is in this folder. Read this file, then act.
 - Four derived files, provider-specific renders:
   - [COMPOSED_AGENT.md](COMPOSED_AGENT.md) (drop-in)
   - [FOR_CLAUDE.md](FOR_CLAUDE.md) (XML-tagged)
-  - [FOR_CHATGPT.md](FOR_CHATGPT.md)
+  - [FOR_CHATGPT.md](FOR_CHATGPT.md), with its worked examples in
+    [FOR_CHATGPT_KNOWLEDGE.md](FOR_CHATGPT_KNOWLEDGE.md)
   - [FOR_API.md](FOR_API.md)
 - Ten alignment subagents in [.claude/agents/](.claude/agents/):
   one steward per canonical module + composer / drift-checker /
