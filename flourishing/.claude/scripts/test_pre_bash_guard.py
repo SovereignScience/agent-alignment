@@ -65,6 +65,17 @@ class GuardCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+    def test_input_the_guard_cannot_read_is_refused(self):
+        inputs = ["not json", "", "{}", '{"tool_input": {}}',
+                  '{"tool_input": {"command": ["git", "push"]}}']
+        for text in inputs:
+            with self.subTest(text=text):
+                result = subprocess.run(["/bin/bash", str(GUARD)], input=text, text=True,
+                                        capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("could not read", result.stderr)
+
+
 class HarnessTests(unittest.TestCase):
     def test_bad_decisions_crashes_and_invalid_output_fail_the_process(self):
         fixtures = ["exit 0\n", "exit 7\n", "printf invalid\\ output\n"]

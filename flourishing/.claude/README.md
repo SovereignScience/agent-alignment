@@ -66,7 +66,15 @@ StatusLine    runs statusline.sh       branch + dirty + align:<canonical-hash>
 ```
 
 All hooks are best-effort; PostToolUse never blocks. PreToolUse
-returns exit 2 to block destructive bash patterns.
+returns exit 2 to block destructive bash patterns and when it cannot
+read the command, and its hook entry sets `onFailure` to `block`.
+`settings.json` turns the sandbox on with the same credential files
+and variables denied as in the swe track, and keeps the approval
+prompt for sandboxed commands that are on no list
+(`autoAllowBashIfSandboxed` is false). Where the sandbox is
+unavailable, commands are refused. The sandbox and the deny list are
+the boundary. Stage and commit in your own terminal, from the top of
+the checkout: `.git` is outside this folder.
 
 ---
 

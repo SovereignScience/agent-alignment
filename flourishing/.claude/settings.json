@@ -31,7 +31,6 @@
       "Bash(gh pr checks *)",
       "Bash(gh issue list *)",
       "Bash(gh issue view *)",
-      "Bash(gh api repos/*)",
       "Bash(python3 *)",
       "Bash(python3 -m json.tool*)",
       "Bash(bash scripts/*)",
@@ -52,7 +51,9 @@
       "Bash(ln -sf *)",
       "Bash(chmod +x *)"
     ],
-    "ask": [],
+    "ask": [
+      "Bash(gh api *)"
+    ],
     "deny": [
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~*)",
@@ -66,11 +67,79 @@
       "Bash(git reset --hard origin/master*)",
       "Bash(git config *)",
       "Bash(chmod -R 777 *)",
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(**/secrets/**)",
-      "Read(**/*.key)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.git-credentials)",
+      "Read(~/.ssh/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.password-store/**)",
+      "Read(~/.config/age/**)",
+      "Read(~/.netrc)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.cargo/credentials)",
+      "Read(~/.cargo/credentials/**)",
+      "Read(~/.cargo/credentials.toml)",
+      "Read(~/.cargo/credentials.toml/**)",
+      "Read(~/.config/git/credentials)",
+      "Read(~/.config/git/credentials/**)",
+      "Read(**/*.kdbx)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.envrc)",
+      "Read(**/*.tfvars)",
+      "Read(**/*.tfvars.json)",
+      "Read(**/*.tfstate*)",
+      "Read(**/*.age)",
       "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/id_ecdsa)",
+      "Read(**/credentials.json)",
+      "Read(**/secrets/**)",
+      "Read(**/*.p12)",
+      "Read(**/*.pfx)",
+      "Read(**/id_rsa.pub)",
+      "Read(**/id_ed25519.pub)",
+      "Read(**/id_ecdsa.pub)",
+      "Read(**/authorized_keys)",
+      "Read(**/.aws/**)",
+      "Read(**/.ssh/**)",
+      "Read(**/.gnupg/**)",
+      "Read(**/terraform.tfstate)",
+      "Read(**/terraform.tfstate.backup)",
+      "Read(**/wrangler.toml)",
+      "Read(**/serviceaccount*.json)",
+      "Read(**/*service-account*.json)",
+      "Read(**/*kubeconfig*)",
+      "Read(**/*vault-init*)",
+      "Read(**/*unseal*)",
+      "Read(**/*.kdbx*)",
+      "Read(~/.ssh)",
+      "Read(~/.kube)",
+      "Read(~/.config/gh)",
+      "Read(~/.config/age)",
+      "Read(~/.gnupg)",
+      "Read(~/.password-store)",
+      "Read(~/.docker/config.json/**)",
+      "Read(~/.codex/auth.json/**)",
+      "Read(~/.claude/.credentials.json/**)",
+      "Read(~/.npmrc)",
+      "Read(~/.npmrc/**)",
+      "Read(~/.pypirc)",
+      "Read(~/.pypirc/**)",
+      "Read(~/.git-credentials/**)",
+      "Read(~/.aws)",
+      "Read(~/.netrc/**)",
+      "Read(~/.config/gcloud)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/b2)",
+      "Read(~/.config/b2/**)",
+      "Read(~/.config/doctl)",
+      "Read(~/.config/doctl/**)",
       "Bash(git push *)",
       "Bash(git push)",
       "Bash(gh pr create *)",
@@ -78,8 +147,60 @@
       "Bash(gh pr close *)",
       "Bash(gh pr comment *)",
       "Bash(gh issue create *)",
-      "Bash(gh issue close *)"
+      "Bash(gh issue close *)",
+      "Edit(/.claude/scripts/**)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com"
+      ]
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache",
+        "/tmp"
+      ]
+    },
+    "credentials": {
+      "files": [
+        { "path": "~/.ssh", "mode": "deny" },
+        { "path": "~/.kube", "mode": "deny" },
+        { "path": "~/.config/gh", "mode": "deny" },
+        { "path": "~/.git-credentials", "mode": "deny" },
+        { "path": "~/.aws", "mode": "deny" },
+        { "path": "~/.netrc", "mode": "deny" },
+        { "path": "~/.docker/config.json", "mode": "deny" },
+        { "path": "~/.config/age", "mode": "deny" },
+        { "path": "~/.password-store", "mode": "deny" },
+        { "path": "~/.gnupg", "mode": "deny" },
+        { "path": "~/.codex/auth.json", "mode": "deny" },
+        { "path": "~/.claude/.credentials.json", "mode": "deny" },
+        { "path": "~/.npmrc", "mode": "deny" },
+        { "path": "~/.pypirc", "mode": "deny" },
+        { "path": "~/.config/gcloud", "mode": "deny" },
+        { "path": "~/.config/b2", "mode": "deny" },
+        { "path": "~/.config/doctl", "mode": "deny" }
+      ],
+      "envVars": [
+        { "name": "GH_TOKEN", "mode": "deny" },
+        { "name": "GITHUB_TOKEN", "mode": "deny" },
+        { "name": "SSH_AUTH_SOCK", "mode": "deny" },
+        { "name": "KUBECONFIG", "mode": "deny" },
+        { "name": "AWS_ACCESS_KEY_ID", "mode": "deny" },
+        { "name": "AWS_SECRET_ACCESS_KEY", "mode": "deny" },
+        { "name": "AWS_SESSION_TOKEN", "mode": "deny" },
+        { "name": "VAULT_TOKEN", "mode": "deny" },
+        { "name": "CLOUDFLARE_API_TOKEN", "mode": "deny" }
+      ]
+    },
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false
   },
   "hooks": {
     "SessionStart": [
@@ -100,7 +221,8 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/pre_bash_guard.sh",
-            "timeout": 5
+            "timeout": 5,
+            "onFailure": "block"
           }
         ]
       }

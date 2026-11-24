@@ -18,7 +18,12 @@ Before scaffolding, ask the user:
 2. Why is this not absorbable into an existing canonical module?
 3. What single example demonstrates the intended behavior change?
 
-If the user clears all three, proceed:
+This command edits instruction files: a canonical module, `README.md`
+and `CLAUDE.md`. Where the repository's rules ask for a task with an
+approved plan before such an edit, stop and ask the user for that task.
+Scaffold only after they name a task whose plan is approved.
+
+If the user clears all three and has named that task, proceed:
 
 1. Create `$1.md` with frontmatter-style header comments, an
    `<lower_snake_tag>` opening tag, a Purpose section, an
