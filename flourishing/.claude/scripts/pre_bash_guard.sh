@@ -4,13 +4,18 @@
 set -euo pipefail
 
 input="$(cat)"
-cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
-try:
-    d=json.load(sys.stdin)
-    print(d.get("tool_input",{}).get("command",""))
-except Exception:
-    print("")
-' 2>/dev/null || echo "")"
+if ! cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
+command=json.load(sys.stdin)["tool_input"]["command"]
+if not isinstance(command, str):
+    raise TypeError("command is not text")
+print(command)
+' 2>/dev/null)"; then
+  {
+    echo "pre-bash-guard: could not read the command from the hook input, so it is refused"
+    echo "Say in one line what was blocked; do not retry or delegate it. Carry on with work that does not need it."
+  } >&2
+  exit 2
+fi
 
 [[ -z "$cmd" ]] && exit 0
 
