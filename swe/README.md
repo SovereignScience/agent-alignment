@@ -549,5 +549,4 @@ printed undo commands for changed files, then start another fresh session.
 
 This repository has a sibling subtree at `../flourishing/` for
 Inner-Commons + Flourishing alignment-prompt authoring. It is
-independent. Ignore it unless you've been explicitly directed
-there.
+independent.
