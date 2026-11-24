@@ -79,6 +79,15 @@ a fault.
   reading list, name the host in one line and use other sources.
 - Secret files such as .env read as empty or missing. A step that needs
   one runs in my terminal.
+- In a shell command you run, never use `cd`. Use absolute paths and
+  `git -C <path>`, and keep each call to one simple command where you
+  can. Claude Code can ask me to approve a command that changes folder
+  and then runs something else, even in auto mode, and each such
+  prompt stops unattended work. It may also ask about a leading
+  `NAME=value`: prefer `env NAME=value <command>`. Where you have an
+  edit tool, change a project file with it, not with an interpreter
+  one-liner, a here-document script or `sed -i`: Claude Code can ask
+  me about those as well.
 - Do not test the sandbox to see whether a step will run. Run the
   step's own command once. If a limit in this list refuses it, tell me
   in one line what could not run, give me the exact command for my
