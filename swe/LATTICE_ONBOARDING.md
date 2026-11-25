@@ -157,9 +157,9 @@ finishes on its own:
 
 1. Adds the step 3a block to the project's instruction files as step 3a
    says, and gives the owner the commit block for them.
-2. Asks the owner to start the review server: `board`, installed as
+2. Asks the owner to start the review server with `board`, installed as
    [tools/lattice-review/README.md](tools/lattice-review/README.md)
-   describes, or the step 6 command.
+   describes.
 3. Works through the step 4a message as its own instructions.
 4. Puts the tags from that report into `.lattice/context.md`, in place of
    "to be set after the first session".
@@ -454,7 +454,7 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   Attach only sanitized references: no client documents, personal data,
   credentials, transcripts or raw request and response bodies.
 - Review flow: the owner opens the board at http://127.0.0.1:<port>
-  (the review server, started with --main <branch> and a human: actor,
+  (the review server, started with `board`,
   which is the dashboard plus a review section on every task). There
   the owner opens the task's commits in Plannotator
   or file by file in VS Code; the review lands on the task as a comment
@@ -967,10 +967,13 @@ From a VS Code integrated terminal in the project (so files open in
 that window):
 
 ```
-python3 <agent-alignment>/swe/tools/lattice-review/lattice_review.py --actor human:<name> --main <integration branch>
+board
 ```
 
-`--main` defaults to `main`; a task's branch is diffed from its
+[tools/lattice-review/README.md](tools/lattice-review/README.md#run)
+installs `board` and gives the long command for a machine without
+it. `board` takes the base branch from the repository's
+`lattice-review.base`, else `main`; a task's branch is diffed from its
 merge-base with it. Restart the server after updating this tool. Open
 the link it prints, once in each browser, and click a task. Its detail
 view has a Review
