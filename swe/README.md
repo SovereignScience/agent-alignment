@@ -148,14 +148,14 @@ shows. To change the kit and sign your own releases, see
 [Running your own kit](LATTICE_ONBOARDING.md#running-your-own-kit).
 
 ```
-<kit owner's email> namespaces="git" <key type> <public key, added by the kit owner with the first release>
+1277671+pdeegan@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGVrxFw25h90JCct1TZ4n3v+UPWcHeGV3cQDF8Aua6CP
 ```
 
-Fingerprint: `<SHA256 fingerprint, added by the kit owner with the first release>`
+Fingerprint: `SHA256:Npvuj4TfNxoMZoPsYYOMysKv/bsO62dUid5QFTZCjaU`
 
 This file is served from the same place as the kit, so check the key
 somewhere else too: GitHub's list of the kit owner's signing keys, at
-`https://api.github.com/users/<kit owner's GitHub account, added with the first release>/ssh_signing_keys`.
+`https://api.github.com/users/pdeegan/ssh_signing_keys`.
 The list cannot be changed from this repository, but the account name
 above can, so confirm the account outside the repository as well: from
 the organisation's public members page or from the kit owner directly.
