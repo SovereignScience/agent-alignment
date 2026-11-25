@@ -1,7 +1,21 @@
 # Sourced by switch_rules.sh, for how a kit agent or slash command looks once
 # installed outside this folder, and by both scripts for the kit's Git hooks
-# and how they are told from another tool's. The caller sets $swe to this
-# kit's swe folder first.
+# and how they are told from another tool's. update_all.sh and
+# install_isolation.sh also take the owner's skip list from here. The caller
+# sets $swe to this kit's swe folder first.
+
+# The workspace folders the owner leaves out of every kit script, one name a
+# line. read_skip adds them to the caller's skip array, and fails when there is
+# no such file; an empty file leaves out nothing.
+skip_file="$HOME/.config/agent-alignment/skip"
+read_skip() {
+    local line
+    [ -f "$skip_file" ] || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line#"${line%%[![:space:]]*}"} && line=${line%"${line##*[![:space:]]}"} && line=${line%/}
+        [ -z "$line" ] || skip+=("$line")
+    done < "$skip_file"
+}
 
 kit_mark="The kit's files that this names"
 kit_note="$kit_mark (the five protocols, CRAFT.md, ADR_TEMPLATE.md, and anything under scripts/ or tools/) are in $swe, whichever project you are in; where the sandbox hides that folder, read them in .agent-alignment/swe at the top of the project's main checkout, and still name $swe in any command for the owner."

@@ -76,7 +76,7 @@ class Probe(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def probe(self, client, sentinel="agent-alignment sentinel", **fake):
+    def probe(self, client, sentinel="agent-alignment sentinel", script=SCRIPT, **fake):
         if sentinel is not None:
             self.sentinel.unlink(missing_ok=True)
             self.sentinel.write_text(sentinel)
@@ -85,7 +85,7 @@ class Probe(unittest.TestCase):
                    TMPDIR=str(self.repo), PATH=str(self.bin), REAL_PY=sys.executable)
         env.update({"FAKE_PY_OUT": "refused", **fake})
         args = ["--client", client] if client else []
-        run = subprocess.run([BASH, str(SCRIPT), *args], cwd=self.repo, env=env,
+        run = subprocess.run([BASH, str(script), *args], cwd=self.repo, env=env,
                              capture_output=True, text=True, timeout=60)
         return run.returncode, run.stdout + run.stderr
 
@@ -129,6 +129,41 @@ class Probe(unittest.TestCase):
         self.assertEqual(len(check), 1, out)
         run = subprocess.run([BASH, "-c", check[0]], capture_output=True, text=True)
         self.assertEqual(run.stdout.strip(), "present", run.stderr)
+
+    @unittest.skipIf(AS_ROOT, "root ignores the read-only mode this test puts on the clone")
+    def test_a_kit_clone_must_refuse_writes_while_the_folder_beside_it_takes_them(self):
+        _, out = self.probe("claude", sentinel="")
+        self.assertIn("info  no kit clone at", out)
+        clone = self.repo / ".agent-alignment"
+        clone.mkdir()
+        _, out = self.probe("claude", sentinel="")
+        self.assertIn("FAIL  the kit clone is writable: %s" % clone, out)
+        self.assertIn("ok    working directory writable", out)
+        self.assertEqual(list(clone.iterdir()), [])
+        clone.chmod(0o555)
+        try:
+            _, out = self.probe("claude", sentinel="")
+        finally:
+            clone.chmod(0o755)
+        self.assertIn("ok    the kit clone is not writable", out)
+        self.assertIn("ok    working directory writable", out)
+
+    def test_run_from_a_projects_clone_a_newer_installed_hook_is_not_a_failure(self):
+        scripts = self.repo / ".agent-alignment/swe/scripts"
+        scripts.mkdir(parents=True)
+        shutil.copy(SCRIPT, scripts / "check_isolation.sh")
+        shutil.copytree(SWE / ".claude/scripts", scripts.parent / ".claude/scripts")
+        installed = self.etc / "claude-code/hooks"
+        (installed / "fetch_allow.txt").write_text("a newer list\n")
+        (installed / "tells_check.py").unlink()
+        _, out = self.probe("claude", sentinel="", script=".agent-alignment/swe/scripts/check_isolation.sh")
+        self.assertIn("info  installed hook differs from this clone, which sits on a release: fetch_allow.txt", out)
+        self.assertIn("ok    installed hook matches this checkout: guard_outward.py", out)
+        self.assertIn("FAIL  installed hook differs from this checkout, or is missing: %s" % (installed / "tells_check.py"),
+                      out)
+        _, out = self.probe("claude", sentinel="")
+        self.assertIn("FAIL  installed hook differs from this checkout, or is missing: %s" % (installed / "fetch_allow.txt"),
+                      out)
 
     def test_network_expectations_follow_the_client(self):
         code, out = self.probe("codex", sentinel="")

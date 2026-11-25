@@ -122,6 +122,41 @@ class Installer(unittest.TestCase):
                     interpreter.unlink(missing_ok=True)
                     marker.unlink(missing_ok=True)
 
+    def test_each_kit_clone_in_the_workspace_is_named_read_only_for_both_clients(self):
+        projects = self.home / "projects"
+        for clone in ("demo/.agent-alignment", "group/nested/.agent-alignment", "too/deep/down/.agent-alignment",
+                      "hidden/.agent-alignment"):
+            (projects / clone).mkdir(parents=True)
+        for name in ("no-clone", "linked", "a-file"):
+            (projects / name).mkdir()
+        (projects / "linked/.agent-alignment").symlink_to(projects / "demo/.agent-alignment")
+        (projects / "a-file/.agent-alignment").write_text("")
+        # Folders in the owner's skip list are not looked into, under their own name or through a link.
+        for clone in ("fenced/.agent-alignment", "fenced/inner/.agent-alignment", "also fenced/.agent-alignment"):
+            (projects / clone).mkdir(parents=True)
+        (projects / "alias").symlink_to(projects / "fenced")
+        (projects / "group/alias").symlink_to(projects / "fenced")
+        (self.home / ".config/agent-alignment").mkdir(parents=True)
+        (self.home / ".config/agent-alignment/skip").write_text("fenced/\n  also fenced  \r\n\nnot-there\n")
+        named = ["~/projects/demo/.agent-alignment", "~/projects/group/nested/.agent-alignment",
+                 "~/projects/hidden/.agent-alignment"]
+        code, out = self.run_installer(local={"sandbox": {"filesystem": {"denyRead": ["~/projects/hidden"]}}}, apply=True)
+        self.assertEqual(code, 0, out)
+        managed = json.loads((self.etc / "claude-code/managed-settings.json").read_text())
+        denied = managed["sandbox"]["filesystem"]["denyWrite"]
+        self.assertEqual([path for path in denied if ".agent-alignment" in path], named)
+        self.assertIn("~/.claude/hooks", denied)
+        self.assertTrue(any(line.startswith("+") and line.endswith('"~/projects/demo/.agent-alignment",')
+                            for line in out.splitlines()), "the preview does not show the new denial")
+        fs = self.requirements()["permissions"]["alignment_workstation"]["filesystem"]
+        # Codex gets each clone as an exact read-only path, never one a denial already covers.
+        self.assertEqual({path: access for path, access in fs.items() if ".agent-alignment" in path},
+                         dict.fromkeys(named[:2], "read"))
+        self.assertEqual(fs["~/projects/hidden"], "deny")
+        self.assertIn("~/projects/hidden/.agent-alignment (at or under a denied path)", out)
+        self.assertNotIn(".agent-alignment", fs.get(":workspace_roots", {}))
+        self.assertNotIn("fenced", out + json.dumps(managed) + json.dumps(fs))
+
     def test_managed_read_access_keeps_shell_github_and_write_credentials_closed(self):
         code, out = self.run_installer(apply=True, AGENT_GITHUB_READ_TOKEN="made-up-read-token")
         self.assertEqual(code, 0, out)

@@ -228,6 +228,7 @@
       "Edit(/.claude/scripts/**)",
       "Edit(/.claude/agents/**)",
       "Edit(/.claude/commands/**)",
+      "Edit(/.agent-alignment/**)",
       "Edit(~/.claude/settings.json)",
       "Edit(~/.claude/settings.local.json)",
       "Edit(~/.claude/hooks/**)",

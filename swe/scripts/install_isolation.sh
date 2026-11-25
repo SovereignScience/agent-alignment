@@ -7,11 +7,15 @@
 #   swe/scripts/install_isolation.sh --apply   back up each file, then install
 #
 # Files it installs:
-#   /etc/claude-code/managed-settings.json            from .claude/managed-settings.example.json
+#   /etc/claude-code/managed-settings.json            from .claude/managed-settings.example.json, plus a
+#                                                     write denial for each project's .agent-alignment clone
+#                                                     in the workspace; rerun after adding a clone. Folders
+#                                                     named in ~/.config/agent-alignment/skip are left out
 #   /etc/claude-code/managed-settings.d/50-local.json from the local file below, if present
 #   /etc/claude-code/hooks/                           guard_outward.py, tells_check.py, after_summary.sh,
 #                                                     fetch_allow.txt (never fetch_allow.local.txt)
-#   /etc/codex/requirements.toml                      the Codex profile, built from codex/config.snippet.toml
+#   /etc/codex/requirements.toml                      the Codex profile, built from codex/config.snippet.toml,
+#                                                     with each such clone read-only
 #   ~/.claude/settings.json                           drops rules the managed layer replaces
 #   ~/.codex/config.toml                              default_permissions set to that profile
 #   ~/.config/agent-alignment/sentinel                made-up content for check_isolation.sh
@@ -69,10 +73,26 @@ test_dirs=no
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-/usr/bin/python3 -I - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" <<'PY'
+# The kit clones of the workspace's projects: in a folder directly inside it, or
+# one folder down. Folders in the owner's skip list are not looked into, and
+# neither are links.
+source "$swe/scripts/kit_files.sh"
+skip=() clones=()
+read_skip || true
+for top in "$workspace"/*/; do
+    top=${top%/}
+    [ ! -L "$top" ] || continue
+    for name in "${skip[@]}"; do [ "${top##*/}" != "$name" ] || continue 2; done
+    for clone in "$top/.agent-alignment" "$top"/*/.agent-alignment; do
+        [ -d "$clone" ] && [ ! -L "$clone" ] && [ ! -L "${clone%/.agent-alignment}" ] || continue
+        clones+=("$clone")
+    done
+done
+
+/usr/bin/python3 -I - "$swe" "$workspace" "$local_file" "$stage" "$etc" "$codex_etc" "$test_dirs" "${clones[@]}" <<'PY'
 import copy, json, os, pathlib, re, stat, sys, tomllib
 
-swe, workspace, local_file, stage, etc, codex_etc, test_dirs = sys.argv[1:]
+swe, workspace, local_file, stage, etc, codex_etc, test_dirs, *found = sys.argv[1:]
 home = os.path.expanduser("~")
 ws = "~/" + os.path.relpath(workspace, home) if workspace.startswith(home + "/") else workspace
 stage = pathlib.Path(stage)
@@ -111,6 +131,12 @@ managed = json.loads(text.replace("~/projects", ws))
 for key, value in managed.get("env", {}).items():
     if value.startswith("~/"):
         managed["env"][key] = home + value[1:]
+# A project's clone of the kit is read-only to sessions. On Linux and WSL2 a
+# sandbox write denial takes no wildcard, and Codex cannot hold a rule for a
+# path that does not exist, so each clone found above is named. Codex gets
+# them as read entries, which also lets any Codex session read them.
+clones = sorted(ws + path[len(workspace):] for path in found)
+managed["sandbox"]["filesystem"]["denyWrite"] += clones
 (stage / "managed-settings.json").write_text(json.dumps(managed, indent=2) + "\n")
 
 # Local drop-in: it may only add denials, as lists of non-empty strings, plus
@@ -233,7 +259,7 @@ if codex.exists():
     denied = [os.path.realpath(ex(p)) for p in denies]
     reads = []
     input_roots = {"~/.codex/attachments", "~/.codex/skills/openai-docs"}
-    for p in (p for p, v in snippet_fs.items() if v == "read" and not p.startswith(":")):
+    for p in [p for p, v in snippet_fs.items() if v == "read" and not p.startswith(":")] + clones:
         q = ex(p)
         real = os.path.realpath(q)
         if p in input_roots and (real != os.path.abspath(q)

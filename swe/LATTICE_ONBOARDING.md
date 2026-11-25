@@ -92,36 +92,231 @@ Lattice itself is assumed present (`lattice --version`).
 ### Getting the kit into a project
 
 A session sees only the folder it was opened in, so a project's sessions
-read the kit from a clone at the top of the project. From the top of the
-project:
+read the kit from a clone at the top of the project. The clone sits on
+one release of a kit: a Git tag such as `v1.2.0`, signed by whoever runs
+that kit. Git checks the signature against your allowed signers file,
+`~/.config/agent-alignment/allowed_signers`, before you use the clone.
+
+That file says whose releases you take. Fill it once on each machine,
+by either of the two sections after this one: the kit owner's releases,
+or a kit of your own. It is outside every project, in a folder the
+kit's sandbox keeps sessions out of, so nothing in a project can change
+who is trusted. Never take a line from a project or from a clone.
+
+Then, from the top of the project, with the kit's address and the
+release filled in:
 
 ```
 exclude=$(git rev-parse --path-format=absolute --git-path info/exclude)
 grep -qxF /.agent-alignment/ "$exclude" || echo /.agent-alignment/ >> "$exclude"
-git clone -q https://github.com/SovereignScience/agent-alignment .agent-alignment
-git -C .agent-alignment remote set-url --push origin no-push
+git clone -q --no-checkout --no-hardlinks <kit> .agent-alignment &&
+git -C .agent-alignment -c gpg.ssh.allowedSignersFile="$HOME/.config/agent-alignment/allowed_signers" -c gpg.program=false -c gpg.x509.program=false verify-tag refs/tags/<tag> &&
+git -C .agent-alignment checkout -q --detach refs/tags/<tag> &&
+git -C .agent-alignment remote set-url --push origin no-push &&
+bash .agent-alignment/swe/scripts/kit_pull.sh <tag>
 ```
 
-Sessions read the agent files, protocols and this guide from the clone
-and never write to it. Its push address is `no-push`, so a `git push`
-from it fails. Sessions can write the clone's own Git files, so the
-owner never runs Git inside an old clone: refresh it by cloning it again,
-from the top of the project:
+`<kit>` is `https://github.com/SovereignScience/agent-alignment` for the
+kit owner's releases, or the folder of your own kit. `git ls-remote
+--tags --refs --sort=-version:refname <kit> 'v*'` lists a kit's
+releases, newest first. The clone checks nothing out until the
+`verify-tag` line has printed `Good "git" signature for`, the signer's
+email address and the key's fingerprint. That check is typed by hand
+because nothing in a new clone can be trusted to check itself. If any
+line stops, the lines after it do not run: delete the folder and tell
+whoever signs that kit. The two `gpg` options make any signature that is not an
+SSH one fail. The tag is always written `refs/tags/<tag>`, so a branch
+of the same name is never taken for it. The last line then confirms the
+release carries the name you asked for.
 
-```
-rm -rf .agent-alignment
-git clone -q https://github.com/SovereignScience/agent-alignment .agent-alignment
-git -C .agent-alignment remote set-url --push origin no-push
-```
+Sessions read the agent files, protocols and this guide from the clone.
+The kit's sandbox settings deny them every write to it, in Claude Code
+and in Codex, once `install_isolation.sh` has installed them. Its push
+address is `no-push`, so a `git push` from it fails.
 
 Sessions learn about the clone from the user rules and the note on each
 kit agent and command, which `swe/scripts/switch_rules.sh apply` installs
-from the kit's main checkout; run it again after updating the kit.
+from the kit's main checkout; run it again after updating the kit. Run
+it also after putting the kit into another project: the write denials
+name each clone the installer finds, and it does not look in folders
+listed in `~/.config/agent-alignment/skip`. Then, in a fresh session in the
+project, `bash .agent-alignment/swe/scripts/check_isolation.sh --client
+claude` (or `codex`) must print `ok    the kit clone is not writable`.
 
 Run the kit's scripts, `board_setup.sh` among them, from the kit's main
 checkout (`<agent-alignment>` in this guide, the path the installed
-commands name), never from the clone: the project's sessions can write
-the clone. Commands a session gives the owner name that path.
+commands name), never from the clone: a clone is only as sound as the
+rule that keeps sessions from writing it. Commands a session gives the
+owner name that path. `kit_pull.sh` and `check_isolation.sh` are the two
+run from the clone.
+
+### Taking the kit owner's signed releases
+
+The kit owner's release key is printed in
+[README.md](README.md#release-signing-key): one line, and its
+fingerprint. Add the line to your file, then print the fingerprint of
+each line the file holds:
+
+```
+mkdir -p ~/.config/agent-alignment
+echo '<line from the README>' >> ~/.config/agent-alignment/allowed_signers
+cut -d' ' -f3,4 ~/.config/agent-alignment/allowed_signers | ssh-keygen -lf -
+```
+
+One printed fingerprint must equal the one in the README. The README
+comes from the same place as the kit, so the first time, find the same
+key in GitHub's list of the kit owner's signing keys, which the README
+links, and confirm that account name outside the repository: from the
+organisation's public members page or the kit owner directly. A change
+to the repository can alter the README, the key and the account name
+together. You are trusting the kit owner's key, and what they
+chose to sign. `<kit>` is
+`https://github.com/SovereignScience/agent-alignment`.
+
+### Running your own kit
+
+Take a copy of the kit, change it as you like, and sign your own
+releases. No account and no service is needed: a folder on your machine
+is enough. Keep it outside every project, so that no project's session
+can reach it.
+
+```
+git clone https://github.com/SovereignScience/agent-alignment <your kit>
+git -C <your kit> config remote.origin.tagOpt --no-tags
+git -C <your kit> for-each-ref --format='delete %(refname)' 'refs/tags/v*' | git -C <your kit> update-ref --stdin
+```
+
+The last two lines leave your kit with no release but the ones you sign.
+Set up signing with your own key, add your own line to the allowed
+signers file, and sign a release in `<your kit>`, all as "Signing and
+publishing a kit release" shows. With a kit in a folder there is nothing
+to push. `<your kit>` is then the `<kit>` of the block above, and the
+`<agent-alignment>` of this guide. To move a project that already has a
+clone onto your kit, from the top of the project:
+
+```
+git -C .agent-alignment remote set-url origin <your kit>
+bash .agent-alignment/swe/scripts/kit_pull.sh <tag>
+```
+
+You are trusting yourself: your key, and whatever you committed before
+you signed. Keep only your own line in the file. Listing the kit
+owner's key as well means trusting both, and `latest` then takes the
+newest release signed by either.
+
+### Updating the kit in a project
+
+From the top of the project:
+
+```
+bash .agent-alignment/swe/scripts/kit_pull.sh --report latest
+bash .agent-alignment/swe/scripts/kit_pull.sh latest
+bash .agent-alignment/swe/scripts/kit_pull.sh <tag>
+```
+
+The first checks and reports, and moves nothing; it is also how to see
+the newest release's name. The second moves the clone to the newest
+release the kit lists, and only forward. The third moves it to the
+release you name, which is also the way back to an older one.
+
+Each fetches one tag, has Git check its signature against your allowed
+signers file, and checks that the signed tag carries the name asked for.
+Only then does it report, and move. It changes nothing outside
+`.agent-alignment`, and it never commits or pushes. It needs Git 2.34 or
+later. The report says where the clone is, where it would go and which
+files differ, and the last line starts with `DONE:`:
+
+```
+now      v1.1.0 (<commit>)
+latest   v1.2.0, the newest release <kit> lists
+release  v1.2.0 (<commit>), signed by a key in <home>/.config/agent-alignment/allowed_signers
+differs  from what the clone holds now, at most 20 files shown:
+ swe/scripts/kit_pull.sh | 2 ++
+ 1 file changed, 2 insertions(+)
+DONE: <project>/.agent-alignment is now at release v1.2.0 (<commit>)
+```
+
+Run again with the same name, it changes nothing and says so. A `note`
+line lists files in the clone that Git ignores; they are not part of a
+release and do not stop a pull.
+
+A refusal starts with `STOP:`, exits 1, leaves the clone on the commit
+it was on and says what is wrong. Two kinds need more than the message:
+
+- `has no signature from a key in`, `was signed under the name`: do not
+  use that release; tell whoever signs that kit.
+- `has local changes`, `git status failed`, `is not a Git clone of its
+  own`: something wrote to the clone, or it is damaged. Start clean.
+
+The script, and the Git settings it runs under, are read from the clone.
+So the local changes check and the `DONE:` line hold only where sessions
+cannot write the clone. That is the case once the kit's sandbox settings
+are installed and `check_isolation.sh` prints `ok    the kit clone is
+not writable`. Until then, and on a machine without those settings, they
+prove nothing about a clone a session may have written.
+
+To start clean, whenever you doubt the clone, delete it and run the
+block under "Getting the kit into a project" again. A clone made before
+the first signed release has no `kit_pull.sh`, and starts clean too.
+
+```
+rm -rf .agent-alignment
+```
+
+A pull changes the clone and nothing else. A project's Git hooks are
+copies made when they were installed, and stay as they were. The board's
+rules are brought up to date by `board_update.sh`, below. What is
+installed on the machine is brought up to date by `switch_rules.sh
+apply`, from the kit's main checkout.
+
+### Signing and publishing a kit release
+
+Whoever runs a kit signs its releases, in their own terminal. Sessions
+cannot read the key or reach the SSH agent, so they cannot sign.
+
+Once, from the kit's main checkout, tell Git to sign that kit's tags
+with your SSH key, and add your own line to your allowed signers file:
+
+```
+git config gpg.format ssh
+git config user.signingkey <path to your public SSH key>
+mkdir -p ~/.config/agent-alignment
+echo "$(git config user.email) namespaces=\"git\" $(cat <path to your public SSH key>)" >> ~/.config/agent-alignment/allowed_signers
+ssh-keygen -lf <path to your public SSH key>
+```
+
+Git signs with the private key for that public key, from the SSH agent
+or from the file beside it. The line the fourth command writes is your
+public key line, and the last command prints its fingerprint. Where
+others take your releases, print both in the kit's README, as the kit
+owner does.
+
+A release is named `v` and three numbers, such as `v1.2.0`. Raise the
+last number for a fix, the middle one for a new rule or tool, and the
+first for a change that needs action in projects. For each release,
+from the kit's main checkout, on main:
+
+```
+git tag -s <tag> -m "<tag>" &&
+git -c gpg.ssh.allowedSignersFile="$HOME/.config/agent-alignment/allowed_signers" -c gpg.program=false -c gpg.x509.program=false verify-tag refs/tags/<tag>
+```
+
+The second line must print `Good "git" signature for` and your email
+address. Where projects pull the kit from a remote, push main first and
+then the tag:
+
+```
+git push origin refs/tags/<tag>
+```
+
+Then update one project with it, as above, before you announce the tag.
+
+Recommended once, for a kit on GitHub: protect the release tags, so that
+a leaked token cannot move or delete one. In the kit's repository open
+Settings, then Rulesets, New ruleset, New tag ruleset. Set the status to
+Active, add the target pattern `v*`, select Restrict updates and
+Restrict deletions, and add nobody to the bypass list. The signature
+check does not depend on this.
 
 ### Start here: a session in a new project
 

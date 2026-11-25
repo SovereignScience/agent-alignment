@@ -139,6 +139,27 @@ A project's sessions read the kit from a clone at `.agent-alignment`;
 [LATTICE_ONBOARDING.md](LATTICE_ONBOARDING.md#getting-the-kit-into-a-project)
 has the commands that make it.
 
+### Release signing key
+
+Releases of this kit are Git tags signed with the key below. To take
+them, add the line to your allowed signers file as
+[Taking the kit owner's signed releases](LATTICE_ONBOARDING.md#taking-the-kit-owners-signed-releases)
+shows. To change the kit and sign your own releases, see
+[Running your own kit](LATTICE_ONBOARDING.md#running-your-own-kit).
+
+```
+<kit owner's email> namespaces="git" <key type> <public key, added by the kit owner with the first release>
+```
+
+Fingerprint: `<SHA256 fingerprint, added by the kit owner with the first release>`
+
+This file is served from the same place as the kit, so check the key
+somewhere else too: GitHub's list of the kit owner's signing keys, at
+`https://api.github.com/users/<kit owner's GitHub account, added with the first release>/ssh_signing_keys`.
+The list cannot be changed from this repository, but the account name
+above can, so confirm the account outside the repository as well: from
+the organisation's public members page or from the kit owner directly.
+
 ---
 
 ## Task board and review flow
@@ -200,7 +221,8 @@ accept one, by changing its status.
 | Preview, then install, the managed layer | `bash scripts/install_isolation.sh`, then `--apply` |
 | Check the boundary from inside the sandbox | `bash scripts/check_isolation.sh --client claude` (or `codex`) |
 | Try this checkout's rules on this machine, then go back | `bash scripts/switch_rules.sh status`, then `apply`, later `revert` |
-| Bring every project in the workspace up to date with the kit: push checks, agent and command copies, and boards (owner-run, after `apply`; folders named in `~/.config/agent-alignment/skip`, one a line, are left out, and it stops when that file is missing; with `--push` the push check may ask at the terminal) | `bash scripts/update_all.sh --yes --push` |
+| Move a project's kit clone to a signed release, from the top of the project ([what the report, a pass and a refusal look like](LATTICE_ONBOARDING.md#updating-the-kit-in-a-project); [the one-time setup](LATTICE_ONBOARDING.md#getting-the-kit-into-a-project); [how a release is signed](LATTICE_ONBOARDING.md#signing-and-publishing-a-kit-release)) | `bash .agent-alignment/swe/scripts/kit_pull.sh latest`, or a release such as `v1.2.0`; `--report latest` first to see what would change |
+| Deprecated, kept for bootstrapping: bring every project in the workspace up to date with the kit, with push checks, agent and command copies, and boards (owner-run, after `apply`; folders named in `~/.config/agent-alignment/skip`, one a line, are left out, and it stops when that file is missing; with `--push` the push check may ask at the terminal) | `bash scripts/update_all.sh --yes --push` |
 | Install the headless browser for screenshots (remove with `apt remove`) | `sudo apt install chromium-headless-shell` |
 | Screenshot or click through a local page, app started in the same command | `python3 scripts/local_browser.py --app '<start command>' http://127.0.0.1:<port>/ shot:page` (`--help` lists the steps) |
 | Run a project's own Playwright check in the sandbox ([security rule 12](SECURITY_PROTOCOL.md) has the limits) | Launch with `executablePath: '/usr/bin/chromium-headless-shell'` and make the context with `serviceWorkers: 'block'`. With Playwright Test, its `webServer` starts the app; otherwise start the app in the same command as the script. Under Codex a `webServer` check of a `url` timed out and waiting for a line the app prints passed (`wait: { stdout: /.../ }`, Playwright 1.64) |

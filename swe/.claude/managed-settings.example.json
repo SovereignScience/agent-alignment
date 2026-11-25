@@ -91,6 +91,7 @@
       "Edit(~/projects/**/.claude/settings*.json)",
       "Edit(~/.codex/**)",
       "Edit(//etc/claude-code/**)",
+      "Edit(~/projects/**/.agent-alignment/**)",
       "Read(~/.ssh/**)",
       "Read(~/.kube/**)",
       "Read(~/.config/gh/**)",
