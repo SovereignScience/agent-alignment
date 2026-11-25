@@ -840,11 +840,12 @@ and rules for answering review threads.
   the kit guide. Fill in the actual checkout, task ID, slug and base
   branch before trying a Git write. Continue reads and checks while waiting.
   Verify the worktree and branch when the owner has created it. From the
-  main checkout with LATTICE_ROOT=<board directory>, link the branch if
-  needed with LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <CODE>-<n>
-  feature/<CODE>-<n>-<slug> --actor agent:<tool>. Candidate branches stay
-  unlinked until the owner picks one. Edit, test and run servers only in
-  the task worktree. Give the owner named-path staging and commit commands.
+  main checkout, link the branch if needed with
+  env LATTICE_ROOT=<board directory> LATTICE_NO_UPDATE_CHECK=1 lattice
+  branch-link <CODE>-<n> feature/<CODE>-<n>-<slug> --actor agent:<tool>.
+  Candidate branches stay unlinked until the owner picks one. Edit, test
+  and run servers only in the task worktree. Give the owner named-path
+  staging and commit commands.
 - End every commit for a task with the trailer line Task: <CODE>-<n>, so
   the review section can find it.
 - One question per needs_human flag, starting "Need:"; other decisions
@@ -1034,12 +1035,12 @@ and [best practices](https://code.claude.com/docs/en/best-practices), and
 
    Use `--candidates 2` when the approved plan calls for two versions and
    show the status of each candidate worktree in the block. Once the owner
-   confirms setup, verify each path and branch. For a single branch, set
-   `LATTICE_ROOT` to the main project checkout and link it if needed with
-   `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link <ID>
-   feature/<ID>-<slug> --actor agent:<tool>`. The owner links the chosen
-   branch for competing versions. Edit, test and run servers only in the
-   task worktree.
+   confirms setup, verify each path and branch. For a single branch, link
+   it if needed from the main project checkout with
+   `env LATTICE_ROOT=<checkout> LATTICE_NO_UPDATE_CHECK=1 lattice
+   branch-link <ID> feature/<ID>-<slug> --actor agent:<tool>`. The owner
+   links the chosen branch for competing versions. Edit, test and run
+   servers only in the task worktree.
 4. Before handing over: the round summary, a top-level comment with each
    thread answered and its Status, the checks run, their results, what
    was mocked, what never ran, and what remains for the owner.
