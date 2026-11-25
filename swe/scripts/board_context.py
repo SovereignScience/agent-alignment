@@ -31,7 +31,7 @@ import tempfile
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 GUIDE = "swe/LATTICE_ONBOARDING.md"
-FILLED = ("<CODE>", "<branch>", "<project>", "<name>", "<path>")
+FILLED = ("<CODE>", "<branch>", "<project>", "<name>", "<path>", "<port>", "<board directory>")
 
 
 def fail(message):
