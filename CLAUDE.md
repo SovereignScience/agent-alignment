@@ -89,8 +89,8 @@ and rules for answering review threads.
 
   Continue any reads and checks that can run without the worktree.
   Once the worktree exists, verify its path and branch. From this
-  checkout with `LATTICE_ROOT` set here, link the branch if needed with
-  `LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n>
+  checkout, link the branch if needed with `env LATTICE_ROOT=<checkout>
+  LATTICE_NO_UPDATE_CHECK=1 lattice branch-link AA-<n>
   feature/AA-<n>-<slug> --actor agent:<tool>`. Candidate branches stay
   unlinked until the owner picks one. Edit, test and run servers only in
   the task worktree. Give the owner named-path staging and commit

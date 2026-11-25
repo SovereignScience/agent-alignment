@@ -113,7 +113,7 @@ class HookAndAliasCases(unittest.TestCase):
             "git config get alias.p", "git config core.hooksPath",
             "git config user.name", "git merge -n feature/x",
             "git merge --no-verify-signatures feature/x", "git commit -m 'fix: x' > commit.log",
-            "GIT_PAGER=cat git log -n 3",
+            "env GIT_PAGER=cat git log -n 3",
         ]
         for command in commands:
             with self.subTest(command=command):
@@ -172,6 +172,51 @@ class WrappedCommandCases(unittest.TestCase):
                 self.assertEqual(decision(GUARD, command), "allow")
 
 
+class ChangeFolderCases(unittest.TestCase):
+    def test_a_command_that_changes_folder_is_refused(self):
+        commands = [
+            "cd swe", "cd swe && git status", "cd swe; git status", "(cd swe && git status)",
+            'bash -c "cd swe && git status"', "pushd swe", "builtin cd swe",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_other_uses_of_cd_pass(self):
+        commands = [
+            "env -C swe git status", "git -C swe status", "make -C swe test",
+            'grep -n "cd " notes.txt', "echo cd", "ls /tmp/cd/abcd",
+            "cat > block.sh <<'EOF'\ncd ~/projects/x\ngit status\nEOF",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
+class LeadingAssignmentCases(unittest.TestCase):
+    def test_a_command_after_a_leading_assignment_is_sent_back(self):
+        commands = [
+            "LATTICE_NO_UPDATE_CHECK=1 lattice show AA-1", "LC_ALL=C sort notes.txt",
+            "GIT_DIR=.git git log", "A=1 B=2 make test", "git status && LC_ALL=C sort notes.txt",
+            "(LC_ALL=C sort notes.txt)", 'bash -c "LC_ALL=C sort notes.txt"',
+            'for f in a b; do LC_ALL=C sort "$f"; done',
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+
+    def test_assignments_that_start_no_command_pass(self):
+        commands = [
+            "env LC_ALL=C sort notes.txt", "x=1", "x=$(git status)", "export LC_ALL=C",
+            "grep NAME=value notes.txt", "echo a=b", "echo 'LC_ALL=C sort notes.txt'",
+            "git -c core.quotepath=off status", "make VAR=x", "sort --key=2 notes.txt",
+            'while IFS= read -r line; do echo "$line"; done < notes.txt', 'IFS=, read -r a b <<< "x,y"',
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "allow")
+
+
 class RefusalWording(unittest.TestCase):
     def reason(self, command):
         result = subprocess.run(["/usr/bin/python3", "-I", str(GUARD)], input=json.dumps(
@@ -187,6 +232,18 @@ class RefusalWording(unittest.TestCase):
                 self.assertTrue(reason.startswith(opening), reason)
                 self.assertIn("Do not retry it another way.", reason)
                 self.assertTrue(reason.endswith("Carry on with the work that does not need it."), reason)
+
+    def test_a_cd_refusal_says_to_run_it_again_with_env_c(self):
+        reason = self.reason("cd swe && git status")
+        self.assertTrue(reason.startswith("cd in a command makes the owner approve it."), reason)
+        self.assertIn("env -C <dir> <command>", reason)
+        self.assertNotIn("remote writes", reason)
+
+    def test_a_leading_assignment_is_sent_back_with_the_env_form(self):
+        reason = self.reason("LC_ALL=C sort notes.txt")
+        self.assertTrue(reason.startswith("A leading NAME=value makes the owner approve the command."), reason)
+        self.assertIn("env NAME=value <command>", reason)
+        self.assertNotIn("remote writes", reason)
 
 
 class SplitCommandCases(unittest.TestCase):
@@ -231,7 +288,7 @@ class LatticeCases(unittest.TestCase):
             "lattice complete AA-1 --actor agent:claude",
             "lattice status AA-1 done --actor agent:claude",
             "lattice status AA-1 done --no-auto-review --actor agent:codex",
-            "LATTICE_NO_UPDATE_CHECK=1 lattice status AA-1 done --actor agent:claude",
+            "env LATTICE_NO_UPDATE_CHECK=1 lattice status AA-1 done --actor agent:claude",
             "lattice comment AA-1 approved --actor human:owner",
             "lattice comment AA-1 approved --actor=human:owner",
             "lattice comment AA-1 approved --actor agent:claude --on-behalf-of human:owner",
@@ -239,10 +296,10 @@ class LatticeCases(unittest.TestCase):
             "lattice comment AA-1 'Reviewed: abc' --role review --actor agent:claude",
             "lattice comment AA-1 ok --role=plan-review --actor agent:claude",
             "python3 swe/tools/lattice-review/owner_review.py approve --actor human:owner AA-1",
-            "LATTICE_ROOT=. python3 swe/tools/lattice-review/owner_review.py close --actor human:x AA-1",
+            "env LATTICE_ROOT=. python3 swe/tools/lattice-review/owner_review.py close --actor human:x AA-1",
             "python3 -I tools/lattice-review/merge_approved.py --check true AA-1",
             "bash swe/scripts/finish_batch.sh --actor human:owner AA-1",
-            "cd swe && ./scripts/finish_batch.sh --actor human:owner AA-1",
+            "env -C swe ./scripts/finish_batch.sh --actor human:owner AA-1",
             "python3 -I -m owner_review approve --actor human:x AA-1",
             "python3 -c 'import owner_review; owner_review.main([])'",
             "python3 swe/tools/lattice-review/owner_review.p? approve --actor human:x AA-1",

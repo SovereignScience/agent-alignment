@@ -2,9 +2,10 @@
 """PreToolUse guard: remote writes are owner-run; agents never read secrets.
 
 Blocks pushes, GitHub writes, cluster and host changes, cloud writes, external
-posts, secret reads and shell writes to guardrail files. Sends back commit
-messages and shell-written docs that carry AI tells. The OS sandbox is the hard
-boundary; this guard gives fast, clear refusals on top of it.
+posts, secret reads and shell writes to guardrail files. Sends back commands
+that use cd or a leading NAME=value, and commit messages and shell-written docs
+that carry AI tells. The OS sandbox is the hard boundary; this guard gives
+fast, clear refusals on top of it.
 """
 import fnmatch
 import json
@@ -64,6 +65,7 @@ AWS_WRITE = re.compile(
     r"invoke|import|copy|enable|disable|reset|revoke|authorize|replace|cancel|change|"
     r"add|remove|upload|complete|abort|batch|rotate|merge|accept|reject)"
 )
+ASSIGN_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 ASSIGN_RX = re.compile(
     r"(?:^|[\s;&|(])(?:export\s+|local\s+|readonly\s+|declare\s+(?:-\w+\s+)?)?"
     r"([A-Za-z_]\w*)=(?:\"((?:[^\"\\]|\\.)*)\"|'([^']*)'|([^\s;&|)]*))"
@@ -224,7 +226,7 @@ def unwrap(argv):
     while argv:
         while argv and argv[0] in SHELL_WORDS:
             argv = argv[1:]
-        while argv and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]):
+        while argv and ASSIGN_WORD.match(argv[0]):
             argv = argv[1:]
         if not argv:
             return argv
@@ -714,9 +716,16 @@ def check_argv(argv):
     if any(word.startswith("CLAUDE_CODE_REMOTE=") for word in argv):
         owner_only("marking this session as a cloud session",
                    "Only a real cloud session may use the cloud push script.")
+    first = next((word for word in argv if word not in SHELL_WORDS), "")
     argv = unwrap(list(argv))
     if not argv:
         return
+    if argv[0] in ("cd", "pushd"):
+        raise Rewrite("cd in a command makes the owner approve it. Run it again without cd: "
+                      "env -C <dir> <command>, git -C <path> <args>, or absolute paths.")
+    if ASSIGN_WORD.match(first) and argv[0] != "read":
+        raise Rewrite("A leading NAME=value makes the owner approve the command. Run it again as "
+                      "env NAME=value <command>.")
     if argv[0] == WRITE_TARGET:
         if GUARDRAIL_PATH.search(argv[1]):
             deny("changing an agent guardrail from the shell")

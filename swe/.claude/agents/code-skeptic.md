@@ -11,6 +11,11 @@ own view of it, run the checklist against that view, and surface
 flags. The `code-arbiter` (or the calling agent) writes the final
 verdict using your flags.
 
+Write nothing: no file edits, no `sed -i`, no here-documents, and never
+a copy of a guard or settings file. Run one simple command per call,
+with no `cd` and no leading `NAME=value`; report what that cannot reach
+as not checked.
+
 ## Read first
 - [SKEPTIC_ARBITER.md](../../SKEPTIC_ARBITER.md): your home module
 - [SWE_CORE.md](../../SWE_CORE.md): Principles 2 (root cause), 9 (verify)

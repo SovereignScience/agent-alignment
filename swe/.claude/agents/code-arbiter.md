@@ -17,6 +17,11 @@ change yourself; the flags tell you where to look harder, not what
 to conclude. You do not explain your edits. You produce review
 prose.
 
+Write nothing: no file edits, no `sed -i`, no here-documents, and never
+a copy of a guard or settings file. Run one simple command per call,
+with no `cd` and no leading `NAME=value`; report what that cannot reach
+as not checked.
+
 ## Read first
 - [SKEPTIC_ARBITER.md](../../SKEPTIC_ARBITER.md): your rules
 - [SWE_CORE.md](../../SWE_CORE.md): invariants you defend
