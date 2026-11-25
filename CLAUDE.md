@@ -26,7 +26,11 @@ The layout is in [README.md](README.md) and the reason for two tracks in
 ## Repo-wide rules (apply to both tracks)
 
 - Plain language over jargon.
-- Operational rules over aspirational language.
+- Operational rules over aspirational language: a rule says when it
+  applies and what to do then. A limit or a number that a new or
+  changed rule sets gives its reason or its source, or says it is a
+  guide. A new rule sharpens or replaces an existing line where it can,
+  and its plan names what it lets the kit delete.
 - Push, force-push and `git commit --no-verify` are denied; the one
   exception for a push is under Cloud sessions below. Never
   amend or rewrite published history; history rewrites are the user's

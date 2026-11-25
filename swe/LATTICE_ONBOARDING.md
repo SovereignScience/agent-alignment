@@ -581,8 +581,14 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   grade holds. P0 and P1 hold a merge. P2 holds it only in lock down, on
   a path a user reaches. P3 never does. A P0 or P1 says what confirmed
   it, and an unconfirmed one holds nothing. A finding that holds
-  nothing is fixed in passing or dropped;
-  if it matters later it becomes a task the owner authorizes. Tests
+  nothing is not fixed in this task unless the fix only deletes
+  something, corrects a word or adds a test these rules already
+  require; it goes in the handover in one line,
+  below the findings that hold, and if it matters later it becomes a
+  task the owner authorizes. Each required reviewer runs once: fix what
+  holds, then the next reviewer reads the result. A fix made after the
+  last reviewer is named in the handover as not reviewed and starts no
+  new round. Tests
   cover each behaviour in the acceptance criteria and each fixed bug,
   nothing more; a request for another test names the behaviour left
   unpinned. A thread gets two rounds: if the owner's note after the
@@ -615,10 +621,6 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
 - Writing on the board: every comment, flag, description and plan is
   written for the owner, who did not watch the work. Use plain words and full
   sentences.
-  - State the owner or customer requirement and its reason instead of
-    recounting who requested it. Use roles in reusable guidance and name
-    people only when their identity matters. Credit sources with links
-    and preserve required provenance.
   - Start with one or two sentences that say what happened and what you
     need from the owner, if anything. Someone who reads only that much should
     know where things stand.
@@ -854,9 +856,10 @@ and rules for answering review threads.
 - Inside the sandbox, paths it denies (.env files, .mcp.json, parts of
   .claude/) show as empty character devices that git status lists; they
   are not project files or unfinished work.
-- List tests that fail only because of the sandbox (a denied .env, a
-  read-only /tmp, a browser that cannot start) apart from real failures,
-  with the exact command for the owner to run outside the sandbox.
+- List tests that fail only because the sandbox works as meant (a denied
+  .env, a read-only /tmp, a browser that cannot start) apart from real
+  failures, with the exact command for the owner to run outside the
+  sandbox.
 - Never write to the agent-alignment board; anything for the kit goes to
   the owner as a message to pass to the agent-alignment session.
 - Write board comments for the owner in plain language: the point first, then
@@ -961,8 +964,8 @@ How to go about it
    to result.
 3. Run the project's own checks where they are local and safe (tests, lint,
    type check). Give each command with its result, and say which you did
-   not run and why. List failures the sandbox caused apart from real ones,
-   with the exact command for me to run outside it.
+   not run and why. List failures caused by the sandbox working as meant
+   apart from real ones, with the exact command for me to run outside it.
 4. Read recent history: what changed lately and what looks half finished.
 5. Read the files that matter yourself; use a subagent only for a wide
    search. Say nothing about code you have not opened, and mark anything

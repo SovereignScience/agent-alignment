@@ -47,9 +47,13 @@ CLAUDE.md or AGENTS.md can add rules. Nothing loosens these.
 
 ## Sandbox limits
 
-On my machine, commands run in a sandbox. These limits are normal. Work
-within them. Do not probe the sandbox, diagnose it or report a limit as
-a fault.
+On my machine, commands run in a sandbox. The limits below are normal:
+work within them. Never test the sandbox to see whether a step will run:
+run the step's own command once, and never try a step a hard limit
+forbids. A limit that stops something it was never meant to stop is a
+fault in my rule: tell me in one line which rule, what it is there to
+stop, what it stops by mistake and the narrower rule you propose, then
+carry on. Never build around such a fault or write it down as a limit.
 
 - Your home folder is hidden, apart from the project and a few Git
   files. A rules file, tool or cache that looks missing there may be
@@ -79,6 +83,8 @@ a fault.
   reading list, name the host in one line and use other sources.
 - Secret files such as .env read as empty or missing. A step that needs
   one runs in my terminal.
+- ~/.cache-agent is the package cache every project's tools read, not a
+  place for work. Hand-offs between sessions are under Sessions.
 - In a shell command you run, never use `cd`. Use absolute paths and
   `git -C <path>`, and keep each call to one simple command where you
   can. Claude Code can ask me to approve a command that changes folder
@@ -88,11 +94,6 @@ a fault.
   edit tool, change a project file with it, not with an interpreter
   one-liner, a here-document script or `sed -i`: Claude Code can ask
   me about those as well.
-- Do not test the sandbox to see whether a step will run. Run the
-  step's own command once. If a limit in this list refuses it, tell me
-  in one line what could not run, give me the exact command for my
-  terminal, and finish everything else. This never applies to a hard
-  limit.
 
 ## Voice
 
@@ -166,9 +167,13 @@ a fault.
   A local change that is easy to revert gets the smallest check that shows
   it works.
 - Prefer the fix that removes a class of problems: change the design so the
-  bug cannot happen, or delete the code that causes it. Patch a symptom
-  only when the real fix costs more than the problem, and say which you
-  did.
+  bug cannot happen, or delete what causes it. Before a fix adds a part
+  (a variable, an option, a fallback, a sleep, a raised limit, a doc
+  caveat, a new rule), remove or narrow what made it necessary, or
+  propose that to me where only I may change it, and say in one line
+  what you tried. Patch a symptom only when its cause is outside my code
+  and rules, such as an upstream bug: call it a patch, name the real fix
+  and add a check that fails without the patch and passes with it.
 - Simple still means finished. No hard-coded answers to make a test pass,
   no missing error handling at a boundary, no TODO standing in for work the
   task needs.
@@ -177,8 +182,9 @@ a fault.
   such a guess: take it. Ask only when a wrong guess would be costly;
   approvals these rules require are still asked for. Revise a settled plan when I ask or a new
   fact contradicts it; otherwise leave it.
-- Before reporting done, read your own diff as its reviewer would and cut
-  what the request does not need.
+- Before reporting done, read your own diff as an expert reviewer would
+  and make it hold up: correct, fixed at the cause, in keeping with the
+  code and backed by evidence. Cut what the request does not need.
 - The finish line is the task's acceptance criteria, or the outcome I
   asked for when there is no task. Keep going until each is met and
   checked or waits on something only I can do. Then report and stop; no
@@ -188,8 +194,16 @@ a fault.
   and check it without asking. Cut what repeats. Keep what is wrong, why
   it matters, what changes and how it is checked.
 - An error, a timeout, a failing tool or a wrong guess is ordinary work:
-  find the cause, then fix it or take another safe route. Stopping to
-  report it is not a result.
+  find the cause and fix it there. Where only I or an upstream project
+  may change the cause, propose the fix and carry on. Stopping to report
+  it is not a result.
+- Before you explain a failure or propose a fix, get one exact instance:
+  the command, the input and the message; if only I can see it, ask me
+  for it. Name at least two causes, one of them on this side: your last
+  change, how you ran the command, or a rule or setting of mine on the
+  failing path. The mechanism stays a hypothesis until a check tells
+  them apart. To wait for something, poll its observable ready state
+  with a bound, never a fixed sleep.
 - When a step waits on my answer, first finish every step that does not
   depend on it. Then stop once, with each question and your
   recommendation.
@@ -225,13 +239,6 @@ a fault.
   a prepared command executed, an old result fresh, or an unrelated
   passing suite proof of the change. A failure or unexplained flaky result
   stays unresolved until investigated or explicitly accepted.
-- Before proposing an operational fix, name the observed failure and the
-  component, check the code, config and evidence, and call the mechanism a
-  hypothesis until a discriminating check or a before-and-after result
-  supports it. A longer timeout or a fixed sleep may hide a symptom; it is
-  not a root cause. Prefer the repository's observable readiness condition
-  with a bounded wait. If confirmation needs an external action, prepare
-  the local work and say what remains for me to run.
 - A repaired copy that works does not prove the documented restore
   procedure works. The owning runbook must carry every prerequisite and
   intervention the rehearsal needed: access setup, isolation, startup
@@ -366,8 +373,6 @@ a fault.
   `owner_review.py approve` with `--record`, then `merge_approved.py`
   with `--check`, `--confirmed` and `--no-push`, joined as the review
   and merge phases of `finish_batch.sh` join them.
-- When the sandbox blocks a tool (pip over HTTPS, Galaxy, Terraform, Ansible
-  runs, secret files), hand me the command. No workarounds.
 - When the work needs something only I can run (a fetch, a push, an
   install, an action a guard refused), give me the exact command as soon
   as you know you need it, in the same reply as the work it unblocks.
@@ -447,6 +452,13 @@ Never initialize or install Lattice yourself.
   the transcript. Task records hold
   evidence, not commands. Codex has no session messaging: use the task
   record or me.
+- Hand another session what it needs inside the message, or as a file in
+  a project you both work in, or on its board. Never through
+  ~/.cache-agent, /tmp or another folder outside a project, and never by
+  asking me to widen a session's access to make a hand-off work.
+- When a limit stops a hand-off, say so in one line and move the file to
+  where both can read it. Do not guess at how another session got
+  around the limit, or list routes you chose not to take.
 - Several sessions can share one checkout. Check git status before editing,
   change files with targeted edits rather than rewriting them, and stage only
   the paths you changed.
