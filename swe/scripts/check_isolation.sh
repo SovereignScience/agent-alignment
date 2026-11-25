@@ -25,7 +25,8 @@
 # not proof of what a process can read, and this script never opens them.
 #
 # Not covered here; check them by hand in the same fresh session: the file
-# tools (ask the agent to Read the sentinel: refused), WebFetch (ask it to fetch
+# tools (ask the agent to Read the sentinel: refused; in a project with a kit
+# clone, to Write a file in .agent-alignment: refused), WebFetch (ask it to fetch
 # https://example.com: refused by the guard), the effective Codex profile and
 # Full Access refusal, and the helpers that run outside the sandbox (hooks, the
 # status line, MCP servers).
@@ -93,6 +94,15 @@ for path in ~/.ssh ~/.aws ~/.config/gh ~/.config/doctl ~/.bash_history ~/.claude
 done
 
 if can_write "$PWD"; then ok "working directory writable"; else bad "working directory not writable"; fi
+# A project's clone of the kit is read by its sessions as their rules, and the
+# owner runs kit_pull.sh from it, so sessions must not be able to write it.
+if [ ! -d "$PWD/.agent-alignment" ]; then
+    info "no kit clone at $PWD/.agent-alignment, so its write denial was not tested"
+elif can_write "$PWD/.agent-alignment"; then
+    bad "the kit clone is writable: $PWD/.agent-alignment (run install_isolation.sh --apply, then restart the session)"
+else
+    ok "the kit clone is not writable"
+fi
 if can_write "${TMPDIR:-/tmp}"; then ok "temp directory writable"; else bad "temp directory not writable"; fi
 home_marker="$HOME/.agent-alignment-home-probe.$$"
 if ! ( : > "$home_marker" ) 2>/dev/null; then
@@ -118,6 +128,9 @@ done
 for f in guard_outward.py tells_check.py after_summary.sh fetch_allow.txt; do
     if cmp -s "$here/.claude/scripts/$f" "$etc/hooks/$f"; then
         ok "installed hook matches this checkout: $f"
+    elif [ -f "$etc/hooks/$f" ] && [ "${here%/swe}" = "$PWD/.agent-alignment" ]; then
+        # A project's clone sits on a release, and the installed hooks may be newer.
+        info "installed hook differs from this clone, which sits on a release: $f"
     else
         bad "installed hook differs from this checkout, or is missing: $etc/hooks/$f"
     fi

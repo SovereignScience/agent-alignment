@@ -193,6 +193,13 @@ session's temporary directory can be changed by any session before the owner
 runs it. They call /usr/bin/python3, not the first python3 on PATH, which can
 be a project venv that agents can write.
 
+A project's clone of the kit at .agent-alignment is read-only to sessions:
+Edit(~/projects/**/.agent-alignment/**) denies the file tools in every
+checkout of the workspace, and the installer names each clone it finds in a
+denyWrite entry and a Codex read entry. Rerun it after adding the kit to a
+project. Folders in ~/.config/agent-alignment/skip are not looked into. Each
+named clone becomes readable to every Codex session.
+
 A hook folder that a repository tracks and git is set to run (core.hooksPath,
 husky) runs when the owner commits or pushes, outside the sandbox, so an
 agent could plant code there. Lock each one in

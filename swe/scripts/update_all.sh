@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Deprecated: a project now takes a signed release of the kit with
+# kit_pull.sh, one project at a time (LATTICE_ONBOARDING.md, "Updating the kit
+# in a project"). This script is kept for bootstrapping and does what it did.
+#
 # Bring every project in the workspace up to date with this kit. Run it
 # yourself, after switch_rules.sh apply:
 #
@@ -42,6 +46,7 @@ set -euo pipefail
 
 die() { echo "update_all: $*" >&2; exit 1; }
 
+echo "note     update_all.sh is deprecated: a project takes a signed kit release with kit_pull.sh (LATTICE_ONBOARDING.md)"
 swe="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$swe/scripts/kit_files.sh"
 source "$swe/scripts/git_elsewhere.sh"
@@ -58,15 +63,8 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument $1; usage: $0 [--skip <folder>]... [--yes] [--push]" ;;
     esac
 done
-skip_file="$HOME/.config/agent-alignment/skip"
-if [ -f "$skip_file" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-        line=${line#"${line%%[![:space:]]*}"} && line=${line%"${line##*[![:space:]]}"} && line=${line%/}
-        [ -z "$line" ] || skip+=("$line")
-    done < "$skip_file"
-elif [ ${#skip[@]} -eq 0 ]; then
-    die "no $skip_file: name the folders to leave out there, one a line; an empty file leaves out nothing"
-fi
+read_skip || [ ${#skip[@]} -gt 0 ] \
+    || die "no $skip_file: name the folders to leave out there, one a line; an empty file leaves out nothing"
 # The push hook installed before this kit's own: it runs an older copy of the
 # push check from /etc/claude-code/hooks that nothing updates any more.
 old_wrapper=23f9cb1e867513f69d570947f290386d14f06d39e185faa33b0f8744d89bae1b
