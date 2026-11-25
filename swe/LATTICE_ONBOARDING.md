@@ -635,10 +635,51 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
     (lattice attach), not in the comment.
   - A question gives the options and your recommendation.
 
+## Description shape
+
+A task description says what is wrong and what must be true afterwards.
+The plan and the finished work are checked against it. It states the
+result wanted and leaves the way to build it to the plan.
+
+    Request: <who needs it, what goes wrong today, what they expect>.
+    Scope: <what must be true afterwards; the files, commands and
+      interfaces involved; what must keep working; what is left alone>.
+    Owner: <who prepares; who runs the remote or destructive part>.
+    Coverage boundary: <what local checks prove; what stays unverified
+      until deployed>.
+    Remaining: not started.
+
+- Request: say what happens today and what is expected in separate
+  sentences. Give the actual output or error text. For a bug, give the
+  command or script that shows it and what it printed; a session can
+  run a script, and it helps more than steps told in prose.
+- Scope: state the result as behaviour someone can observe. Name the
+  files, functions or error text where the change probably belongs.
+  Name each interface, path or stored format that callers rely on today
+  and that must still work.
+- Acceptance criteria: one for each outcome the owner will check
+  without reading the code. Each names its check, which passes or
+  fails: a test by name, a command and the result expected, or a step
+  the owner does and what the owner should then see.
+- Say what the repository does not show: a decision made elsewhere, or
+  which of two reasonable approaches the owner prefers.
+- An open question is a needs_human flag. Never write a guess as fact.
+- A suggested fix belongs here only when it was checked against the
+  code. Say that it is a suggestion.
+- Leave out what a session can read in the repository, such as the
+  layout and how the code works.
+
 ## Plan shape
 
-A plan fits one screen, about sixty lines. When it would run longer, the
-task is too big: say where it splits and plan the first part.
+A plan is what the owner approves, what the session that builds the
+change (the builder) works from and what the reviewer checks the result
+against. Every section is written for the owner, who did not watch the
+work and decides from it without asking; the reviewer and the builder
+read the same text. A plan is as long as the decision needs. When a
+plan cannot state its change and its checks plainly, or its Behaviour
+list holds cases the first usable version does not need, the task is
+too big: say where it splits, plan the first part and name the task
+that takes the rest.
 
 For a small fix with no unresolved design choice, write only Need,
 Acceptance criteria, Steps and Coverage boundary. State the problem,
@@ -647,9 +688,10 @@ expected result, change and check. For example:
     ## Need
     Empty input causes an exception instead of a validation response.
     ## Acceptance criteria
-    Empty input receives the documented validation response.
+    Empty input receives the documented validation response;
+    `test_empty_input_is_rejected` passes.
     ## Steps
-    Fix the input check; the focused empty-input test fails before
+    Fix the input check in handlers/form.py; that test fails before
     the fix and passes afterwards.
     ## Coverage boundary
     The local handler test runs; the browser path is unverified.
@@ -657,18 +699,58 @@ expected result, change and check. For example:
 Use the full shape below for work with multiple cases, open decisions or
 wider consequences. The full shape always waits for approval; the
 small-fix form does only when the task does not qualify under "Plan
-before code".
+before code". Write the sections in this order. State each fact in one
+section; where another section needs it, name that section. Only the
+Summary repeats, a sentence for each point. Leave out Cut for now and
+Candidates when they do not apply. Under any other heading with nothing
+to say, write "none" and the reason in one line.
 
-- Need: who needs the change, what they are trying to do and what goes
-  wrong today. No solution yet.
-- Behaviour: one item per case the change must handle, most important
-  first, with the cases the first usable version needs marked. Each gives
-  the situation, what happens, the expected result and how a reviewer can
-  see it. Include the failure cases, such as bad input or a step that
-  stops part way.
-- Acceptance criteria: the outcomes the owner will check, each added
-  with lattice criterion add and checkable without reading the code.
-- Out of scope: what the task leaves alone, and the task that owns it.
+- Summary: one paragraph that says what is wrong, what will change, how
+  much, and what the owner must decide. Someone who reads only this
+  knows what they are approving.
+- Need: who needs the change, how the part it touches works today,
+  what they are trying to do and what goes wrong, with one real
+  example: the command and its output, the error text, or the words of
+  the person who hit it. No solution yet.
+- Importance: how often the problem occurs, how badly it hurts and what
+  happens if nothing is done.
+- Behaviour: what must be true afterwards, one item per case the change
+  must handle, most important first, with the cases the first usable
+  version needs marked. Each gives the situation, what happens, the
+  expected result and how a reviewer can see it. Include the failure
+  cases, such as bad input or a step that stops part way. The builder
+  builds this list and nothing beyond it.
+- Acceptance criteria: the task's criteria, worded as "Description
+  shape" says and each added with lattice criterion add. For a bug, one
+  names the test that fails today.
+- Interfaces: each name, signature, path, command, setting and stored
+  format that the change adds or alters, and each one that callers or
+  stored data rely on today and that the change must not break. Leave
+  room for a later change only when someone has asked for that change,
+  and say which.
+- Approach: how the change fixes the problem. Give the design, enough
+  for a reviewer to judge it before any code exists: the files,
+  functions, commands and dependencies that change, by path, and what
+  each does afterwards.
+- Alternatives rejected: why this is the best and the smallest change
+  that works. Name the simpler option turned down and each other
+  approach considered, with what it would have cost.
+- Fit with the code and its checks: the existing function, pattern or
+  convention the change follows, the accepted decision records that
+  govern the files, the tests that cover the affected code today, by
+  name, and the checks the project's pipeline will run on the change,
+  with their commands. Name any departure from the project's
+  engineering and testing rules and say why. Say whether another task
+  or branch already does part of this.
+- Affects and size: the people, sessions and other tasks the change
+  touches once it lands, and how much is expected to change: the number
+  of files and lines, and how much of that is new. Mark the size as an
+  estimate.
+- Risks and undo: what could go wrong, for whom and what it would cost,
+  and how the change is undone. Include any consequence for security,
+  privacy, stored data or a running service.
+- Out of scope: what the task leaves alone and what stays as it is,
+  with the task that owns it.
 - Cut for now: what the project's stage leaves out of this task, one
   line each.
 - Assumptions: guesses made instead of asking, one sentence each, so the
@@ -680,23 +762,31 @@ before code".
   reason in the conventions applies, what each one tries and which
   criteria will tell them apart. Drop one that differs only in wording
   or style.
-- Approach: the files, commands and dependencies the change touches, and
-  how it follows the project's engineering and testing rules. Name any
-  departure from them and say why. Where more than one approach would
-  work, or the choice is hard to undo, name the one you rejected and
-  what it would have cost.
 - Steps: in order, the first usable version first. Each names the files
-  it touches and the check that shows it worked, with the result
-  expected. For a bug fix, prefer a test that fails before the step and
-  passes after it.
-- Coverage boundary: what local checks will prove, what is mocked, and
-  what stays unverified until the owner installs or deploys it.
+  it touches and the check that shows it worked: the test by name or
+  the command, with the result expected. For a bug fix, prefer a test
+  that fails before the step and passes after it.
+- Coverage boundary: what the checks will prove, what is mocked, what
+  never ran, what stays unverified until the owner installs or deploys
+  it, and each claim the plan rests on that nobody checked.
+
+Leave out of a plan:
+
+- A tour of the repository. Need says how the touched part works
+  today, and that is enough.
+- A way of working that names no file and no test, such as "write the
+  tests first".
+- An extension point for a change nobody has asked for.
+- A fix nobody checked against the code.
+- Words that only add emphasis.
+- A running log of progress. That goes in the task's comments.
 
 Before setting the approval flag, read the plan back against itself.
 Every behaviour case has a criterion and a step. Every step serves a
-case. Every criterion can be checked from outside the code. The plan
-uses the task's own terms. No open question sits in Approach or Steps;
-it belongs in Assumptions or Decisions.
+case. Every criterion names its check. Every figure names its source or
+is marked as an estimate. The plan uses the task's own terms. No open
+question sits in Approach or Steps; it belongs in Assumptions or Owner
+decisions. Outside the Summary, no fact is stated twice.
 
 What a plan holds, and when the task is done, depends on its type:
 
@@ -822,28 +912,21 @@ session notes are input, not permission to create or start more tasks.
 Keep one record per authorized task. `/swe-intake` checks that a report
 is real and drafts the task; the owner still authorizes it.
 
-Every create carries `--actor agent:<tool>` and a description in this
-shape:
+Every create carries `--actor agent:<tool>` and a description in the
+shape under "Description shape" in `context.md`, which also says what
+each field holds.
 
-```
-Request: <where it came from and what is wrong or wanted>.
-Scope: <the change, named files or commands>.
-Owner: <who prepares; who runs the remote or destructive part>.
-Coverage boundary: <what local checks prove; what stays unverified until deployed>.
-Remaining: not started.
-```
-
-Rules for the fields:
+Rules for the other fields:
 
 - Title: imperative, under 80 characters, no ticket prefix.
-- Request, for a bug: what was run, what happened and what was expected.
 - Type: `task` for a change, `bug` for broken behaviour, `chore` for
   cleanup, `spike` for research with no change.
 - Priority: `high` for exposure or data risk, `medium` for correctness and
   robustness, `low` for cleanup and nice-to-have.
 - Tags: areas from `context.md`, two or three at most.
-- Criteria: `lattice criterion add <ID> "<observable outcome>"` for each
-  thing a reviewer can check. Skip criteria that restate the title. For
+- Criteria: `lattice criterion add <ID> "<outcome and its check>"` for
+  each, worded as "Description shape" says. Skip criteria that restate
+  the title. For
   a code change, add one criterion that the project's checks pass on
   the integration branch after the merge; its evidence is the command
   run there and its result.
