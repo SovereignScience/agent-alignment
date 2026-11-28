@@ -55,7 +55,8 @@ class FinishBatch(unittest.TestCase):
         self.write("swe/scripts/check_drift.sh", "exit 0\n")
         self.write("swe/scripts/switch_rules.sh", INSTALLER)
         self.write("swe/scripts/board_update.sh", BOARD_UPDATE)
-        shutil.copy(SWE / "scripts/finish_batch.sh", self.root / "swe/scripts/finish_batch.sh")
+        for script in ("finish_batch.sh", "git_elsewhere.sh"):
+            shutil.copy(SWE / "scripts" / script, self.root / "swe/scripts" / script)
         for tool in ("lattice_review.py", "merge_approved.py", "owner_review.py"):
             shutil.copy(SWE / "tools/lattice-review" / tool, self.root / "swe/tools/lattice-review" / tool)
         self.git("add", ".")
@@ -76,6 +77,7 @@ class FinishBatch(unittest.TestCase):
         self.run_in(self.board, "git", "commit", "-q", "-m", "chore(board): start the board")
         self.run_in(self.board, "git", "remote", "add", "origin", str(self.board_origin))
         self.run_in(self.board, "git", "push", "-q", "-u", "origin", "main")
+        self.git("config", "lattice-board.remote", str(self.board_origin))
 
     def write(self, path, text):
         target = self.root / path
@@ -260,6 +262,28 @@ class FinishBatch(unittest.TestCase):
         self.assertNotIn("== Phase 2", out)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.board), before)
         self.assertEqual(self.git("rev-parse", "main"), self.start)
+
+    def test_a_changed_board_origin_is_asked_about_on_the_terminal(self):
+        other = pathlib.Path(self.tmp.name, "other.git")
+        self.run_in(self.tmp.name, "git", "clone", "-q", "--bare", str(self.board_origin), str(other))
+        self.git("remote", "set-url", "origin", str(other), cwd=self.board)
+        before = self.git("rev-parse", "main", cwd=other)
+        self.lattice("comment", "T-1", "noted before the batch")
+        code, out = self.finish("n\nn\nn\n")
+        self.assertEqual(code, 1, out)
+        self.assertIn("the board's pushes go to " + str(other), out)
+        self.assertIn("STOP: the board was not pushed; it is committed here", out)
+        self.assertEqual(self.git("rev-parse", "main", cwd=other), before)
+        self.assertEqual(self.git("config", "--get", "lattice-board.remote"), str(self.board_origin))
+        code, out = self.finish("y\nn\nn\n")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git("config", "--get", "lattice-board.remote"), str(other))
+        self.assertEqual(self.git("rev-parse", "main", cwd=other), self.git("rev-parse", "HEAD", cwd=self.board))
+        self.lattice("comment", "T-1", "noted after the confirmation")
+        code, out = self.finish("n\nn\n")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("the board's pushes go to", out)
+        self.assertEqual(self.git("rev-parse", "main", cwd=other), self.git("rev-parse", "HEAD", cwd=self.board))
 
     def test_uncommitted_work_in_the_main_checkout_stops_it_at_once(self):
         self.write("swe/scripts/check_drift.sh", "exit 0\n# edited\n")

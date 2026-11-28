@@ -418,6 +418,10 @@ task are not: it stops, names the file and pushes nothing, because both
 tasks took the same ID. Pull the board before creating tasks on a second
 machine.
 
+The first push, and any push after the board's push address changes,
+shows the address and asks at the terminal. A yes is kept as
+`lattice-board.remote` in the project's Git config.
+
 The steps below are what the command runs, for doing it by hand or
 changing a setting.
 

@@ -50,6 +50,7 @@ done
 [ ${#ids[@]} -gt 0 ] || stop "name at least one task"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$here/git_elsewhere.sh"
 tools="$(dirname "$here")/tools/lattice-review"
 command -v lattice >/dev/null || stop "lattice is not on PATH"
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || stop "$here is not in a Git repository"
@@ -78,7 +79,7 @@ board_sync() {
     board merge-base --is-ancestor FETCH_HEAD HEAD \
         || stop "the board remote has commits this machine lacks; run swe/scripts/board_update.sh --apply in $root, then run this again"
     if [ "$(board rev-parse HEAD)" != "$(board rev-parse FETCH_HEAD)" ]; then
-        board push -q origin main || stop "the board push was refused"
+        board_push "$root" || stop "the board was not pushed; it is committed here"
     fi
     echo "board: on its remote at $(board rev-parse --short HEAD)"
 }

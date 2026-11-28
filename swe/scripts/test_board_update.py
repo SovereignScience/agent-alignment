@@ -29,6 +29,8 @@ class BoardUpdate(unittest.TestCase):
         self.run_in(self.here, "git", "-C", ".lattice", "remote", "add", "origin", str(self.remote))
         self.run_in(self.here, "git", "-C", ".lattice", "push", "-q", "-u", "origin", "main")
         self.script("board_setup.sh", "--actor", "human:owner", "--remote", str(self.remote), cwd=self.there)
+        for repo in (self.here, self.there):
+            self.run_in(repo, "git", "config", "lattice-board.remote", str(self.remote))
 
     def project(self, parent):
         repo = pathlib.Path(self.tmp.name, parent, "demo-project")
@@ -41,7 +43,7 @@ class BoardUpdate(unittest.TestCase):
 
     def run_in(self, cwd, *command, check=True):
         run = subprocess.run(command, cwd=cwd, env=dict(self.env, LATTICE_ROOT=str(cwd)), capture_output=True,
-                             text=True, timeout=120)
+                             text=True, timeout=120, start_new_session=True)
         if check and run.returncode:
             self.fail("%s: %s" % (" ".join(command), run.stdout + run.stderr))
         return run.returncode, run.stdout + run.stderr
@@ -350,6 +352,48 @@ class BoardUpdate(unittest.TestCase):
         comments = self.run_in(self.here, "lattice", "comments", "DP-1", "--json")[1]
         self.assertIn("said here", comments)
         self.assertIn("said there", comments)
+
+    def test_a_board_whose_origin_changed_is_not_pushed_without_the_owner(self):
+        other = pathlib.Path(self.tmp.name, "other.git")
+        self.run_in(self.tmp.name, "git", "clone", "-q", "--bare", str(self.remote), str(other))
+        self.run_in(self.here / ".lattice", "git", "remote", "set-url", "origin", str(other))
+        self.task(self.here, "first")
+        before = self.run_in(other, "git", "rev-parse", "main")[1]
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn(str(other), out)
+        self.assertIn("the board was not pushed", out)
+        self.assertEqual(self.run_in(other, "git", "rev-parse", "main")[1], before)
+        self.assertEqual(self.run_in(self.here, "git", "config", "--get", "lattice-board.remote")[1].strip(), str(self.remote))
+
+    def test_a_push_address_with_a_token_is_refused_without_printing_it(self):
+        board = self.here / ".lattice"
+        # Keeps the test off the network if the check ever lets the push through.
+        self.run_in(board, "git", "config", "protocol.https.allow", "never")
+        self.run_in(board, "git", "remote", "set-url", "--push", "origin", "https://u:secret@example.invalid/board.git")
+        self.task(self.here, "first")
+        before = self.head(self.remote)
+        code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("carries a user or token", out)
+        self.assertNotIn("secret", out)
+        self.assertEqual(self.head(self.remote), before)
+
+    def test_a_token_in_another_address_form_or_a_control_character_is_refused(self):
+        board = self.here / ".lattice"
+        self.run_in(board, "git", "config", "protocol.https.allow", "never")
+        self.task(self.here, "first")
+        before = self.head(self.remote)
+        for address, reason in (("https::HTTPS://u:secret@example.invalid/board.git", "carries a user or token"),
+                                ("ssh://u:secret@example.invalid/board.git", "carries a user or token"),
+                                ("host:board\x1b[2K\x1b[1Gsecret", "holds control characters")):
+            with self.subTest(address=address):
+                self.run_in(board, "git", "remote", "set-url", "--push", "origin", address)
+                code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
+                self.assertEqual(code, 1, out)
+                self.assertIn(reason, out)
+                self.assertNotIn("secret", out)
+                self.assertEqual(self.head(self.remote), before)
 
 
 if __name__ == "__main__":

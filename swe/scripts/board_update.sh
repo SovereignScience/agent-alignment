@@ -113,7 +113,7 @@ PY
         doctor || { board merge --abort; die "lattice doctor found a problem after the merge; nothing was merged"; }
         board commit -q -m "chore(board): merge the remote board"
     fi
-    board push -q origin main || die "the push failed; the board is merged here"
+    board_push "$PWD" || die "the board was not pushed; it is merged here"
 fi
 doctor || die "lattice doctor reports a problem; run it here"
 if [ "$remote" = yes ]; then where="in step with its remote at $(board rev-parse --short HEAD)"; else where="committed here, with no remote"; fi
