@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import pty
+import select
 import shutil
 import subprocess
 import tempfile
@@ -284,6 +285,34 @@ class FinishBatch(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertNotIn("the board's pushes go to", out)
         self.assertEqual(self.git("rev-parse", "main", cwd=other), self.git("rev-parse", "HEAD", cwd=self.board))
+
+    def test_a_board_push_address_changed_during_the_question_is_not_pushed(self):
+        other, moved = pathlib.Path(self.tmp.name, "other.git"), pathlib.Path(self.tmp.name, "moved.git")
+        for bare in (other, moved):
+            self.run_in(self.tmp.name, "git", "clone", "-q", "--bare", str(self.board_origin), str(bare))
+        self.git("remote", "set-url", "origin", str(other), cwd=self.board)
+        before = [self.git("rev-parse", "main", cwd=bare) for bare in (other, moved)]
+        self.lattice("comment", "T-1", "noted before the batch")
+        owner, terminal = pty.openpty()
+        try:
+            run = subprocess.Popen([BASH, "swe/scripts/finish_batch.sh", "--actor", "human:owner", "T-1"], cwd=self.root,
+                                   env=self.env, stdin=terminal, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                   start_new_session=True, preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+            shown = b""
+            while b"Push the board to" not in shown:
+                self.assertTrue(select.select([owner], [], [], 120)[0], shown)
+                shown += os.read(owner, 1024)
+            self.git("remote", "set-url", "--push", "origin", str(moved), cwd=self.board)
+            # Answers past the first keep a run that pushed anyway from waiting on the terminal.
+            os.write(owner, b"y\nn\nn\nn\n")
+            out = run.communicate(timeout=300)[0]
+        finally:
+            os.close(owner)
+            os.close(terminal)
+        self.assertEqual(run.returncode, 1, out)
+        self.assertIn("the board's push address changed", out)
+        self.assertIn("STOP: the board was not pushed; it is committed here", out)
+        self.assertEqual([self.git("rev-parse", "main", cwd=bare) for bare in (other, moved)], before)
 
     def test_uncommitted_work_in_the_main_checkout_stops_it_at_once(self):
         self.write("swe/scripts/check_drift.sh", "exit 0\n# edited\n")
