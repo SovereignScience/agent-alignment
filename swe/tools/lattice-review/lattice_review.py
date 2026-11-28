@@ -1148,6 +1148,11 @@ class Context:
     def comments(self, short_id):
         return task_comments(self.lattice, self.board, short_id)
 
+    def plan_state(self, task, comments):
+        """The task's plan_status, or None when it has no plan file."""
+        plan = self.board / ".lattice" / "plans" / (task["id"] + ".md")
+        return plan_status(comments, plan.read_text(errors="replace")) if plan.is_file() else None
+
     def start_plannotator(self, key, record_on=None, base=None, head=None):
         """One Plannotator code review. The range is resolved to commit IDs once,
         and those IDs feed both the patch and the recorded Reviewed line. Only
@@ -1355,20 +1360,46 @@ class Context:
 
     def answer_flag(self, sid, form):
         """The owner's answer to the task's needs_human flag, quoting the flag
-        as his page showed it. With clear=1 it also clears the flag with his
-        words as the note, but only while it is still that flag: one set or
-        changed after the page loaded stays set."""
-        if not self.post_reply(sid, None, form.get("body", ""), "On the flag \"%s\":\n" % form.get("flag", "")):
+        on one line as his page showed it. With clear=1 it also clears the
+        flag with his words as the note, but only while it is still that flag:
+        one set or changed after the page loaded stays set, and a flag asking
+        to approve a plan not approved yet clears only by Approve in
+        Plannotator. The browser sends the flag's line breaks as CRLF."""
+        if not self.post_reply(sid, None, form.get("body", ""), "On the flag \"%s\":\n" % " ".join(form.get("flag", "").splitlines())):
             return
         said = "Answer posted."
         if form.get("clear") == "1":
-            flag = find_task(self.board, sid).get("needs_human") or {}
-            if (flag.get("reason"), flag.get("since")) != (form.get("flag"), form.get("since")):
+            comments = self.comments(sid)
+            task = find_task(self.board, sid)
+            flag = task.get("needs_human") or {}
+            answered = (form.get("flag", "").replace("\r\n", "\n"), form.get("since"))
+            plan_state = self.plan_state(task, comments)
+            if waits_for_plan_approval(task) and plan_state != "approved":
+                said += " A plan approval flag is cleared only by Approve in Plannotator: review the plan, so it was not cleared."
+            elif (flag.get("reason"), flag.get("since")) != answered:
                 said += " The flag changed after this page loaded, so it was not cleared."
-            elif self.board_write(sid, "needs-human", sid, "--clear", "--note", form["body"].strip()):
-                said = "Answer posted and the flag cleared."
-            else:
+            elif not self.board_write(sid, "needs-human", sid, "--clear", "--note", form["body"].strip()):
+                self.notices[sid] = ("err", "Answer posted, but the flag was not cleared: " + self.notices[sid][1])
                 return
+            else:
+                # Lattice has no conditional clear, so the flag removed is read
+                # from the events: the last one set before the server's latest
+                # clear. A different one set no earlier than the answered flag
+                # replaced it during the clear.
+                removed = current = None
+                for ev in map(json.loads, self.events(task["id"])):
+                    if ev["type"] == "needs_human_flagged":
+                        current = ev
+                    elif ev["type"] == "needs_human_cleared":
+                        removed, current = (current if ev.get("actor") == self.actor else removed), None
+                if not removed or removed["ts"] < answered[1] or (removed["data"]["reason"], removed["ts"]) == answered:
+                    said = "Answer posted and the flag cleared."
+                elif self.board_write(sid, "needs-human", sid, removed["data"]["reason"]):
+                    said += " The flag was replaced as it was being cleared, so the new flag \"%s\" was set again." % removed["data"]["reason"]
+                else:
+                    self.notices[sid] = ("err", "Answer posted, but the flag was replaced as it was being cleared and setting \"%s\" again failed: %s"
+                                         % (removed["data"]["reason"], self.notices[sid][1]))
+                    return
         self.notices[sid] = ("ok", said + " Nothing notifies the agent: send its session the task ID %s." % sid)
 
     def close_session(self, key):
@@ -1742,11 +1773,12 @@ def notice(ctx, key):
     return "<p class='%s' id='notice' role='status'>%s</p>" % (kind, e(text)) if kind else ""
 
 
-def open_request(ctx, task):
+def open_request(ctx, task, plan_state):
     """The agent's open Need: flag, whatever the task's status, so a question
     is never below the fold or behind a hover, with the criteria IDs and a box
-    to answer it. A plan approval flag gets Comment only: Approve in
-    Plannotator clears it, so an approval is always a recorded plan review."""
+    to answer it. A flag asking to approve a plan not approved yet gets
+    Comment only: Approve in Plannotator clears it, so an approval is always
+    a recorded plan review."""
     flag = task.get("needs_human") or {}
     if not flag.get("reason"):
         return ""
@@ -1757,13 +1789,13 @@ def open_request(ctx, task):
     if criteria:
         out.append("<p class='muted'>Criteria: %s. To comment on one, start a line with its ID: <code>%s: ...</code></p>"
                    % (e(", ".join(criteria)), e(criteria[0])))
-    plan = waits_for_plan_approval(task)
+    plan = waits_for_plan_approval(task) and plan_state != "approved"
     out.append("<form method='post' action='%s' class='reply'><input type='hidden' name='token' value='%s'>"
                "<input type='hidden' name='flag' value='%s'><input type='hidden' name='since' value='%s'>"
                "<textarea name='body' placeholder='Your answer'>%s</textarea><button>Comment</button>%s</form>"
                % (e(REVIEW_PATH + "/t/" + sid + "/answer"), ctx.token, e(flag["reason"]), e(flag.get("since")),
                   e(ctx.drafts.get((sid, None), "")), "" if plan else "<button name='clear' value='1'>Answer and clear</button>"))
-    if plan:
+    if plan and plan_state:
         out.append("<p>To approve the plan, use Plannotator: review the plan. Approve there clears this flag.</p>")
     return "".join(out) + "</div>"
 
@@ -1846,8 +1878,7 @@ def render_review(ctx, task):
     rng = resolve_range(ctx.repo, task, ctx.main)
     head_now = rev(ctx.repo, "HEAD")
     comments = ctx.comments(sid)
-    plan = ctx.board / ".lattice" / "plans" / (task["id"] + ".md")
-    plan_state = plan_status(comments, plan.read_text(errors="replace")) if plan.is_file() else None
+    plan_state = ctx.plan_state(task, comments)
     review = latest_review(comments)
     threads = review_threads(comments)
     block = completion_block(ctx.repo, task, ctx.main, comments) if rng["mode"] != "none" else None
@@ -1944,7 +1975,7 @@ def render_review(ctx, task):
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
     deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
-    body = [tool_notes(ctx), "" if notes else said, open_request(ctx, task), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
+    body = [tool_notes(ctx), "" if notes else said, open_request(ctx, task, plan_state), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
             section("deps", "deps", "Dependencies", deps) if deps else "",
             section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
