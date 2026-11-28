@@ -1332,16 +1332,18 @@ class Context:
                 job.error = "note %d of the review was not recorded as a thread: %s" % (i, msg)
                 return
 
-    def post_reply(self, sid, parent, text):
-        """The owner's reply in one thread, from the review section. False when
-        it was not posted; the text then comes back in the reply box."""
+    def post_reply(self, sid, parent, text, lead=""):
+        """The owner's reply in one thread, from the review section, or with
+        parent None his answer to the task's flag as a top-level comment, after
+        the line lead. False when it was not posted; the text then comes back
+        in its box."""
         if not text.strip():
-            raise RuntimeError("the reply is empty")
+            raise RuntimeError("the %s is empty" % ("reply" if parent else "answer"))
         (self.state / "tmp").mkdir(exist_ok=True)
         path = self.state / "tmp" / ("reply-%s.md" % secrets.token_hex(6))
-        path.write_text(text.strip() + "\n")
+        path.write_text(lead + text.strip() + "\n")
         try:
-            posted = self.board_write(sid, "comment", sid, "--reply-to", parent, "--file", str(path))
+            posted = self.board_write(sid, "comment", sid, *(("--reply-to", parent) if parent else ()), "--file", str(path))
         finally:
             path.unlink(missing_ok=True)
         if posted:
@@ -1350,6 +1352,24 @@ class Context:
         else:
             self.drafts[(sid, parent)] = text
         return posted
+
+    def answer_flag(self, sid, form):
+        """The owner's answer to the task's needs_human flag, quoting the flag
+        as his page showed it. With clear=1 it also clears the flag with his
+        words as the note, but only while it is still that flag: one set or
+        changed after the page loaded stays set."""
+        if not self.post_reply(sid, None, form.get("body", ""), "On the flag \"%s\":\n" % form.get("flag", "")):
+            return
+        said = "Answer posted."
+        if form.get("clear") == "1":
+            flag = find_task(self.board, sid).get("needs_human") or {}
+            if (flag.get("reason"), flag.get("since")) != (form.get("flag"), form.get("since")):
+                said += " The flag changed after this page loaded, so it was not cleared."
+            elif self.board_write(sid, "needs-human", sid, "--clear", "--note", form["body"].strip()):
+                said = "Answer posted and the flag cleared."
+            else:
+                return
+        self.notices[sid] = ("ok", said + " Nothing notifies the agent: send its session the task ID %s." % sid)
 
     def close_session(self, key):
         """End an abandoned Plannotator session; nothing is recorded."""
@@ -1722,17 +1742,30 @@ def notice(ctx, key):
     return "<p class='%s' id='notice' role='status'>%s</p>" % (kind, e(text)) if kind else ""
 
 
-def open_request(ctx, task, plan_state):
-    """The agent's open Need: flag, so a question is never below the fold or
-    behind a hover. The plan approval flag clears itself on Approve."""
+def open_request(ctx, task):
+    """The agent's open Need: flag, whatever the task's status, so a question
+    is never below the fold or behind a hover, with the criteria IDs and a box
+    to answer it. A plan approval flag gets Comment only: Approve in
+    Plannotator clears it, so an approval is always a recorded plan review."""
     flag = task.get("needs_human") or {}
-    if not flag.get("reason") or task.get("status") in ("done", "cancelled"):
+    if not flag.get("reason"):
         return ""
-    how = ""
-    if not (plan_state != "approved" and waits_for_plan_approval(task)):
-        how = ("<br>When you have answered it, clear it: <code>lattice needs-human %s --clear --note \"&lt;your answer&gt;\" --actor %s</code>"
-               % (e(task["short_id"]), e(ctx.actor)))
-    return "<p class='next ask'><b>Open request from %s:</b> %s%s</p>" % (e(flag.get("flagged_by") or "the agent"), e(flag["reason"]), how)
+    sid = task["short_id"]
+    out = ["<div class='next ask'><p><b>Open request from %s%s:</b> %s</p>" % (
+        e(flag.get("flagged_by") or "the agent"), ", " + e(flag["since"]) if flag.get("since") else "", e(flag["reason"]))]
+    criteria = [c["id"] for c in task.get("acceptance_criteria", []) if not c.get("retired")]
+    if criteria:
+        out.append("<p class='muted'>Criteria: %s. To comment on one, start a line with its ID: <code>%s: ...</code></p>"
+                   % (e(", ".join(criteria)), e(criteria[0])))
+    plan = waits_for_plan_approval(task)
+    out.append("<form method='post' action='%s' class='reply'><input type='hidden' name='token' value='%s'>"
+               "<input type='hidden' name='flag' value='%s'><input type='hidden' name='since' value='%s'>"
+               "<textarea name='body' placeholder='Your answer'>%s</textarea><button>Comment</button>%s</form>"
+               % (e(REVIEW_PATH + "/t/" + sid + "/answer"), ctx.token, e(flag["reason"]), e(flag.get("since")),
+                  e(ctx.drafts.get((sid, None), "")), "" if plan else "<button name='clear' value='1'>Answer and clear</button>"))
+    if plan:
+        out.append("<p>To approve the plan, use Plannotator: review the plan. Approve there clears this flag.</p>")
+    return "".join(out) + "</div>"
 
 
 def branch_notes(ctx, task, rng):
@@ -1911,7 +1944,7 @@ def render_review(ctx, task):
     def section(kind, anchor, title, parts):
         return "<section class='block %s' id='%s'><h4>%s</h4>%s</section>" % (kind, anchor, title, "".join(parts))
     deps = render_dependencies(task, dependencies(task, load_tasks(ctx.board)))
-    body = [tool_notes(ctx), "" if notes else said, open_request(ctx, task, plan_state), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
+    body = [tool_notes(ctx), "" if notes else said, open_request(ctx, task), next_step(ctx, task, rng, review, threads, running, block, plan_state, comments),
             section("deps", "deps", "Dependencies", deps) if deps else "",
             section("plan", "plan", "Plan", plan_part), section("verdict", "code", "Code review", code)]
     return page(sid + " review", "".join(body), refresh=running)
@@ -2135,6 +2168,8 @@ def make_handler(ctx, base=None, static_dir=None):
                         posted = ctx.post_reply(sid, form["parent"], form.get("body", ""))
                     if posted and form.get("resolve") == "1":
                         ctx.board_write(sid, "react", sid, form["parent"], RESOLVED)
+                elif action == "answer":
+                    ctx.answer_flag(sid, form)
                 elif action in ("resolve", "reopen"):
                     ctx.notice_at[sid] = form.get("comment")
                     ctx.board_write(sid, "react" if action == "resolve" else "unreact", sid, form["comment"], RESOLVED)
