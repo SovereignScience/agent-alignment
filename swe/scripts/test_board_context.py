@@ -82,6 +82,14 @@ class BoardContext(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8803\n  (started with board).\n", text)
         self.assertIn("/srv/shop\n  (kept out of source Git).\n", text)
 
+    def test_a_committed_change_to_a_placeholder_line_merges(self):
+        self.context.write_text(fill(V2))
+        self.commit_guide(V2.replace("<slug>, from <branch>.", "<slug>, from <branch>, one per task."))
+        code, out = self.run_it("apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn("- Task branches are feature/SHOP-<n>-<slug>, from develop, one per task.\n",
+                      self.context.read_text())
+
     def test_a_collision_leaves_the_context_alone_and_writes_the_merge_beside_it(self):
         mine = self.context.read_text().replace("- A finding is blocking or optional.\n",
                                                 "- A finding is blocking, optional or a question.\n")

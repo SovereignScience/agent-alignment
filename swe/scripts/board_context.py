@@ -57,16 +57,18 @@ def template(text):
 
 
 def made_from(context):
-    """The committed template the context differs from least."""
-    best, least = "", None
+    """The committed template the context differs from least once filled in, and its fill values."""
+    best, least = None, None
     theirs = context.splitlines()
     for rev in git("log", "--format=%H", "--", GUIDE).split():
         candidate = template(git("show", "%s:%s" % (rev, GUIDE)))
         if not candidate:
             continue
-        distance = sum(1 for line in difflib.ndiff(candidate.splitlines(), theirs) if line[:1] in "+-")
+        # Compare like with like: the template as this project would have filled it in.
+        values = {mark: value for mark, value in fills(candidate, context).items() if mark not in context}
+        distance = sum(1 for line in difflib.ndiff(filled(candidate, values).splitlines(), theirs) if line[:1] in "+-")
         if least is None or distance < least:
-            best, least = candidate, distance
+            best, least = (candidate, values), distance
     if not best:
         fail("board_context: no committed context template in this kit")
     return best
@@ -122,9 +124,7 @@ def main(argv):
         context = handle.read()
     with open(os.path.join(KIT, GUIDE), encoding="utf-8") as handle:
         new = template(handle.read())
-    base = made_from(context)
-    # Compare like with like: the template as this project would have filled it in.
-    values = {mark: value for mark, value in fills(base, context).items() if mark not in context}
+    base, values = made_from(context)
     result, collisions = merged(context, filled(base, values), filled(new, values))
     name = os.path.basename(project)
     if collisions:
