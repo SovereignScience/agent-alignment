@@ -493,6 +493,11 @@
       "Launching more than three subagents at once, or a subagent that reviews another agent's review, when the user did not ask for it.",
       "Creating report, audit, status, evidence, review-request or plan files the user did not ask for by name."
     ],
+    "allow": [
+      "$defaults",
+      "Reading, searching and printing files inside the working directories or the session scratchpad with commands that only read and print, such as grep, head, tail, wc, jq, git log, git show, git diff and git status, used with no option, redirect or program that writes, deletes or starts another command.",
+      "Running the project's own tests and linters."
+    ],
     "environment": [
       "$defaults",
       "This is a personal workstation. Repositories under ~/projects may belong to other teams or clients. Agents may research public sources and read approved services. Never disclose secrets or send private project data to unrelated destinations. The user pushes, posts and changes live systems in their own terminal."
