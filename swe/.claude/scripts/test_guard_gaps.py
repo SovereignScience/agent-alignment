@@ -245,6 +245,15 @@ class RefusalWording(unittest.TestCase):
         self.assertIn("env NAME=value <command>", reason)
         self.assertNotIn("remote writes", reason)
 
+    def test_a_standalone_assignment_before_a_command_is_sent_back(self):
+        for command in ("DIR=/tmp/x; ls $DIR", "DIR=/tmp/x && ls $DIR"):
+            with self.subTest(command=command):
+                self.assertEqual(decision(GUARD, command), "deny")
+                self.assertTrue(self.reason(command).startswith(
+                    "A leading NAME=value makes the owner approve the command."))
+        self.assertEqual(decision(GUARD, "IFS= read -r line"), "allow")
+        self.assertTrue(self.reason("DIR=x; git push origin main").startswith("Blocked: git push."))
+
 
 class SplitCommandCases(unittest.TestCase):
     def test_a_continued_line_is_read_as_one_command(self):

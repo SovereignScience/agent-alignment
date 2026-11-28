@@ -85,15 +85,20 @@ carry on. Never build around such a fault or write it down as a limit.
   one runs in my terminal.
 - ~/.cache-agent is the package cache every project's tools read, not a
   place for work. Hand-offs between sessions are under Sessions.
-- In a shell command you run, never use `cd`. Use absolute paths and
-  `git -C <path>`, and keep each call to one simple command where you
-  can. Claude Code can ask me to approve a command that changes folder
-  and then runs something else, even in auto mode, and each such
-  prompt stops unattended work. It may also ask about a leading
-  `NAME=value`: prefer `env NAME=value <command>`. Where you have an
-  edit tool, change a project file with it, not with an interpreter
-  one-liner, a here-document script or `sed -i`: Claude Code can ask
-  me about those as well.
+- Write each shell command in the form Claude Code runs without asking
+  me. It can ask, even in auto mode, about a command it cannot parse, a
+  `cd` before another command, a leading `NAME=value`, a program or path
+  outside the working directories, an inline interpreter script and
+  `sed -i`, and each prompt stops unattended work. Call programs by name
+  (`python3`, `git`, `jq`), never by an absolute path outside the working
+  directories. Keep quoting simple: one `-e` per pattern, not escaped
+  alternation. Use absolute paths inside the working directories,
+  `git -C <path>` and `env NAME=value <command>`. Read and search with
+  the file tools, read JSON with `jq`, learn a tool from its own commands
+  and `--help`, not its installed source, and create or change files
+  with the file tools. Write a script of more than one line with the file tool
+  into the session's scratchpad and run it with `python3 <that path>`.
+  Keep each call to one simple command where you can.
 
 ## Voice
 
