@@ -20,9 +20,9 @@ Skip: style, naming, anything CI or lint enforces, <paths>
 Limits: read-only. No edits, commits, pushes or host contact.
 
 Report back:
-- Findings graded P0 to P3 by harm, as swe/.claude/agents/code-reviewer.md
-  defines them: file:line, what breaks, the code or output that shows it,
-  and how you confirmed it
+- Findings graded P0 to P3 by harm, as
+  <kit>/swe/.claude/agents/code-reviewer.md defines them: file:line,
+  what breaks, the code or output that shows it, and how you confirmed it
 - Pre-existing, not from this change: listed separately
 - What you checked and what you did not
 - Verdict: any P0 or P1, yes or no, not a guarantee
