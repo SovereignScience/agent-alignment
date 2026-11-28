@@ -125,7 +125,8 @@ origin/main.
 
 managed-settings.example.json is the admin-enforced file this track was
 written against. It requires the sandbox, fails closed when the sandbox is
-unavailable, allows package registries and exact loopback hosts for shell
+unavailable, runs sandboxed commands without asking, allows package
+registries and exact loopback hosts for shell
 commands, hides credential files and token variables, denies remote writes,
 runs only managed hooks and disables bypass mode. The MCP allowlist permits
 only GitHub's hosted read-only endpoint. No server is configured or connected

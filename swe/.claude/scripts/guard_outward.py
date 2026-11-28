@@ -66,6 +66,13 @@ AWS_WRITE = re.compile(
     r"add|remove|upload|complete|abort|batch|rotate|merge|accept|reject)"
 )
 ASSIGN_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# Assignments that open a command and are followed by another statement: X=1; cmd, X=1 && cmd.
+LEAD_ASSIGNMENT = re.compile(
+    r"""^\s*(?:[A-Za-z_]\w*=(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s;&|()`]*)\s+)*"""
+    r"""[A-Za-z_]\w*=(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s;&|()`]*)\s*(?:;|&&|\|\||\n)""")
+ASSIGN_SEND_BACK = ("A leading NAME=value makes the owner approve the command. Put the value in the "
+                    "command itself, or run it as env NAME=value <command> when the program reads it "
+                    "from its environment.")
 ASSIGN_RX = re.compile(
     r"(?:^|[\s;&|(])(?:export\s+|local\s+|readonly\s+|declare\s+(?:-\w+\s+)?)?"
     r"([A-Za-z_]\w*)=(?:\"((?:[^\"\\]|\\.)*)\"|'([^']*)'|([^\s;&|)]*))"
@@ -724,8 +731,7 @@ def check_argv(argv):
         raise Rewrite("cd in a command makes the owner approve it. Run it again without cd: "
                       "env -C <dir> <command>, git -C <path> <args>, or absolute paths.")
     if ASSIGN_WORD.match(first) and argv[0] != "read":
-        raise Rewrite("A leading NAME=value makes the owner approve the command. Run it again as "
-                      "env NAME=value <command>.")
+        raise Rewrite(ASSIGN_SEND_BACK)
     if argv[0] == WRITE_TARGET:
         if GUARDRAIL_PATH.search(argv[1]):
             deny("changing an agent guardrail from the shell")
@@ -950,6 +956,8 @@ def check_command(cmd):
             deny("irreversible command")
     for seg in segments(cmd):
         check_argv(seg)
+    if LEAD_ASSIGNMENT.match(cmd):
+        raise Rewrite(ASSIGN_SEND_BACK)
 
 
 def check_tells(cmd):

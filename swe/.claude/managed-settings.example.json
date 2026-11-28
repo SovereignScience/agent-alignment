@@ -152,6 +152,7 @@
     "enabled": true,
     "failIfUnavailable": true,
     "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
     "network": {
       "allowedDomains": [
         "localhost",
