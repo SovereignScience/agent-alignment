@@ -98,7 +98,9 @@ carry on. Never build around such a fault or write it down as a limit.
   and `--help`, not its installed source, and create or change files
   with the file tools. Write a script of more than one line with the file tool
   into the session's scratchpad and run it with `python3 <that path>`.
-  Keep each call to one simple command where you can.
+  Pass long text to a tool through a file when it takes one, such as
+  `lattice comment --file`, not as a long quoted argument. Keep each
+  call to one simple command where you can.
 
 ## Voice
 

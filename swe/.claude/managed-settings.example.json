@@ -495,8 +495,8 @@
     ],
     "allow": [
       "$defaults",
-      "Reading, searching and printing files inside the working directories or the session scratchpad with commands that only read and print, such as grep, head, tail, wc, jq, git log, git show, git diff and git status, used with no option, redirect or program that writes, deletes or starts another command.",
-      "Running the project's own tests and linters."
+      "Reading, searching and printing files inside the working directories or the session scratchpad, other than files that hold secrets, such as those hard_deny names, private keys and terraform state, with commands that only read and print, such as grep, head, tail, wc, jq, git log, git show, git diff and git status, used with no option, redirect or program that writes, deletes or starts another command.",
+      "Running the project's own local tests and linters, which use local fixtures only and reach no remote host, shared service or live system."
     ],
     "environment": [
       "$defaults",
