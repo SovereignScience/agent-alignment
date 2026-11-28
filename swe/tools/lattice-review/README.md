@@ -93,7 +93,8 @@ request set; Answer and clear also clears it with your text as the note.
 An empty answer posts nothing. Name a criterion's ID (`AC-2`) to point
 at it; an answer records no evidence. When the request changed
 after the page loaded, Answer and clear posts the comment, leaves the
-newer request set and says so. A request to approve the plan offers only
+newer request set and says so; one that replaced it while the clear ran
+is set again. A request to approve a plan not approved yet offers only
 Comment: Approve in Plannotator clears it. Nothing notifies the agent:
 send its session the task ID.
 
@@ -433,7 +434,7 @@ notes and plans handlers), written against Lattice 0.2.
 | `POST /review/t/<ID>/plan` | `plannotator annotate <plan file> --gate --json`; redirects to the session; the decision becomes a `plan-review` comment and threads |
 | `POST /review/t/<ID>/complete` | `lattice status <ID> done --no-auto-review` under the rule in What completes a task |
 | `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction, once the reply posted |
-| `POST /review/t/<ID>/answer` | `lattice comment <ID> --file` with the owner's answer to the flag; with `clear=1` also `lattice needs-human <ID> --clear --note` with the answer, while the flag is the one the page showed |
+| `POST /review/t/<ID>/answer` | `lattice comment <ID> --file` with the owner's answer to the flag; with `clear=1` also `lattice needs-human <ID> --clear --note` with the answer, while the flag is the one the page showed and does not ask to approve a plan not approved yet; a flag that replaced it during the clear is set again with `lattice needs-human <ID> <reason>` |
 | `POST /review/t/<ID>/resolve`, `/reopen` | `lattice react` or `unreact` with `resolved` on a thread |
 | `POST /review/t/<ID>/rework` | `lattice status <ID> in_progress --no-auto-review` |
 | `POST /api/tasks/<id>/status` | the dashboard's status change; `done` is refused with `REVIEW_REQUIRED` under the same rule |

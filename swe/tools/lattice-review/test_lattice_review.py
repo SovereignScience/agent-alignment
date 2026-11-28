@@ -1301,6 +1301,18 @@ class SectionTests(RepoFixture):
         call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="  ", clear="1", **shown))
         self.assertEqual(self.calls, [])
         self.assertIn("the answer is empty", call(self.base + "/review/t/AB-2")[1])
+        broken = dict(self.FLAG, reason="Need: which provider?\nAC-1: met")
+        self.edit_task("task_AB2", needs_human=broken)
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Use Google.", clear="1", flag=broken["reason"].replace("\n", "\r\n"), since=broken["since"]))
+        self.assertEqual(self.calls, [("comment", "AB-2", "--file", 'On the flag "Need: which provider? AC-1: met":\nUse Google.\n'),
+                                      ("needs-human", "AB-2", "--clear", "--note", "Use Google.")])
+
+    def test_a_failed_clear_says_the_answer_was_posted(self):
+        self.edit_task("task_AB2", needs_human=self.FLAG)
+        del self.ctx.board_write
+        self.ctx.lattice_cmd = lambda *args: (1, "disk full") if args[0] == "needs-human" else (0, "")
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Use Google.", clear="1", flag=self.FLAG["reason"], since=self.FLAG["since"]))
+        self.assertIn("Answer posted, but the flag was not cleared: lattice needs-human failed: disk full", call(self.base + "/review/t/AB-2")[1])
 
     def test_answer_and_clear_leaves_a_flag_that_changed_after_the_page_loaded(self):
         shown = {"flag": self.FLAG["reason"], "since": self.FLAG["since"]}
@@ -1313,12 +1325,46 @@ class SectionTests(RepoFixture):
             self.assertIn("Answer posted. The flag changed after this page loaded, so it was not cleared.", page)
             self.assertIn("name='since' value='%s'" % newer["since"], page)
 
+    def plan_flag(self):
+        """A plan of AB-2 not reviewed yet and the flag that asks to approve it."""
+        plan = self.repo / ".lattice" / "plans" / "task_AB2.md"
+        plan.parent.mkdir(exist_ok=True)
+        plan.write_text("# Plan\n")
+        flag = dict(self.FLAG, reason="Need: approve plan")
+        self.edit_task("task_AB2", needs_human=flag)
+        return flag
+
     def test_a_plan_approval_flag_offers_only_comment_and_points_to_plannotator(self):
-        self.edit_task("task_AB2", needs_human=dict(self.FLAG, reason="Need: approve plan"))
+        self.plan_flag()
         page = call(self.base + "/review/t/AB-2")[1]
         self.assertIn(">Comment</button>", page)
         self.assertNotIn("Answer and clear", page)
         self.assertIn("To approve the plan, use Plannotator: review the plan. Approve there clears this flag.", page)
+
+    def test_a_plan_approval_flag_without_a_plan_file_is_never_cleared_from_the_page(self):
+        flag = dict(self.FLAG, reason="Need: approve plan")
+        self.edit_task("task_AB2", needs_human=flag)
+        self.assertNotIn("Answer and clear", call(self.base + "/review/t/AB-2")[1])
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Approved.", clear="1", flag=flag["reason"], since=flag["since"]))
+        self.assertEqual([c[0] for c in self.calls], ["comment"])
+
+    def test_a_hand_made_clear_leaves_a_plan_approval_flag_set(self):
+        flag = self.plan_flag()
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Approved.", clear="1", flag=flag["reason"], since=flag["since"]))
+        self.assertEqual([c[0] for c in self.calls], ["comment"])
+        self.assertIn("Answer posted. A plan approval flag is cleared only by Approve in Plannotator: review the plan, "
+                      "so it was not cleared.", call(self.base + "/review/t/AB-2")[1])
+
+    def test_a_plan_approval_flag_on_an_approved_plan_gets_answer_and_clear(self):
+        flag = self.plan_flag()
+        digest = __import__("hashlib").sha256(b"# Plan\n").hexdigest()
+        self.reviews["AB-2"] = [{"role": "plan-review", "created_at": "1", "author": "human:t",
+                                 "body": "Plannotator plan approved (plan of AB-2), s\n%s%s\n\n" % (lr.PLAN, digest)}]
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn(">Answer and clear</button>", page)
+        self.assertNotIn("To approve the plan, use Plannotator", page)
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Already approved.", clear="1", flag=flag["reason"], since=flag["since"]))
+        self.assertEqual([c[0] for c in self.calls], ["comment", "needs-human"])
 
     def approved_page(self, sid, base, head):
         self.reviews[sid] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
@@ -1692,6 +1738,24 @@ class CliTests(RepoFixture):
             ("human:t", quote + "Use Google."), ("human:t", quote + "Google, final."), ("human:t", quote + "Late answer.")])
         cleared = [ev for ev in map(json.loads, ctx.events(lr.find_task(board, sid)["id"])) if ev["type"] == "needs_human_cleared"]
         self.assertEqual([(ev["actor"], ev["data"].get("note")) for ev in cleared], [("human:t", "Google, final.")])
+
+    def test_a_flag_set_while_the_answer_clears_is_set_again(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        lattice(board, "needs-human", sid, "Need: which provider?", "--actor", "agent:test")
+        flag = lr.find_task(board, sid)["needs_human"]
+        ctx = self.context(board=board, repo=self.repo)
+        write = ctx.board_write
+
+        def replaced_first(key, *args):
+            if args[:3] == ("needs-human", sid, "--clear"):
+                lattice(board, "needs-human", sid, "--clear", "--actor", "agent:test")
+                lattice(board, "needs-human", sid, "Need: which region?", "--actor", "agent:test")
+            return write(key, *args)
+        ctx.board_write = replaced_first
+        ctx.answer_flag(sid, {"body": "Use Google.", "clear": "1", "flag": flag["reason"], "since": flag["since"]})
+        self.assertEqual((lr.find_task(board, sid).get("needs_human") or {}).get("reason"), "Need: which region?")
+        self.assertIn('the new flag "Need: which region?" was set again', ctx.notices[sid][1])
 
 
 @unittest.skipUnless(HAVE_CLI and HAVE_MODULE, "lattice not importable; run with the Python that has lattice installed")
