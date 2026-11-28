@@ -15,8 +15,9 @@
 # the one the owner confirmed, kept as lattice-board.remote in the project's Git
 # config. Any other address is shown and asked about on the terminal, never
 # stdin; y records it and pushes. Fails, having pushed nothing, on any other
-# answer, with no terminal, or when origin has several push addresses or one
-# that carries a user or token, which it never prints.
+# answer, with no terminal, when origin has several push addresses or one that
+# carries a user or token, which it never prints, or when the address changes
+# before the push.
 git_environment_elsewhere() {
     local name configured status=0
     for name in "${!GIT_@}"; do
@@ -66,7 +67,8 @@ board_push() {
     fi
     # A token rides in the user part: any user for http(s), a password for any other scheme,
     # including Git's <transport>::<address> form.
-    url=${address#*::}
+    url=$address
+    if [[ $address =~ ^([A-Za-z0-9][A-Za-z0-9+.-]*)?:: ]]; then url=${address#*::}; fi
     if [[ $url == *://* ]]; then
         scheme=${url%%://*}; scheme=${scheme,,}; authority=${url#*://}; authority=${authority%%/*}
         if [[ $authority == *@* ]] && { [[ $scheme == http || $scheme == https ]] || [[ ${authority%@*} == *:* ]]; }; then
@@ -76,11 +78,13 @@ board_push() {
     confirmed=$(git -C "$top" config --get lattice-board.remote) || confirmed=""
     if [ "$address" != "$confirmed" ]; then
         echo "the board's pushes go to $address"
-        echo "confirmed before: ${confirmed:-none}"
+        if [ -n "$confirmed" ]; then echo "confirmed before: another address"; else echo "confirmed before: none"; fi
         printf 'Push the board to %s? [y/N] ' "$address" 2>/dev/null >/dev/tty \
             || { echo "no terminal to confirm it on; run this yourself at a terminal"; return 1; }
         read -r answer </dev/tty && [[ $answer == [yY] ]] || return 1
         git -C "$top" config lattice-board.remote "$address" || return 1
     fi
+    [ "$(git -C "$top/.lattice" remote get-url --push --all origin)" = "$address" ] \
+        || { echo "the board's push address changed after it was checked; nothing was pushed"; return 1; }
     git -C "$top/.lattice" push -q origin main
 }

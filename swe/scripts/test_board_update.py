@@ -362,6 +362,7 @@ class BoardUpdate(unittest.TestCase):
         code, out = self.script("board_update.sh", "--apply", cwd=self.here, check=False)
         self.assertEqual(code, 1, out)
         self.assertIn(str(other), out)
+        self.assertNotIn(str(self.remote), out)
         self.assertIn("the board was not pushed", out)
         self.assertEqual(self.run_in(other, "git", "rev-parse", "main")[1], before)
         self.assertEqual(self.run_in(self.here, "git", "config", "--get", "lattice-board.remote")[1].strip(), str(self.remote))
@@ -386,6 +387,9 @@ class BoardUpdate(unittest.TestCase):
         before = self.head(self.remote)
         for address, reason in (("https::HTTPS://u:secret@example.invalid/board.git", "carries a user or token"),
                                 ("ssh://u:secret@example.invalid/board.git", "carries a user or token"),
+                                ("https://u:fake-secret@[::1]/board.git", "carries a user or token"),
+                                ("HTTPS://secret@example.invalid/board.git", "carries a user or token"),
+                                ("0x::https://secret@example.invalid/board.git", "carries a user or token"),
                                 ("host:board\x1b[2K\x1b[1Gsecret", "holds control characters")):
             with self.subTest(address=address):
                 self.run_in(board, "git", "remote", "set-url", "--push", "origin", address)
