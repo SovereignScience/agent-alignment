@@ -1257,11 +1257,68 @@ class SectionTests(RepoFixture):
                                  "body": self.approved(self.b, self.c)}]
         page = call(self.base + "/review/t/AB-2")[1]
         self.assertIn("Open request from agent:x:</b> Need: run the checks on your machine", page)
-        self.assertIn("lattice needs-human AB-2 --clear", page)
+        self.assertIn(">Answer and clear</button>", page)
         self.assertIn("data-confirm='Mark AB-2 done? Done is final. The open request is: Need: run the checks on your machine'", page)
         self.assertLess(page.index("Open request"), page.index("Mark done"))
         self.assertNotIn("Open request", call(self.base + "/review/t/AB-1")[1])
         self.assertIn("data-confirm='Mark AB-10 done? Done is final.'", self.approved_page("AB-10", self.d, self.f))
+
+    FLAG = {"flagged_by": "agent:x", "reason": "Need: which provider?", "since": "2026-11-09T23:48:01Z"}
+
+    def test_a_flag_shows_with_its_criteria_and_an_answer_box_whatever_the_status(self):
+        self.edit_task("task_AB2", needs_human=self.FLAG, acceptance_criteria=[
+            {"id": "AC-1", "retired": False}, {"id": "AC-2", "retired": True}, {"id": "AC-3", "retired": False}])
+        for status in ("in_review", "done", "cancelled"):
+            self.edit_task("task_AB2", status=status)
+            page = call(self.base + "/review/t/AB-2")[1]
+            for part in ("Open request from agent:x, 2026-11-09T23:48:01Z:</b> Need: which provider?", "Criteria: AC-1, AC-3.",
+                         "action='/review/t/AB-2/answer'", "name='flag' value='Need: which provider?'",
+                         "name='since' value='2026-11-09T23:48:01Z'", ">Comment</button>", ">Answer and clear</button>"):
+                self.assertIn(part, page, status)
+            self.assertLess(page.index("Open request"), page.index("<h4>Plan</h4>"), status)
+        page = call(self.base + "/review/t/AB-1")[1]
+        for part in ("Open request", "Criteria:", "/answer'", ">Comment</button>", "Answer and clear"):
+            self.assertNotIn(part, page)
+
+    def test_comment_and_answer_and_clear_post_the_owners_words(self):
+        self.edit_task("task_AB2", needs_human=self.FLAG)
+
+        def write(key, *args):
+            self.calls.append(args[:-1] + (Path(args[-1]).read_text(),) if args[0] == "comment" else args)
+            return True
+        self.ctx.board_write = write
+        shown = {"flag": self.FLAG["reason"], "since": self.FLAG["since"]}
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="  Use Google.\nAC-1: covered  ", **shown))
+        self.assertEqual(self.calls, [("comment", "AB-2", "--file", 'On the flag "Need: which provider?":\nUse Google.\nAC-1: covered\n')])
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn("Answer posted. Nothing notifies the agent: send its session the task ID AB-2.", page)
+        del self.calls[:]
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Use Google.", clear="1", **shown))
+        self.assertEqual(self.calls, [("comment", "AB-2", "--file", 'On the flag "Need: which provider?":\nUse Google.\n'),
+                                      ("needs-human", "AB-2", "--clear", "--note", "Use Google.")])
+        self.assertIn("Answer posted and the flag cleared.", call(self.base + "/review/t/AB-2")[1])
+        del self.calls[:]
+        call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="  ", clear="1", **shown))
+        self.assertEqual(self.calls, [])
+        self.assertIn("the answer is empty", call(self.base + "/review/t/AB-2")[1])
+
+    def test_answer_and_clear_leaves_a_flag_that_changed_after_the_page_loaded(self):
+        shown = {"flag": self.FLAG["reason"], "since": self.FLAG["since"]}
+        for newer in (dict(self.FLAG, reason="Need: which region?"), dict(self.FLAG, since="2026-11-09T23:50:00Z")):
+            self.edit_task("task_AB2", needs_human=newer)
+            del self.calls[:]
+            call(self.base + "/review/t/AB-2/answer", form(self.ctx, body="Use Google.", clear="1", **shown))
+            self.assertEqual([c[0] for c in self.calls], ["comment"], newer)
+            page = call(self.base + "/review/t/AB-2")[1]
+            self.assertIn("Answer posted. The flag changed after this page loaded, so it was not cleared.", page)
+            self.assertIn("name='since' value='%s'" % newer["since"], page)
+
+    def test_a_plan_approval_flag_offers_only_comment_and_points_to_plannotator(self):
+        self.edit_task("task_AB2", needs_human=dict(self.FLAG, reason="Need: approve plan"))
+        page = call(self.base + "/review/t/AB-2")[1]
+        self.assertIn(">Comment</button>", page)
+        self.assertNotIn("Answer and clear", page)
+        self.assertIn("To approve the plan, use Plannotator: review the plan. Approve there clears this flag.", page)
 
     def approved_page(self, sid, base, head):
         self.reviews[sid] = [{"role": "review", "created_at": "2026-01-01T00:00:00Z", "author": "human:t",
@@ -1607,6 +1664,34 @@ class CliTests(RepoFixture):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_an_answer_lands_on_the_board_and_clears_only_the_flag_it_answers(self):
+        board = init_board(self.repo)
+        sid = lattice(board, "create", "a task", "--actor", "agent:test", "--quiet")
+        lattice(board, "needs-human", sid, "Need: which provider?", "--actor", "agent:test")
+        flag = lr.find_task(board, sid)["needs_human"]
+        shown = {"flag": flag["reason"], "since": flag["since"]}
+        ctx = self.context(board=board, repo=self.repo)
+        StubDashboard.static_dir = self.repo / "static"
+        server = serve(lr.make_handler(ctx, base=StubDashboard, static_dir=StubDashboard.static_dir), ctx)
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        try:
+            self.assertIn("name='since' value='%s'" % flag["since"], call(base + "/review/t/" + sid)[1])
+            call(base + "/review/t/%s/answer" % sid, form(ctx, body="Use Google.", **shown))
+            self.assertEqual(lr.find_task(board, sid)["needs_human"], flag)
+            call(base + "/review/t/%s/answer" % sid, form(ctx, body="Google, final.", clear="1", **shown))
+            self.assertIsNone(lr.find_task(board, sid).get("needs_human"))
+            lattice(board, "needs-human", sid, "Need: which region?", "--actor", "agent:test")
+            call(base + "/review/t/%s/answer" % sid, form(ctx, body="Late answer.", clear="1", **shown))
+            self.assertEqual(lr.find_task(board, sid)["needs_human"]["reason"], "Need: which region?")
+        finally:
+            server.shutdown()
+            server.server_close()
+        quote = 'On the flag "Need: which provider?":\n'
+        self.assertEqual([(c["author"], c["body"]) for c in ctx.comments(sid)], [
+            ("human:t", quote + "Use Google."), ("human:t", quote + "Google, final."), ("human:t", quote + "Late answer.")])
+        cleared = [ev for ev in map(json.loads, ctx.events(lr.find_task(board, sid)["id"])) if ev["type"] == "needs_human_cleared"]
+        self.assertEqual([(ev["actor"], ev["data"].get("note")) for ev in cleared], [("human:t", "Google, final.")])
 
 
 @unittest.skipUnless(HAVE_CLI and HAVE_MODULE, "lattice not importable; run with the Python that has lattice installed")

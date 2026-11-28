@@ -86,6 +86,17 @@ reply box holds text. Branches of the task that are not read are named:
 unlinked `feature/<ID>-*` branches, a linked branch that is missing, and
 any linked branch after the first one with commits.
 
+Answer the request in the box under it, which shows whatever the task's
+status, with the IDs of its open criteria. Comment posts your text as
+your comment, after a line that quotes the request, and leaves the
+request set; Answer and clear also clears it with your text as the note.
+An empty answer posts nothing. Name a criterion's ID (`AC-2`) to point
+at it; an answer records no evidence. When the request changed
+after the page loaded, Answer and clear posts the comment, leaves the
+newer request set and says so. A request to approve the plan offers only
+Comment: Approve in Plannotator clears it. Nothing notifies the agent:
+send its session the task ID.
+
 ## How a task's work is found
 
 1. A linked branch (`lattice branch-link <ID> <branch>`) with commits of
@@ -422,6 +433,7 @@ notes and plans handlers), written against Lattice 0.2.
 | `POST /review/t/<ID>/plan` | `plannotator annotate <plan file> --gate --json`; redirects to the session; the decision becomes a `plan-review` comment and threads |
 | `POST /review/t/<ID>/complete` | `lattice status <ID> done --no-auto-review` under the rule in What completes a task |
 | `POST /review/t/<ID>/reply` | `lattice comment <ID> --reply-to <thread> --file` with the owner's reply; with `resolve=1` also the `resolved` reaction, once the reply posted |
+| `POST /review/t/<ID>/answer` | `lattice comment <ID> --file` with the owner's answer to the flag; with `clear=1` also `lattice needs-human <ID> --clear --note` with the answer, while the flag is the one the page showed |
 | `POST /review/t/<ID>/resolve`, `/reopen` | `lattice react` or `unreact` with `resolved` on a thread |
 | `POST /review/t/<ID>/rework` | `lattice status <ID> in_progress --no-auto-review` |
 | `POST /api/tasks/<id>/status` | the dashboard's status change; `done` is refused with `REVIEW_REQUIRED` under the same rule |
