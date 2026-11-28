@@ -547,6 +547,9 @@ One board for <project> at <path>: <what it covers, one or two sentences>.
   criteria, evidence and remaining work. Chat notifies the owner and
   summarizes what Lattice says; a decision made in chat is written to the
   task first, then reported. If task records conflict, stop and say so.
+  A record names the task's branch and leaves commits to lattice show; it
+  never copies commit hashes, worktree paths or staged state into a
+  description, where they go stale.
 - Every write passes --actor agent:<tool> and runs with
   LATTICE_NO_UPDATE_CHECK=1. Sessions use lattice show to resume the task
   they were given, then lattice comments <ID> --json and the task's plan,
