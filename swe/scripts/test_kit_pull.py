@@ -323,6 +323,14 @@ class KitPull(unittest.TestCase):
         self.assertEqual([path.name for path in self.clone.iterdir()], [".git"])
         self.assertNotIn("DONE", out)
 
+    def test_the_guides_first_run_checks_nothing_out_when_an_older_release_is_served_under_the_name(self):
+        self.release("v1.1.0")
+        self.git(self.kit, "update-ref", "refs/tags/v1.2.0", self.git(self.kit, "rev-parse", "refs/tags/v1.0.0"))
+        code, out = self.first_run("v1.2.0")
+        self.assertNotEqual(code, 0, out)
+        self.assertEqual([path.name for path in self.clone.iterdir()], [".git"])
+        self.assertNotIn("DONE", out)
+
     def test_the_guides_release_blocks_sign_check_and_publish_a_tag_a_project_can_pull(self):
         published = self.root / "published.git"
         self.git(self.kit, "clone", "-q", "--bare", str(self.kit), str(published))

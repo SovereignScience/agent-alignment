@@ -111,6 +111,7 @@ exclude=$(git rev-parse --path-format=absolute --git-path info/exclude)
 grep -qxF /.agent-alignment/ "$exclude" || echo /.agent-alignment/ >> "$exclude"
 git clone -q --no-checkout --no-hardlinks <kit> .agent-alignment &&
 git -C .agent-alignment -c gpg.ssh.allowedSignersFile="$HOME/.config/agent-alignment/allowed_signers" -c gpg.program=false -c gpg.x509.program=false verify-tag refs/tags/<tag> &&
+test "$(git -C .agent-alignment for-each-ref --format='%(tag)' refs/tags/<tag>)" = <tag> &&
 git -C .agent-alignment checkout -q --detach refs/tags/<tag> &&
 git -C .agent-alignment remote set-url --push origin no-push &&
 bash .agent-alignment/swe/scripts/kit_pull.sh <tag>
@@ -126,8 +127,9 @@ because nothing in a new clone can be trusted to check itself. If any
 line stops, the lines after it do not run: delete the folder and tell
 whoever signs that kit. The two `gpg` options make any signature that is not an
 SSH one fail. The tag is always written `refs/tags/<tag>`, so a branch
-of the same name is never taken for it. The last line then confirms the
-release carries the name you asked for.
+of the same name is never taken for it. The `test` line checks that the
+signed tag carries the name you asked for, so an older release served
+under a newer name is never checked out.
 
 Sessions read the agent files, protocols and this guide from the clone.
 The kit's sandbox settings deny them every write to it, in Claude Code
