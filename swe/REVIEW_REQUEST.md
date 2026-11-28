@@ -20,10 +20,10 @@ Skip: style, naming, anything CI or lint enforces, <paths>
 Limits: read-only. No edits, commits, pushes or host contact.
 
 Report back:
-- Blocking: file:line, what breaks, the code or output that shows it,
+- Findings graded P0 to P3 by harm, as swe/.claude/agents/code-reviewer.md
+  defines them: file:line, what breaks, the code or output that shows it,
   and how you confirmed it
-- Optional: at most five, one line each
 - Pre-existing, not from this change: listed separately
 - What you checked and what you did not
-- Verdict: blocking findings yes or no, not a guarantee
+- Verdict: any P0 or P1, yes or no, not a guarantee
 ```

@@ -4,7 +4,8 @@ import re
 import unittest
 
 SWE = pathlib.Path(__file__).resolve().parents[1]
-FILES = [SWE / "SKEPTIC_ARBITER.md", SWE / "LATTICE_ONBOARDING.md", SWE / "user" / "CLAUDE.md"] + [
+FILES = [SWE / "SKEPTIC_ARBITER.md", SWE / "LATTICE_ONBOARDING.md", SWE / "user" / "CLAUDE.md",
+         SWE / "REVIEW_REQUEST.md"] + [
     SWE / ".claude" / kind / (name + ".md") for kind, name in [
         ("agents", "code-reviewer"), ("agents", "code-arbiter"), ("agents", "security-reviewer"),
         ("agents", "dependency-auditor"), ("agents", "perf-auditor"),
